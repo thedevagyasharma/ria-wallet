@@ -5,7 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  Modal,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
@@ -14,13 +14,13 @@ import Animated, {
   withTiming,
   withSequence,
   withDelay,
-  runOnJS,
   Easing,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 import {
   ChevronLeft,
+  ChevronRight,
   Snowflake,
   Unlock,
   Trash2,
@@ -32,10 +32,20 @@ import {
   Wallet as WalletIcon,
   Activity,
   Check,
+  KeyRound,
+  WifiOff,
+  Gauge,
+  AlertTriangle,
 } from 'lucide-react-native';
+import PrimaryButton from '../../components/PrimaryButton';
+import SecondaryButton from '../../components/SecondaryButton';
+import DestructiveButton from '../../components/DestructiveButton';
+import FlatButton from '../../components/FlatButton';
+import BottomSheet from '../../components/BottomSheet';
+import ConfirmSheet from '../../components/ConfirmSheet';
+import { NumKey, NUM_KEYS_AMOUNT, NUM_KEYS_PIN } from '../../components/NumPad';
 
 import { colors, typography, spacing, radius } from '../../theme';
-import SecondaryButton from '../../components/SecondaryButton';
 import { useCardStore } from '../../stores/useCardStore';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { getCurrency } from '../../data/currencies';
@@ -55,33 +65,13 @@ function ActionBtn({
   icon,
   label,
   onPress,
-  destructive,
   disabled,
 }: {
   icon: React.ReactNode;
   label: string;
   onPress: () => void;
-  destructive?: boolean;
   disabled?: boolean;
 }) {
-  if (destructive) {
-    return (
-      <Pressable
-        onPress={onPress}
-        disabled={disabled}
-        style={({ pressed }) => [
-          styles.actionBtn,
-          styles.actionBtnDestructive,
-          pressed && { opacity: 0.7 },
-          disabled && { opacity: 0.45 },
-        ]}
-      >
-        <View style={styles.actionBtnIcon}>{icon}</View>
-        <Text style={[styles.actionBtnLabel, { color: colors.failed }]}>{label}</Text>
-      </Pressable>
-    );
-  }
-
   return (
     <SecondaryButton onPress={onPress} disabled={disabled} shape="rect" style={styles.actionBtn}>
       <View style={styles.actionBtnIcon}>{icon}</View>
@@ -90,120 +80,9 @@ function ActionBtn({
   );
 }
 
-// ─── Reusable bottom sheet ─────────────────────────────────────────────────────
+// ─── View PIN sheet ────────────────────────────────────────────────────────────
 
-function BottomSheet({
-  visible,
-  onClose,
-  children,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  const [mounted, setMounted] = useState(false);
-  const overlayOpacity = useSharedValue(0);
-  const sheetY = useSharedValue(600);
-
-  // Mount when opening; unmount only after close animation finishes
-  useEffect(() => {
-    if (visible) setMounted(true);
-  }, [visible]);
-
-  useEffect(() => {
-    if (!mounted) return;
-    if (visible) {
-      // Reset to start positions then animate in
-      overlayOpacity.value = 0;
-      sheetY.value = 600;
-      overlayOpacity.value = withTiming(1, { duration: 240 });
-      sheetY.value = withTiming(0, { duration: 340, easing: Easing.out(Easing.cubic) });
-    } else {
-      overlayOpacity.value = withTiming(0, { duration: 200 });
-      sheetY.value = withTiming(
-        600,
-        { duration: 260, easing: Easing.in(Easing.quad) },
-        (finished) => { if (finished) runOnJS(setMounted)(false); },
-      );
-    }
-  }, [visible, mounted]);
-
-  const overlayStyle = useAnimatedStyle(() => ({ opacity: overlayOpacity.value }));
-  const sheetStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: sheetY.value }],
-  }));
-
-  if (!mounted) return null;
-
-  return (
-    <Modal visible transparent animationType="none" onRequestClose={onClose}>
-      {/* Overlay fades independently */}
-      <Animated.View style={[styles.sheetOverlay, overlayStyle]} pointerEvents="box-none">
-        {/* Backdrop tap target */}
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        {/* Sheet slides up; onStartShouldSetResponder blocks backdrop from firing on sheet taps */}
-        <Animated.View
-          style={[styles.sheet, sheetStyle]}
-          onStartShouldSetResponder={() => true}
-        >
-          <View style={styles.sheetHandle} />
-          {children}
-        </Animated.View>
-      </Animated.View>
-    </Modal>
-  );
-}
-
-// ─── Freeze / unfreeze confirmation ───────────────────────────────────────────
-
-function FreezeSheet({
-  visible,
-  isFrozen,
-  onConfirm,
-  onCancel,
-}: {
-  visible: boolean;
-  isFrozen: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <BottomSheet visible={visible} onClose={onCancel}>
-      <View style={[styles.sheetIconWrap, isFrozen ? styles.sheetIconNeutral : styles.sheetIconIce]}>
-        {isFrozen
-          ? <Unlock size={26} color={colors.textPrimary} strokeWidth={1.8} />
-          : <Snowflake size={26} color="#93c5fd" strokeWidth={1.8} />
-        }
-      </View>
-      <Text style={styles.sheetTitle}>{isFrozen ? 'Unfreeze card?' : 'Freeze card?'}</Text>
-      <Text style={styles.sheetBody}>
-        {isFrozen
-          ? 'Your card will be ready to use again. This may take a moment to process.'
-          : 'All transactions will be blocked until you unfreeze it. This may take a moment to process.'
-        }
-      </Text>
-      <Pressable
-        onPress={onConfirm}
-        style={({ pressed }) => [
-          styles.sheetPrimaryBtn,
-          isFrozen ? styles.sheetUnfreezeBtn : styles.sheetFreezeBtn,
-          pressed && { opacity: 0.85 },
-        ]}
-      >
-        <Text style={styles.sheetPrimaryBtnText}>
-          {isFrozen ? 'Yes, unfreeze' : 'Yes, freeze card'}
-        </Text>
-      </Pressable>
-      <Pressable onPress={onCancel} style={styles.sheetCancelBtn}>
-        <Text style={styles.sheetCancelBtnText}>Cancel</Text>
-      </Pressable>
-    </BottomSheet>
-  );
-}
-
-// ─── PIN modal ─────────────────────────────────────────────────────────────────
-
-function PinSheet({
+function ViewPinSheet({
   visible,
   pin,
   onClose,
@@ -215,17 +94,10 @@ function PinSheet({
   const [secondsLeft, setSecondsLeft] = useState(15);
 
   useEffect(() => {
-    if (!visible) {
-      setSecondsLeft(15);
-      return;
-    }
+    if (!visible) { setSecondsLeft(15); return; }
     const interval = setInterval(() => {
       setSecondsLeft((s) => {
-        if (s <= 1) {
-          clearInterval(interval);
-          onClose();
-          return 0;
-        }
+        if (s <= 1) { clearInterval(interval); onClose(); return 0; }
         return s - 1;
       });
     }, 1000);
@@ -249,62 +121,295 @@ function PinSheet({
         ))}
       </View>
       <Text style={styles.pinTimer}>Auto-hides in {secondsLeft}s</Text>
-      <Pressable onPress={onClose} style={styles.sheetCancelBtn}>
-        <Text style={styles.sheetCancelBtnText}>Close</Text>
-      </Pressable>
+      <FlatButton onPress={onClose} label="Close" style={styles.sheetCancelBtn} />
     </BottomSheet>
   );
 }
 
-// ─── Remove confirmation ───────────────────────────────────────────────────────
+// ─── Change PIN sheet ──────────────────────────────────────────────────────────
 
-function RemoveSheet({
+function ChangePinSheet({
   visible,
-  card,
+  currentPin,
   onConfirm,
-  onCancel,
+  onClose,
 }: {
   visible: boolean;
-  card: Card | null;
-  onConfirm: () => void;
-  onCancel: () => void;
+  currentPin: string;
+  onConfirm: (newPin: string) => void;
+  onClose: () => void;
 }) {
-  if (!card) return null;
+  const [step, setStep] = useState<0 | 1 | 2>(0); // 0=verify current, 1=enter new, 2=confirm new
+  const [pin0, setPin0] = useState('');
+  const [pin1, setPin1] = useState('');
+  const [pin2, setPin2] = useState('');
+  const shakeX = useSharedValue(0);
+
+  const shakeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shakeX.value }],
+  }));
+
+  useEffect(() => {
+    if (!visible) { setStep(0); setPin0(''); setPin1(''); setPin2(''); }
+  }, [visible]);
+
+  function shake(then: () => void) {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    shakeX.value = withSequence(
+      withTiming(-8, { duration: 60 }),
+      withTiming(8,  { duration: 60 }),
+      withTiming(-6, { duration: 60 }),
+      withTiming(6,  { duration: 60 }),
+      withTiming(0,  { duration: 60 }),
+    );
+    setTimeout(then, 300);
+  }
+
+  function handleKey(key: string) {
+    if (key === '⌫') {
+      if (step === 0) setPin0((p) => p.slice(0, -1));
+      else if (step === 1) setPin1((p) => p.slice(0, -1));
+      else setPin2((p) => p.slice(0, -1));
+      return;
+    }
+    const current = step === 0 ? pin0 : step === 1 ? pin1 : pin2;
+    if (current.length >= 4) return;
+    const next = current + key;
+
+    if (step === 0) {
+      setPin0(next);
+      if (next.length === 4) {
+        if (next === currentPin) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setTimeout(() => { setStep(1); setPin0(''); }, 120);
+        } else {
+          shake(() => setPin0(''));
+        }
+      }
+    } else if (step === 1) {
+      setPin1(next);
+      if (next.length === 4) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setTimeout(() => setStep(2), 120);
+      }
+    } else {
+      setPin2(next);
+      if (next.length === 4) {
+        if (next === pin1) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          onConfirm(pin1);
+        } else {
+          shake(() => setPin2(''));
+        }
+      }
+    }
+  }
+
+  const displayPin = step === 0 ? pin0 : step === 1 ? pin1 : pin2;
+
+  const TITLES = ['Enter current PIN', 'Enter new PIN', 'Confirm new PIN'];
+  const BODIES = [
+    'Verify your identity before changing.',
+    'Choose a new 4-digit PIN for this card.',
+    'Re-enter your new PIN to confirm.',
+  ];
+
   return (
-    <BottomSheet visible={visible} onClose={onCancel}>
-      <View style={[styles.sheetIconWrap, styles.sheetIconDestructive]}>
-        <Trash2 size={26} color={colors.failed} strokeWidth={1.8} />
+    <BottomSheet visible={visible} onClose={onClose}>
+      <View style={[styles.sheetIconWrap, styles.sheetIconBrand]}>
+        <KeyRound size={26} color={colors.brand} strokeWidth={1.8} />
       </View>
-      <Text style={styles.sheetTitle}>Remove card?</Text>
-      <Text style={styles.sheetBody}>
-        {card.name} ···· {card.last4} will be permanently removed from your wallet. This cannot be undone.
-      </Text>
-      <Pressable
-        onPress={onConfirm}
-        style={({ pressed }) => [styles.sheetPrimaryBtn, styles.sheetDestructiveBtn, pressed && { opacity: 0.85 }]}
-      >
-        <Text style={styles.sheetPrimaryBtnText}>Remove card</Text>
-      </Pressable>
-      <Pressable onPress={onCancel} style={styles.sheetCancelBtn}>
-        <Text style={styles.sheetCancelBtnText}>Cancel</Text>
-      </Pressable>
+      <Text style={styles.sheetTitle}>{TITLES[step]}</Text>
+      <Text style={styles.sheetBody}>{BODIES[step]}</Text>
+
+      <Animated.View style={[styles.pinDotsRow, shakeStyle]}>
+        {[0, 1, 2, 3].map((i) => (
+          <View key={i} style={[styles.pinDot, i < displayPin.length && styles.pinDotFilled]} />
+        ))}
+      </Animated.View>
+
+      <View style={styles.numpad}>
+        {NUM_KEYS_PIN.map((k, i) =>
+          k === '' ? (
+            <View key={i} style={styles.numKey} />
+          ) : (
+            <NumKey key={k} label={k} onPress={() => handleKey(k)} style={styles.numKey} />
+          )
+        )}
+      </View>
+
+      <FlatButton onPress={onClose} label="Cancel" style={styles.sheetCancelBtn} />
     </BottomSheet>
   );
 }
 
-// ─── Sensitive detail field ────────────────────────────────────────────────────
+// ─── Spending limit sheet (single period) ─────────────────────────────────────
+
+type LimitPeriod = 'daily' | 'weekly' | 'monthly';
+const PERIOD_LABELS: Record<LimitPeriod, string> = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly' };
+
+
+function LimitSheet({
+  visible,
+  period,
+  currentLimit,
+  currencySymbol,
+  onSave,
+  onClose,
+}: {
+  visible: boolean;
+  period: LimitPeriod;
+  currentLimit: number | null;
+  currencySymbol: string;
+  onSave: (limit: number | null) => void;
+  onClose: () => void;
+}) {
+  const [value, setValue] = useState('');
+  const [localPeriod, setLocalPeriod] = useState<LimitPeriod>(period);
+  const [localLimit, setLocalLimit] = useState<number | null>(currentLimit);
+
+  useEffect(() => {
+    if (visible) {
+      setLocalPeriod(period);
+      setLocalLimit(currentLimit);
+      setValue(currentLimit != null ? String(currentLimit) : '');
+    }
+  }, [visible]);
+
+  function handleKey(key: string) {
+    if (key === '⌫') { setValue((v) => v.slice(0, -1)); return; }
+    if (key === '.') {
+      if (value.includes('.')) return;
+      setValue((v) => (v === '' ? '0.' : v + '.'));
+      return;
+    }
+    if (value === '0') { setValue(key); return; }
+    const dotIdx = value.indexOf('.');
+    if (dotIdx !== -1 && value.length - dotIdx > 2) return;
+    if (value.replace('.', '').length >= 8) return;
+    setValue((v) => v + key);
+  }
+
+  const parsed = parseFloat(value);
+  const isValid = !isNaN(parsed) && parsed > 0;
+  const displayValue = value === '' ? '0' : value;
+  const isEmpty = value === '' || value === '0';
+
+  return (
+    <BottomSheet visible={visible} onClose={onClose} swipeToDismiss>
+      <Text style={styles.sheetTitle}>{PERIOD_LABELS[localPeriod]} limit</Text>
+
+      <View style={styles.limitAmountRow}>
+        <Text style={[styles.limitSymbol, isEmpty && styles.limitMuted]}>{currencySymbol}</Text>
+        <Text style={[styles.limitAmount, isEmpty && styles.limitMuted]}>{displayValue}</Text>
+      </View>
+
+      <View style={styles.numpad}>
+        {NUM_KEYS_AMOUNT.map((k) => (
+          <NumKey key={k} label={k} onPress={() => handleKey(k)} style={styles.limitNumKey} />
+        ))}
+      </View>
+
+      <View style={styles.limitActions}>
+        <PrimaryButton
+          onPress={() => isValid && onSave(parsed)}
+          disabled={!isValid}
+          label={`Set ${PERIOD_LABELS[localPeriod].toLowerCase()} limit`}
+          style={styles.limitSaveBtn}
+        />
+        {localLimit != null && (
+          <SecondaryButton
+            onPress={() => onSave(null)}
+            label="Remove limit"
+            style={styles.sheetOutlineBtn}
+          />
+        )}
+        <FlatButton onPress={onClose} label="Cancel" style={styles.limitCancelBtn} />
+      </View>
+    </BottomSheet>
+  );
+}
+
+// ─── Settings row ──────────────────────────────────────────────────────────────
+
+function SettingsRow({
+  icon,
+  label,
+  sublabel,
+  value,
+  onPress,
+  isToggle,
+  toggleValue,
+  onToggle,
+  destructive,
+  isLast,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  sublabel?: string;
+  value?: string;
+  onPress?: () => void;
+  isToggle?: boolean;
+  toggleValue?: boolean;
+  onToggle?: (v: boolean) => void;
+  destructive?: boolean;
+  isLast?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={isToggle ? undefined : onPress}
+      disabled={isToggle}
+      style={({ pressed }) => [
+        styles.settingsRow,
+        !isLast && styles.settingsRowBorder,
+        !isToggle && pressed && { opacity: 0.6 },
+      ]}
+    >
+      <View style={styles.settingsRowLeft}>
+        <View style={styles.settingsRowIcon}>{icon}</View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.settingsRowLabel, destructive && styles.settingsRowDestructive]}>
+            {label}
+          </Text>
+          {sublabel ? <Text style={styles.settingsRowSublabel}>{sublabel}</Text> : null}
+        </View>
+      </View>
+      {isToggle ? (
+        <Switch
+          value={toggleValue}
+          onValueChange={onToggle}
+          trackColor={{ false: colors.border, true: colors.brand }}
+          thumbColor="#fff"
+        />
+      ) : value !== undefined ? (
+        <View style={styles.settingsRowRight}>
+          <Text style={styles.settingsRowValue}>{value}</Text>
+          <ChevronRight size={16} color={colors.textMuted} strokeWidth={2} />
+        </View>
+      ) : !destructive ? (
+        <ChevronRight size={16} color={colors.textMuted} strokeWidth={2} />
+      ) : null}
+    </Pressable>
+  );
+}
 
 // ─── Main screen ───────────────────────────────────────────────────────────────
 
 export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>) {
   const navigation = useNavigation();
   const { cardId } = route.params;
-  const { cards, toggleFreeze, removeCard } = useCardStore();
+  const {
+    cards, toggleFreeze, removeCard,
+    changePin, setOnlineTransactions, setSpendingLimit,
+  } = useCardStore();
   const { wallets } = useWalletStore();
 
   const [showRemove, setShowRemove] = useState(false);
   const [showFreezeConfirm, setShowFreezeConfirm] = useState(false);
   const [showPin, setShowPin] = useState(false);
+  const [showChangePin, setShowChangePin] = useState(false);
+  const [editingLimit, setEditingLimit] = useState<LimitPeriod | null>(null);
+  const [showLostStolen, setShowLostStolen] = useState(false);
   const [freezeProcessing, setFreezeProcessing] = useState(false);
   const [numberRevealed, setNumberRevealed] = useState(false);
   const [cvvRevealed, setCvvRevealed] = useState(false);
@@ -317,7 +422,6 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
   // Frost overlay — pulses during freeze/unfreeze processing
   const frostOpacity = useSharedValue(0);
   const frostScale = useSharedValue(1);
-
   const frostStyle = useAnimatedStyle(() => ({
     opacity: frostOpacity.value,
     transform: [{ scale: frostScale.value }],
@@ -327,9 +431,7 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
     if (!card) return;
     setShowFreezeConfirm(false);
     setFreezeProcessing(true);
-    Haptics.impactAsync(
-      card.frozen ? Haptics.ImpactFeedbackStyle.Light : Haptics.ImpactFeedbackStyle.Heavy
-    );
+    Haptics.impactAsync(card.frozen ? Haptics.ImpactFeedbackStyle.Light : Haptics.ImpactFeedbackStyle.Heavy);
 
     if (!card.frozen) {
       frostOpacity.value = withSequence(
@@ -356,18 +458,12 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
 
   const handleToggleRevealNumber = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setNumberRevealed((prev) => {
-      if (!prev) setCvvRevealed(false);
-      return !prev;
-    });
+    setNumberRevealed((prev) => { if (!prev) setCvvRevealed(false); return !prev; });
   }, []);
 
   const handleToggleRevealCvv = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setCvvRevealed((prev) => {
-      if (!prev) setNumberRevealed(false);
-      return !prev;
-    });
+    setCvvRevealed((prev) => { if (!prev) setNumberRevealed(false); return !prev; });
   }, []);
 
   const handleCopy = useCallback((field: string) => {
@@ -384,6 +480,41 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
     navigation.goBack();
   }, [card, removeCard, navigation]);
 
+  const handleChangePinConfirm = useCallback((newPin: string) => {
+    if (!card) return;
+    changePin(card.id, newPin);
+    setShowChangePin(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [card, changePin]);
+
+  const handleSpendingLimitSave = useCallback(
+    (period: LimitPeriod, limit: number | null) => {
+      if (!card) return;
+      setSpendingLimit(card.id, period, limit);
+      setEditingLimit(null);
+      Haptics.notificationAsync(
+        limit == null
+          ? Haptics.NotificationFeedbackType.Warning
+          : Haptics.NotificationFeedbackType.Success,
+      );
+    },
+    [card, setSpendingLimit],
+  );
+
+  const handleOnlineTransactionsToggle = useCallback((value: boolean) => {
+    if (!card) return;
+    setOnlineTransactions(card.id, value);
+    Haptics.selectionAsync();
+  }, [card, setOnlineTransactions]);
+
+  const handleLostStolenConfirm = useCallback(() => {
+    if (!card) return;
+    setShowLostStolen(false);
+    if (!card.frozen) toggleFreeze(card.id);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    navigation.goBack();
+  }, [card, toggleFreeze, navigation]);
+
   if (!card || !currency) {
     return (
       <SafeAreaView style={styles.safe}>
@@ -391,6 +522,10 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
       </SafeAreaView>
     );
   }
+
+  const cardPin = card.pin ?? '1234';
+  const onlineEnabled = card.onlineTransactions !== false;
+  const spendingLimits = card.spendingLimits ?? {};
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -405,7 +540,7 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* Card face with inline reveal + copy */}
+        {/* Card face */}
         <View style={styles.cardArea}>
           <View style={styles.cardWrapper}>
             <CardFront
@@ -417,7 +552,6 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
               onCopyCvv={() => handleCopy('cvv')}
               copiedField={copiedField}
             />
-            {/* Animated frost during freeze/unfreeze processing */}
             <Animated.View style={[styles.frostOverlay, frostStyle]} pointerEvents="none" />
           </View>
           {freezeProcessing && (
@@ -449,7 +583,7 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
           </SecondaryButton>
         </View>
 
-        {/* Actions */}
+        {/* Quick actions — high-frequency, always-visible */}
         <View style={styles.actionsRow}>
           <ActionBtn
             icon={
@@ -476,15 +610,51 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
               setShowPin(true);
             }}
           />
-          <ActionBtn
-            icon={<Trash2 size={22} color={colors.failed} strokeWidth={1.8} />}
-            label="Remove"
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              setShowRemove(true);
-            }}
-            destructive
-          />
+        </View>
+
+        {/* Card settings */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Card settings</Text>
+          <View style={styles.settingsCard}>
+            <SettingsRow
+              icon={<KeyRound size={17} color={colors.textSecondary} strokeWidth={1.8} />}
+              label="Change PIN"
+              onPress={() => { Haptics.selectionAsync(); setShowChangePin(true); }}
+            />
+            <SettingsRow
+              icon={
+                onlineEnabled
+                  ? <Globe size={17} color={colors.textSecondary} strokeWidth={1.8} />
+                  : <WifiOff size={17} color={colors.textMuted} strokeWidth={1.8} />
+              }
+              label="Online transactions"
+              sublabel={onlineEnabled ? 'Card can be used online' : 'Blocked for online use'}
+              isToggle
+              toggleValue={onlineEnabled}
+              onToggle={handleOnlineTransactionsToggle}
+              isLast
+            />
+          </View>
+        </View>
+
+        {/* Spending */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Spending limits</Text>
+          <View style={styles.settingsCard}>
+            {(['daily', 'weekly', 'monthly'] as LimitPeriod[]).map((p, i) => {
+              const lim = spendingLimits[p];
+              return (
+                <SettingsRow
+                  key={p}
+                  icon={<Gauge size={17} color={colors.textSecondary} strokeWidth={1.8} />}
+                  label={PERIOD_LABELS[p]}
+                  value={lim != null ? `${currency.symbol}${lim.toLocaleString()}` : 'Not set'}
+                  onPress={() => { Haptics.selectionAsync(); setEditingLimit(p); }}
+                  isLast={i === 2}
+                />
+              );
+            })}
+          </View>
         </View>
 
         {/* Card info */}
@@ -529,23 +699,95 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
           </View>
         </View>
 
-        <View style={{ height: spacing.xxxl }} />
+        {/* Danger zone */}
+        <View style={[styles.section, styles.sectionLast]}>
+          <Text style={styles.sectionTitle}>Danger zone</Text>
+          <View style={styles.settingsCard}>
+            <SettingsRow
+              icon={<AlertTriangle size={17} color="#d97706" strokeWidth={1.8} />}
+              label={card.type === 'virtual' || card.type === 'single-use' ? 'Report compromised' : 'Report lost or stolen'}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setShowLostStolen(true);
+              }}
+            />
+            <SettingsRow
+              icon={<Trash2 size={17} color={colors.failed} strokeWidth={1.8} />}
+              label="Remove card"
+              destructive
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setShowRemove(true);
+              }}
+              isLast
+            />
+          </View>
+        </View>
+
       </ScrollView>
 
-      <FreezeSheet
+      <ViewPinSheet visible={showPin} pin={cardPin} onClose={() => setShowPin(false)} />
+      <ChangePinSheet
+        visible={showChangePin}
+        currentPin={cardPin}
+        onConfirm={handleChangePinConfirm}
+        onClose={() => setShowChangePin(false)}
+      />
+      <LimitSheet
+        visible={editingLimit !== null}
+        period={editingLimit ?? 'daily'}
+        currentLimit={editingLimit ? (spendingLimits[editingLimit] ?? null) : null}
+        currencySymbol={currency.symbol}
+        onSave={(limit) => editingLimit && handleSpendingLimitSave(editingLimit, limit)}
+        onClose={() => setEditingLimit(null)}
+      />
+
+      {/* Freeze / unfreeze — neutral action, PrimaryButton */}
+      <ConfirmSheet
         visible={showFreezeConfirm}
-        isFrozen={card.frozen}
+        icon={
+          card.frozen
+            ? <Unlock size={26} color={colors.brand} strokeWidth={1.8} />
+            : <Snowflake size={26} color={colors.brand} strokeWidth={1.8} />
+        }
+        iconBg={colors.brandSubtle}
+        title={card.frozen ? 'Unfreeze card?' : 'Freeze card?'}
+        body={
+          card.frozen
+            ? 'Your card will be ready to use again. This may take a moment to process.'
+            : 'All transactions will be blocked until you unfreeze it. This may take a moment to process.'
+        }
+        confirmLabel={card.frozen ? 'Yes, unfreeze' : 'Yes, freeze card'}
         onConfirm={handleFreezeConfirm}
         onCancel={() => setShowFreezeConfirm(false)}
       />
-      <PinSheet
-        visible={showPin}
-        pin="1234"
-        onClose={() => setShowPin(false)}
+
+      {/* Report lost / compromised — destructive (permanently blocks card) */}
+      <ConfirmSheet
+        visible={showLostStolen}
+        icon={<AlertTriangle size={26} color={colors.failed} strokeWidth={1.8} />}
+        iconBg={colors.failedSubtle}
+        title={card.type !== 'physical' ? 'Report card compromised?' : 'Report lost or stolen?'}
+        body={
+          card.type !== 'physical'
+            ? `${card.name} ···· ${card.last4} will be permanently blocked and a new card will be issued. This cannot be undone.`
+            : `${card.name} ···· ${card.last4} will be permanently blocked and a replacement card will be issued. This cannot be undone.`
+        }
+        confirmLabel="Report card"
+        destructive
+        onConfirm={handleLostStolenConfirm}
+        onCancel={() => setShowLostStolen(false)}
       />
-      <RemoveSheet
+
+      {/* Remove card — destructive */}
+      <ConfirmSheet
         visible={showRemove}
-        card={card}
+        icon={<Trash2 size={26} color={colors.failed} strokeWidth={1.8} />}
+        iconBg={colors.failedSubtle}
+        title="Remove card?"
+        body={`${card.name} ···· ${card.last4} will be permanently removed from your wallet. This cannot be undone.`}
+        confirmLabel="Remove card"
+        destructive
         onConfirm={handleRemoveConfirm}
         onCancel={() => setShowRemove(false)}
       />
@@ -608,9 +850,8 @@ const styles = StyleSheet.create({
   },
   frostOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#bfdbfe',   // blue-200
+    backgroundColor: '#bfdbfe',
     borderRadius: radius.xl,
-    // opacity driven by frostStyle
   },
   processingText: {
     marginTop: spacing.sm,
@@ -622,6 +863,7 @@ const styles = StyleSheet.create({
 
   // ── Sections ──
   section: { marginBottom: spacing.xl },
+  sectionLast: { marginBottom: spacing.xxxl },
   sectionTitle: {
     fontSize: 11,
     color: colors.textSecondary,
@@ -639,7 +881,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   revealBtn: {
-    flex: 1,
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -664,16 +905,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
     paddingVertical: spacing.md,
-  },
-  actionBtnDestructive: {
-    flex: 1,
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.failedSubtle,
-    backgroundColor: colors.failedSubtle,
   },
   actionBtnIcon: { marginBottom: 2 },
   actionBtnLabel: {
@@ -736,31 +967,55 @@ const styles = StyleSheet.create({
   statusActiveText: { color: '#16a34a' },
   statusFrozenText: { color: '#3b82f6' },
 
-
-  // ── Bottom sheet ──
-  sheetOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    backgroundColor: colors.bg,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    padding: spacing.xl,
-    paddingBottom: spacing.xxxl,
-    gap: spacing.md,
-    borderTopWidth: 1,
+  // ── Settings card ──
+  settingsCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
     borderColor: colors.border,
+    overflow: 'hidden',
   },
-  sheetHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: radius.full,
-    backgroundColor: colors.border,
-    alignSelf: 'center',
-    marginBottom: spacing.md,
+  settingsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 14,
   },
+  settingsRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
+  },
+  settingsRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    flex: 1,
+  },
+  settingsRowIcon: { width: 22, alignItems: 'center' },
+  settingsRowLabel: {
+    fontSize: typography.base,
+    color: colors.textPrimary,
+    fontWeight: typography.medium,
+  },
+  settingsRowSublabel: {
+    fontSize: typography.xs,
+    color: colors.textMuted,
+    marginTop: 1,
+  },
+  settingsRowRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  settingsRowValue: {
+    fontSize: typography.sm,
+    color: colors.textSecondary,
+    fontWeight: typography.medium,
+  },
+  settingsRowDestructive: { color: colors.failed },
+
+  // ── Sheet icon / text ──
   sheetIconWrap: {
     width: 56,
     height: 56,
@@ -770,10 +1025,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: spacing.xs,
   },
-  sheetIconNeutral: { backgroundColor: colors.surface },
-  sheetIconIce: { backgroundColor: 'rgba(147,197,253,0.15)' },
   sheetIconBrand: { backgroundColor: colors.brandSubtle },
-  sheetIconDestructive: { backgroundColor: colors.failedSubtle },
   sheetTitle: {
     fontSize: typography.xl,
     color: colors.textPrimary,
@@ -787,24 +1039,13 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     paddingHorizontal: spacing.md,
   },
-  sheetPrimaryBtn: {
-    borderRadius: radius.lg,
+  sheetOutlineBtn: {
+    width: '100%',
     paddingVertical: spacing.lg,
-    alignItems: 'center',
-    marginTop: spacing.xs,
   },
-  sheetFreezeBtn: { backgroundColor: '#1e3a5f' },
-  sheetUnfreezeBtn: { backgroundColor: colors.textPrimary },
-  sheetDestructiveBtn: { backgroundColor: colors.failed },
-  sheetPrimaryBtnText: {
-    fontSize: typography.md,
-    color: '#fff',
-    fontWeight: typography.bold,
-  },
-  sheetCancelBtn: { alignItems: 'center', paddingVertical: spacing.md },
-  sheetCancelBtnText: { fontSize: typography.base, color: colors.textSecondary },
+  sheetCancelBtn: { width: '100%', paddingVertical: spacing.md },
 
-  // ── PIN sheet ──
+  // ── View PIN ──
   pinRow: {
     flexDirection: 'row',
     gap: spacing.md,
@@ -832,5 +1073,84 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'center',
     marginTop: spacing.xs,
+  },
+
+  // ── Change PIN keypad dots ──
+  pinDotsRow: {
+    flexDirection: 'row',
+    gap: spacing.lg,
+    justifyContent: 'center',
+    marginTop: spacing.md,
+  },
+  pinDot: {
+    width: 14,
+    height: 14,
+    borderRadius: radius.full,
+    borderWidth: 2,
+    borderColor: colors.border,
+    backgroundColor: 'transparent',
+  },
+  pinDotFilled: {
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
+  },
+
+  // ── Shared numpad (PIN + amount) ──
+  numpad: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: spacing.sm,
+  },
+  numKey: {
+    width: '33.333%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+  },
+
+  // ── Spending limit amount display ──
+  limitAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: spacing.xxxl,
+  },
+  limitSymbol: {
+    fontSize: typography.xxl,
+    color: colors.textPrimary,
+    fontWeight: typography.semibold,
+    paddingBottom: 5,
+  },
+  limitAmount: {
+    fontSize: 52,
+    color: colors.textPrimary,
+    fontWeight: typography.bold,
+    fontVariant: ['tabular-nums'],
+    lineHeight: 60,
+  },
+  limitMuted: { color: colors.textMuted },
+
+  // ── Limit sheet numpad (taller keys) ──
+  limitNumKey: {
+    width: '33.333%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.lg,
+  },
+
+  // ── Limit sheet actions ──
+  limitActions: {
+    width: '100%',
+    gap: spacing.xs,
+    paddingTop: spacing.sm,
+    alignItems: 'center',
+  },
+  limitCancelBtn: {
+    paddingVertical: spacing.md,
+  },
+  limitSaveBtn: {
+    width: '100%',
+    paddingVertical: spacing.lg,
   },
 });

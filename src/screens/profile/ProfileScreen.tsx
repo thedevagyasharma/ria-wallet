@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -26,6 +26,7 @@ import {
 
 import { colors, typography, spacing, radius } from '../../theme';
 import { useWalletStore } from '../../stores/useWalletStore';
+import SetPrimarySheet from '../../components/SetPrimarySheet';
 import { usePrefsStore } from '../../stores/usePrefsStore';
 import { getCurrency, formatAmount } from '../../data/currencies';
 import FlatButton from '../../components/FlatButton';
@@ -37,7 +38,7 @@ const WALLET_ACCENTS: Record<string, string> = {
   NGN: '#059669', GBP: '#4f46e5', EUR: '#0284c7', GTQ: '#0d9488',
   HNL: '#0369a1', DOP: '#dc2626', COP: '#ca8a04', MAD: '#ea580c',
 };
-function walletAccent(c: string) { return WALLET_ACCENTS[c] ?? colors.brand; }
+function walletAccent(c: string, override?: string) { return override ?? WALLET_ACCENTS[c] ?? colors.brand; }
 function alpha(hex: string, o: number) {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -117,14 +118,14 @@ function WalletRow({
   onRename,
   last,
 }: {
-  wallet: { id: string; currency: string; balance: number; isPrimary: boolean; nickname?: string };
+  wallet: { id: string; currency: string; balance: number; isPrimary: boolean; nickname?: string; accentColor?: string };
   hideBalances: boolean;
   onSetPrimary: () => void;
   onRename: () => void;
   last?: boolean;
 }) {
   const currency = getCurrency(wallet.currency);
-  const accent   = walletAccent(wallet.currency);
+  const accent   = walletAccent(wallet.currency, wallet.accentColor);
   const balance  = hideBalances
     ? `${currency.symbol}•••.••`
     : formatAmount(wallet.balance, wallet.currency);
@@ -177,6 +178,8 @@ export default function ProfileScreen() {
   const { hideBalances, appLockEnabled, defaultSendCurrency, toggleHideBalances, toggleAppLock } =
     usePrefsStore();
 
+  const [primarySheet, setPrimarySheet] = useState<{ id: string; label: string } | null>(null);
+
   function handleRename(walletId: string, current: string) {
     Alert.prompt(
       'Rename wallet',
@@ -190,9 +193,16 @@ export default function ProfileScreen() {
     );
   }
 
-  function handleSetPrimary(id: string) {
-    setPrimary(id);
+  function handleSetPrimary(id: string, label: string) {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setPrimarySheet({ id, label });
+  }
+
+  function confirmSetPrimary() {
+    if (!primarySheet) return;
+    setPrimary(primarySheet.id);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setPrimarySheet(null);
   }
 
   const handleToggleAppLock = useCallback(async () => {
@@ -235,7 +245,7 @@ export default function ProfileScreen() {
               key={w.id}
               wallet={w}
               hideBalances={hideBalances}
-              onSetPrimary={() => handleSetPrimary(w.id)}
+              onSetPrimary={() => handleSetPrimary(w.id, w.nickname ?? getCurrency(w.currency).code)}
               onRename={() => handleRename(w.id, w.nickname ?? getCurrency(w.currency).code)}
               last={i === wallets.length - 1}
             />
@@ -305,6 +315,13 @@ export default function ProfileScreen() {
 
         <Text style={styles.version}>Ria Wallet v1.0.0</Text>
       </ScrollView>
+
+      <SetPrimarySheet
+        visible={primarySheet !== null}
+        walletLabel={primarySheet?.label ?? ''}
+        onConfirm={confirmSetPrimary}
+        onCancel={() => setPrimarySheet(null)}
+      />
     </SafeAreaView>
   );
 }

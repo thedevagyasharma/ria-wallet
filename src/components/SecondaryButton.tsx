@@ -2,22 +2,24 @@ import React from 'react';
 import {
   Pressable,
   StyleSheet,
+  Text,
   View,
   ViewStyle,
   StyleProp,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, radius } from '../theme';
+import { colors, radius, typography } from '../theme';
 
 type Props = {
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
   disabled?: boolean;
   shape?: 'pill' | 'rect';
-  children: React.ReactNode;
+  label?: string;
+  children?: React.ReactNode;
 };
 
-export default function SecondaryButton({ onPress, style, disabled, shape = 'pill', children }: Props) {
+export default function SecondaryButton({ onPress, style, disabled, shape = 'pill', label, children }: Props) {
   return (
     <Pressable
       onPress={onPress}
@@ -42,7 +44,9 @@ export default function SecondaryButton({ onPress, style, disabled, shape = 'pil
           <View style={styles.insetBottom} />
         </>
       )}
-      {children}
+      {label != null
+        ? <Text style={[styles.label, disabled && styles.labelDisabled]}>{label}</Text>
+        : children}
     </Pressable>
   );
 }
@@ -84,5 +88,13 @@ const styles = StyleSheet.create({
     bottom: 0, left: 0, right: 0,
     height: 1,
     backgroundColor: 'rgba(0,0,0,0.03)',
+  },
+  label: {
+    fontSize: typography.md,
+    fontWeight: typography.semibold,
+    color: colors.textPrimary,
+  },
+  labelDisabled: {
+    color: colors.textMuted,
   },
 });

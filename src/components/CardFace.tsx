@@ -313,15 +313,22 @@ export function CardFront({
       {isFrozen && <View style={styles.frozenOverlay} />}
       {card.branded && <RiaLogoWatermark />}
 
-      {/* ── Top: name + frozen badge ── */}
+      {/* ── Top: name + type badge + frozen badge ── */}
       <View style={styles.topRow}>
         <Text style={[styles.cardName, { color: tc.secondary }]} numberOfLines={1}>{card.name}</Text>
-        {isFrozen && (
-          <View style={styles.frozenBadge}>
-            <Text style={styles.frozenIcon}>❄️</Text>
-            <Text style={styles.frozenText}>Frozen</Text>
+        <View style={styles.topBadges}>
+          <View style={[styles.typeBadge, { borderColor: light ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.22)' }]}>
+            <Text style={[styles.typeText, { color: light ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.60)' }]}>
+              {TYPE_LABELS[card.type]}
+            </Text>
           </View>
-        )}
+          {isFrozen && (
+            <View style={styles.frozenBadge}>
+              <Text style={styles.frozenIcon}>❄️</Text>
+              <Text style={styles.frozenText}>Frozen</Text>
+            </View>
+          )}
+        </View>
       </View>
 
       {/* ── Chip ── */}
@@ -418,6 +425,26 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl - 2,
     padding: 18,
     overflow: 'hidden',
+  },
+
+  // ── Top badges row (type + frozen) ──
+  topBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
+  },
+  typeBadge: {
+    borderWidth: 1,
+    borderRadius: radius.full,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  typeText: {
+    fontSize: 9,
+    fontWeight: typography.semibold,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
 
   // ── Frozen ──

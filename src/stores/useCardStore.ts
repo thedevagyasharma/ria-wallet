@@ -7,6 +7,10 @@ type CardStore = {
   addCard: (card: Card) => void;
   removeCard: (cardId: string) => void;
   toggleFreeze: (cardId: string) => void;
+  changePin: (cardId: string, pin: string) => void;
+  setOnlineTransactions: (cardId: string, value: boolean) => void;
+  setSpendingLimit: (cardId: string, period: 'daily' | 'weekly' | 'monthly', limit: number | null) => void;
+  replaceSpendingLimits: (cardId: string, limits: { daily?: number; weekly?: number; monthly?: number }) => void;
   getWalletCards: (walletId: string) => Card[];
 };
 
@@ -23,6 +27,38 @@ export const useCardStore = create<CardStore>((set, get) => ({
     set((state) => ({
       cards: state.cards.map((c) =>
         c.id === cardId ? { ...c, frozen: !c.frozen } : c
+      ),
+    })),
+
+  changePin: (cardId, pin) =>
+    set((state) => ({
+      cards: state.cards.map((c) => c.id === cardId ? { ...c, pin } : c),
+    })),
+
+  setOnlineTransactions: (cardId, value) =>
+    set((state) => ({
+      cards: state.cards.map((c) => c.id === cardId ? { ...c, onlineTransactions: value } : c),
+    })),
+
+  setSpendingLimit: (cardId, period, limit) =>
+    set((state) => ({
+      cards: state.cards.map((c) => {
+        if (c.id !== cardId) return c;
+        const prev = c.spendingLimits ?? {};
+        const next = { ...prev };
+        if (limit == null) {
+          delete next[period];
+        } else {
+          next[period] = limit;
+        }
+        return { ...c, spendingLimits: next };
+      }),
+    })),
+
+  replaceSpendingLimits: (cardId, limits) =>
+    set((state) => ({
+      cards: state.cards.map((c) =>
+        c.id === cardId ? { ...c, spendingLimits: limits } : c
       ),
     })),
 

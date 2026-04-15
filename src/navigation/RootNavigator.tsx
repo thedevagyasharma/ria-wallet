@@ -17,6 +17,7 @@ import WalletsScreen from '../screens/wallets/WalletsScreen';
 import CurrencyPickerScreen from '../screens/wallets/CurrencyPickerScreen';
 import WalletReviewScreen from '../screens/wallets/WalletReviewScreen';
 import WalletSuccessScreen from '../screens/wallets/WalletSuccessScreen';
+import WalletSettingsScreen from '../screens/wallets/WalletSettingsScreen';
 import UnifiedActivityScreen from '../screens/wallets/UnifiedActivityScreen';
 import TransactionDetailScreen from '../screens/activity/TransactionDetailScreen';
 
@@ -151,6 +152,7 @@ export default function RootNavigator() {
         <Stack.Screen name="Main" component={TabNavigator} />
 
         {/* Wallet flows */}
+        <Stack.Screen name="WalletSettings" component={WalletSettingsScreen} options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
         <Stack.Screen name="Activity" component={UnifiedActivityScreen} />
         <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} />
         <Stack.Screen name="CurrencyPicker" component={CurrencyPickerScreen} />

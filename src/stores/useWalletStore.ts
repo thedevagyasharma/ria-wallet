@@ -14,6 +14,7 @@ type WalletStore = {
   deductBalance: (walletId: string, amount: number) => void;
   setPrimary: (id: string) => void;
   setNickname: (id: string, nickname: string) => void;
+  setAccentColor: (id: string, color: string) => void;
 };
 
 export const useWalletStore = create<WalletStore>((set, get) => ({
@@ -51,6 +52,13 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
     set((state) => ({
       wallets: state.wallets.map((w) =>
         w.id === id ? { ...w, nickname } : w
+      ),
+    })),
+
+  setAccentColor: (id, color) =>
+    set((state) => ({
+      wallets: state.wallets.map((w) =>
+        w.id === id ? { ...w, accentColor: color } : w
       ),
     })),
 }));

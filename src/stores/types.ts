@@ -19,6 +19,13 @@ export type Card = {
   fullNumber: string;
   frozen: boolean;
   type: CardType;
+  pin?: string;
+  onlineTransactions?: boolean;
+  spendingLimits?: {
+    daily?: number;
+    weekly?: number;
+    monthly?: number;
+  };
 };
 
 export type Wallet = {
@@ -27,6 +34,7 @@ export type Wallet = {
   balance: number;
   isPrimary: boolean;
   nickname?: string;
+  accentColor?: string;
 };
 
 export type Transaction = {

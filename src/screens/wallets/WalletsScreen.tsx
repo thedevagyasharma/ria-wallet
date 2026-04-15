@@ -20,6 +20,7 @@ import {
   FlatList,
   ScrollView,
   Dimensions,
+  Animated as RNAnimated,
   ListRenderItemInfo,
   NativeSyntheticEvent,
   NativeScrollEvent,
@@ -34,8 +35,7 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   Plus,
-  CreditCard,
-  UserCircle,
+  SlidersHorizontal,
   Eye,
   EyeOff,
 } from 'lucide-react-native';
@@ -76,7 +76,7 @@ const WALLET_ACCENTS: Record<string, string> = {
   NGN: '#059669', GBP: '#4f46e5', EUR: '#0284c7', GTQ: '#0d9488',
   HNL: '#0369a1', DOP: '#dc2626', COP: '#ca8a04', MAD: '#ea580c',
 };
-function walletAccent(c: string) { return WALLET_ACCENTS[c] ?? colors.brand; }
+function walletAccent(c: string, override?: string) { return override ?? WALLET_ACCENTS[c] ?? colors.brand; }
 function alpha(hex: string, o: number) {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -219,7 +219,7 @@ function FlipBalance({ real, revealed }: { real: string; revealed: boolean }) {
 
 function WalletItem({ wallet }: { wallet: Wallet }) {
   const currency = getCurrency(wallet.currency);
-  const accent   = walletAccent(wallet.currency);
+  const accent   = walletAccent(wallet.currency, wallet.accentColor);
 
   return (
     <View style={styles.walletItem}>
@@ -254,7 +254,7 @@ function WalletHeaderGradient({ wallet, index, scrollX }: {
   index: number;
   scrollX: SharedValue<number>;
 }) {
-  const accent = walletAccent(wallet.currency);
+  const accent = walletAccent(wallet.currency, wallet.accentColor);
   const opacityStyle = useAnimatedStyle(() => {
     const dist = Math.abs(scrollX.value - index * W);
     return { opacity: Math.max(0, 1 - dist / W) };
@@ -457,22 +457,37 @@ export default function WalletsScreen() {
 
   const active      = wallets[currentIndex] ?? wallets[0];
   const activeCards = active ? getWalletCards(active.id) : [];
-  const accent      = walletAccent(active?.currency ?? 'USD');
+  const accent      = walletAccent(active?.currency ?? 'USD', active?.accentColor);
   const walletTxs   = transactions
     .filter((t) => t.walletId === active?.id)
     .sort((a, b) => b.date.getTime() - a.date.getTime());
   const previewTxs = walletTxs.slice(0, MAX_PREVIEW_TXS);
+
+  // Card stack container height — RNAnimated.Value drives layout so the ScrollView
+  // sees the change and the activity section moves smoothly.
+  //
+  // The height is updated exactly once per wallet switch, at the midpoint where
+  // all cards are fully collapsed (p=1). At that instant the change is invisible,
+  // so the new wallet's full height is "reserved" before the cards begin to
+  // unstagger — no overflow, no jitter, no per-frame bridge calls.
+  const cardStackHeightAnim = useRef(
+    new RNAnimated.Value(stackH(Math.min(activeCards.length, CARD_SLOTS)))
+  ).current;
 
   // JS-thread side-effects: state updates + haptics (called via runOnJS)
   const handleScrollJS = useCallback((x: number) => {
     const nearest = Math.max(0, Math.min(Math.round(x / W), wallets.length - 1));
     if (nearest !== pendingIdx.current) {
       pendingIdx.current = nearest;
+      // Reserve the new wallet's full stack height now — cards are fully collapsed
+      // at the midpoint so this setValue is invisible to the user.
+      const n = Math.min(getWalletCards(wallets[nearest].id).length, CARD_SLOTS);
+      cardStackHeightAnim.setValue(stackH(n));
       setCurrentIndex(nearest);
       setActiveWallet(wallets[nearest].id);
       Haptics.selectionAsync();
     }
-  }, [wallets, setActiveWallet]);
+  }, [wallets, setActiveWallet, getWalletCards, cardStackHeightAnim]);
 
   // UI-thread handler — scrollX updated here so animated children (symbols,
   // gradients, dots) track the finger with zero JS-thread lag.
@@ -500,16 +515,17 @@ export default function WalletsScreen() {
     [],
   );
 
-  const handleSend      = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); if (active) navigation.navigate('SendMoney', { walletId: active.id }); }, [active, navigation]);
-  const handleCards     = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);  if (active) navigation.navigate('WalletCardList', { walletId: active.id }); }, [active, navigation]);
-  const handleStub      = useCallback(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), []);
-  const handleAddWallet = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); navigation.navigate('CurrencyPicker'); }, [navigation]);
-  const handleSeeAll    = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); if (active) navigation.navigate('Activity', { walletId: active.id }); }, [active, navigation]);
+  const handleSend       = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); if (active) navigation.navigate('SendMoney', { walletId: active.id }); }, [active, navigation]);
+  const handleCards      = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);  if (active) navigation.navigate('WalletCardList', { walletId: active.id }); }, [active, navigation]);
+  const handleCustomize  = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);  if (active) navigation.navigate('WalletSettings', { walletId: active.id }); }, [active, navigation]);
+  const handleStub       = useCallback(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), []);
+  const handleAddWallet  = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); navigation.navigate('CurrencyPicker'); }, [navigation]);
+  const handleSeeAll     = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); if (active) navigation.navigate('Activity', { walletId: active.id }); }, [active, navigation]);
 
   // Interpolation ranges — stable as long as wallets list doesn't change
   const accentInputRange = wallets.map((_, i) => i * W);
-  const accentColorList  = wallets.map(w => walletAccent(w.currency));
-  const accentSubtleList = wallets.map(w => alpha(walletAccent(w.currency), 0.1));
+  const accentColorList  = wallets.map(w => walletAccent(w.currency, w.accentColor));
+  const accentSubtleList = wallets.map(w => alpha(walletAccent(w.currency, w.accentColor), 0.1));
 
   const animatedCircleStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(scrollX.value, accentInputRange, accentSubtleList),
@@ -546,9 +562,6 @@ export default function WalletsScreen() {
               <Plus size={11} color={colors.textMuted} strokeWidth={2.5} />
               <Text style={styles.addBtnText}>Wallet</Text>
             </SecondaryButton>
-            <Pressable hitSlop={8}>
-              <UserCircle size={28} color={colors.textMuted} strokeWidth={1.5} />
-            </Pressable>
           </View>
         </View>
 
@@ -614,7 +627,7 @@ export default function WalletsScreen() {
                 key={i}
                 index={i}
                 scrollX={scrollX}
-                accentColor={walletAccent(wallet.currency)}
+                accentColor={walletAccent(wallet.currency, wallet.accentColor)}
               />
             ))}
           </View>
@@ -622,22 +635,24 @@ export default function WalletsScreen() {
 
         {/* ── Actions ───────────────────────────────────────────────────── */}
         <View style={styles.actions}>
-          <ActionBtn icon={<ArrowUpRight  size={22} color={iconAccent} strokeWidth={1.8} />} label="Send"    onPress={handleSend}  circleStyle={animatedCircleStyle} />
-          <ActionBtn icon={<ArrowDownLeft size={22} color={iconAccent} strokeWidth={1.8} />} label="Receive" onPress={handleStub}  circleStyle={animatedCircleStyle} />
-          <ActionBtn icon={<Plus          size={22} color={iconAccent} strokeWidth={1.8} />} label="Add"     onPress={handleStub}  circleStyle={animatedCircleStyle} />
-          <ActionBtn icon={<CreditCard    size={22} color={iconAccent} strokeWidth={1.8} />} label="Cards"   onPress={handleCards} circleStyle={animatedCircleStyle} />
+          <ActionBtn icon={<ArrowUpRight      size={22} color={iconAccent} strokeWidth={1.8} />} label="Send"      onPress={handleSend}      circleStyle={animatedCircleStyle} />
+          <ActionBtn icon={<ArrowDownLeft    size={22} color={iconAccent} strokeWidth={1.8} />} label="Receive"   onPress={handleStub}      circleStyle={animatedCircleStyle} />
+          <ActionBtn icon={<Plus             size={22} color={iconAccent} strokeWidth={1.8} />} label="Add"       onPress={handleStub}      circleStyle={animatedCircleStyle} />
+          <ActionBtn icon={<SlidersHorizontal size={22} color={iconAccent} strokeWidth={1.8} />} label="Customize" onPress={handleCustomize} circleStyle={animatedCircleStyle} />
         </View>
 
         {/* ── Cards section ─────────────────────────────────────────────── */}
         <View style={styles.cardStackSection}>
           <View style={styles.cardHead}>
             <Text style={styles.cardLabel}>Cards</Text>
-            <Text style={[styles.cardViewAll, { color: accent }]}>
-              {activeCards.length > 0 ? 'View all  →' : 'Add card  →'}
-            </Text>
+            <Pressable onPress={handleCards} hitSlop={8}>
+              <Text style={[styles.cardViewAll, { color: accent }]}>
+                {activeCards.length > 0 ? 'View all  →' : 'Add card  →'}
+              </Text>
+            </Pressable>
           </View>
           {/* One stack per wallet, all absolutely layered — scrollX drives each one */}
-          <View style={{ height: stackH(Math.min(activeCards.length, CARD_SLOTS)), position: 'relative' }}>
+          <RNAnimated.View style={{ height: cardStackHeightAnim, position: 'relative' }}>
             {wallets.map((wallet, i) => (
               <View
                 key={wallet.id}
@@ -647,13 +662,13 @@ export default function WalletsScreen() {
                 <AnimatedCardStack
                   walletIndex={i}
                   cards={getWalletCards(wallet.id)}
-                  accent={walletAccent(wallet.currency)}
+                  accent={walletAccent(wallet.currency, wallet.accentColor)}
                   onPress={handleCards}
                   scrollX={scrollX}
                 />
               </View>
             ))}
-          </View>
+          </RNAnimated.View>
         </View>
 
         {/* ── Activity ──────────────────────────────────────────────────── */}
@@ -921,15 +936,18 @@ const styles = StyleSheet.create({
     fontWeight: typography.semibold,
   },
   cardTypeBadge: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
     borderRadius: radius.full,
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 2,
   },
   cardTypeText: {
-    fontSize: typography.xs,
-    color: 'rgba(255,255,255,0.7)',
-    fontWeight: typography.medium,
+    fontSize: 9,
+    color: 'rgba(255,255,255,0.60)',
+    fontWeight: typography.semibold,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   cardLast4: {
     fontSize: typography.sm,

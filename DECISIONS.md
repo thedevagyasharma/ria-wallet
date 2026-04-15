@@ -958,3 +958,125 @@ OVERLAY_W = OVERLAY_H * (294 / 196)               // preserve source aspect rati
 **Hierarchy rule:** On any given screen, Secondary is the supporting action and Flat is subordinate to it — never two Secondaries for actions of different weight. Example: WalletsScreen has "Add Wallet" as Secondary and "Hide balance" as Flat.
 
 **Quick action buttons excluded:** The Send / Receive / Add / Cards row uses a local `ActionBtn` component (vertical layout, animated coloured circle, label below). These are icon shortcuts, not CTA buttons, and don't belong in the three-tier family. `ActionBtn` stays local to WalletsScreen unless the pattern appears elsewhere.
+
+---
+
+### 88. Card stack animation — scroll-driven collapse, no timers, no state
+
+**Decision:** `WalletsScreen` renders one `AnimatedCardStack` per wallet, all absolutely layered in a `position: relative` container. Animation is driven entirely by `scrollX` via `useAnimatedStyle` worklets — no `useState`, `useEffect`, `setTimeout`, or `useLayoutEffect` inside the component.
+
+**Collapse formula:**
+```
+st = scrollX.value / W - walletIndex   // signed distance from this wallet's centre
+p  = clamp(|st| * 2, 0, 1)            // stagger progress: 0 = full stagger, 1 = collapsed
+```
+- `translateY[i] = slotTargetY(i, n) * (1 - p)` — cards slide to ty=0 as p→1
+- `scale[i]      = 1 - i * 0.02 * (1 - p)` — all scales converge to 1:1 at p=1
+- `opacity       = st > -0.5 && st < 0.5 ? 1 : 0` — **binary, not scroll-linked**
+
+**Why binary opacity:** At p=1 (the midpoint), all cards are at ty=0 and scale=1 — the stack looks like a single flat card. A hard-cut at that instant is invisible because the outgoing and incoming front cards occupy the same pixels. Linking opacity to scroll progress (the first two implementations) meant cards were visibly semi-transparent mid-swipe, and async JS state swaps introduced a frame of wrong content at low opacity.
+
+**Why no state/timers:** Previous timer-based approach (`setTimeout(COLLAPSE_MS + FADE_MS)`) had a race: the new card data (from React `setState`) wasn't always committed before the first visible opacity frame of the fade-in, causing a flash of empty/wrong content. With all stacks always rendered at ty=0 underneath, the incoming wallet's front card is already in the right position — no data swap needed.
+
+**Touch routing:** Wrapper `View` around each stack uses `pointerEvents="box-none"` for the active wallet and `"none"` for all others, so only the visible stack is tappable.
+
+**`slotTargetY` must be a worklet:** Reanimated 4 uses `react-native-worklets`, which throws if a plain JS function is captured in a worklet closure during serialization. Any helper called from inside `useAnimatedStyle` needs the `'worklet'` directive. Functions only called from JSX or `useEffect` (JS thread) do not.
+
+**Container height:** `height: stackH(Math.min(activeCards.length, CARD_SLOTS))` from React state. The jump when `currentIndex` changes happens at the midpoint where both stacks are invisible — no visible layout shift.
+
+---
+
+### 89. Card stack container height — RNAnimated.Value reserved at switch point
+
+**Decision:** The card stack container uses `RNAnimated.Value` (React Native core `Animated`, not Reanimated) for its height. `cardStackHeightAnim.setValue(stackH(n))` is called once inside `handleScrollJS` exactly when `pendingIdx` changes — i.e., at the wallet midpoint. The `RNAnimated.View` container height updates immediately to the new wallet's full stagger height at that instant.
+
+**Why this approach after ruling out alternatives:**
+
+| Approach | Problem |
+|---|---|
+| `useAnimatedStyle` on `height` | Bypasses React's layout engine — `ScrollView` never sees intermediate values, activity section jumps |
+| Reanimated `LinearTransition` | Documented limitation: layout animations don't work inside a scrollable `ScrollView` |
+| React Native `LayoutAnimation` | Conflicts with Reanimated; both try to own the native animation system simultaneously |
+| `useAnimatedReaction` → `RNAnimated.timing` | `useEffect` fires after paint — one frame where layout already snapped before animation starts |
+| `useAnimatedReaction` → `setValue` per frame | `runOnJS` latency causes container to lag 1–2 frames behind the card stagger on fast swipes, producing visible overflow and jitter |
+
+**Why `setValue` at the midpoint is invisible:** At the wallet crossover point (`Math.round(scrollX / W)` changes), stagger progress `p = 1` for both stacks — every card is fully collapsed to `translateY = 0`. The visual height is `STACK_CARD_H` regardless of card count. Jumping `cardStackHeightAnim` to `stackH(n_new)` at this instant only adds or removes empty space *below* invisible collapsed cards. As the user continues swiping toward the new wallet, `p` decreases from 1 → 0 and the cards stagger downward into the already-reserved space. No overflow is possible.
+
+**Why `RNAnimated` (not Reanimated):** `RNAnimated.Value` with `useNativeDriver: false` propagates through React Native's Yoga layout engine on the JS thread. The `ScrollView` sees each layout update and repositions the activity section accordingly. Reanimated's `useAnimatedStyle` writes directly to the native view, bypassing Yoga — the `ScrollView` sees nothing until a full React render cycle.
+
+**One `setValue` call per wallet switch** — not per frame. No per-frame bridge traffic, no jitter.
+
+---
+
+### 91. Send screen — quick amount chips
+
+**Decision:** Added a row of 4 quick-amount chips above the numpad on the amount entry step. Chip amounts are defined per currency (`QUICK_AMOUNTS` map) rather than derived dynamically from exchange rates.
+
+**Why per-currency presets over rate-derived values:** Computing chip amounts as `sendPreset × rate` produces awkward numbers (e.g. ₱1,743) that look strange as presets and erode trust. Round, culturally familiar amounts (₱500, ₱1,000, ₱2,500, ₱5,000) are faster to read and more likely to match what the user actually wants to send. The presets are sized to the realistic remittance range for each currency — NGN amounts are in the tens of thousands, COP in the hundreds of thousands, USD in the tens.
+
+**Chips track the active field:** When the send field is active the chips show send-currency amounts; when the receive field is active they flip to receive-currency amounts and tap sets `receiveRaw`. Affordability for receive-side chips is back-calculated through the rate + fee.
+
+**Trade-off:** The presets need manual maintenance if new currencies are added.
+
+---
+
+### 92. Recipient swap resets the amount form
+
+**Decision:** Tapping the swap-recipient button (`ArrowLeftRight`) or selecting a new contact after a swap resets `sendRaw`, `receiveRaw`, and `activeField` to their initial state.
+
+**Why:** The previous amount is bound to the previous recipient's currency and relationship context. Carrying it forward to a different recipient (potentially a different currency entirely) is misleading — the user would see a stale number that doesn't correspond to anything they've chosen yet. Resetting on swap makes the fresh start explicit and avoids confusion.
+
+**Why not reset on first contact selection:** `isSwap` guards the reset so it only fires when `selectedContact !== null` at selection time — the very first pick in a new flow is unaffected.
+
+---
+
+### 90. Cards section "View all" / "Add card" — wrapped in Pressable
+
+**Decision:** The `cardViewAll` `Text` element is wrapped in a `Pressable` with `onPress={handleCards}` and `hitSlop={8}`.
+
+**Why:** The text was rendering with the correct label and colour but had no gesture handler — tapping it did nothing. `handleCards` already existed (used by the card stack tap and the Cards action button) and navigates to `WalletCardList`. The `hitSlop` compensates for the small tap target of the inline text.
+
+---
+
+### 93. Card detail screen — full management UI replacing minimal action buttons
+
+**Decision:** Replaced the original freeze / view PIN / remove action tray with a structured full-screen layout: quick action row (Freeze, View PIN) → Card settings section (Change PIN, Online transactions toggle) → Spending limits section → Card info section → Danger zone (Report, Remove).
+
+**Why:** The original three buttons had no room for settings like online transaction control, PIN change, or per-period spend limits. Grouping by semantic category (security, spending, info, danger) makes the page scannable and avoids a flat list of unrelated actions.
+
+---
+
+### 94. Spending limits — three independent per-period limits (daily / weekly / monthly)
+
+**Decision:** The `Card` type stores `spendingLimits: { daily?: number; weekly?: number; monthly?: number }` instead of a single `spendingLimit + spendingLimitPeriod`. Each period is set and cleared independently. The card detail screen shows three separate rows (Daily / Weekly / Monthly), each opening its own focused drawer.
+
+**Why:** A single active limit with a period selector forced a false choice — the user can only have one limit at a time. Real spending control means capping per day AND per week AND per month simultaneously. Three independent rows make it obvious which limits are set (value shown inline) and let the user edit one without disturbing the others.
+
+**Store action:** `setSpendingLimit(cardId, period, limit | null)` updates one period atomically. `replaceSpendingLimits(cardId, limits)` replaces the whole object (available for bulk operations).
+
+---
+
+### 95. Four-button system — Primary / Secondary / Destructive / Flat
+
+**Decision:** All interactive buttons use one of four components. Raw `Pressable` is never used as a button.
+
+| Component | Appearance | When |
+|---|---|---|
+| `PrimaryButton` | Orange gradient | Main CTA — one per sheet/screen |
+| `SecondaryButton` | White bordered, gradient sheen | Secondary / neutral actions; `shape="rect"` only for icon+text action grids |
+| `DestructiveButton` | Red, same structure as Primary | Irreversible harm only (remove card, report card) |
+| `FlatButton` | No background, opacity on press | Dismiss / cancel / skip |
+
+All four accept a `label` prop that renders text internally with correct weight, size, and disabled colour (`colors.textMuted`). External `<Text>` children and button text styles outside the component are prohibited. `style` prop is layout-only (width, padding, margin) — never background or text colour overrides.
+
+**Why:** Previous iterations accumulated raw `Pressable` buttons with ad-hoc colours (freeze = dark blue, report = amber) that violated brand guidelines. Centralising text rendering inside the components ensures disabled states, press feedback, and typography are consistent everywhere without caller-side logic.
+
+---
+
+### 96. BottomSheet — swipe-to-dismiss opt-in via `swipeToDismiss` prop
+
+**Decision:** The shared `BottomSheet` component has a `swipeToDismiss` prop (default `false`). When enabled, dragging the handle down past 100px or at velocity > 600 animates the sheet out from its current drag position and calls `onClose`. Currently only the spending limit sheet enables it.
+
+**Why:** Swipe-to-dismiss is not universally appropriate — confirmation sheets intentionally require an explicit tap to prevent accidental dismissal. The limit sheet benefits from it because it is a tall input sheet (not a quick confirm) where the user may want to cancel mid-entry without reaching for the Cancel button.
+
+**Implementation:** A `dragY` shared value is added on top of the existing `sheetY` open/close animation value. The pan gesture runs on the handle area only to avoid conflicting with interactive children (numpad keys, toggles).

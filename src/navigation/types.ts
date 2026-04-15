@@ -24,6 +24,8 @@ export type RootStackParamList = {
   AddCardName: { walletId: string; cardType: string };
   AddCardColor: { walletId: string; cardType: string; name: string };
   AddCardReview: { cardId: string };
+  // Wallet settings
+  WalletSettings: { walletId: string };
   // Activity
   Activity: { walletId: string };
   TransactionDetail: { txId: string };

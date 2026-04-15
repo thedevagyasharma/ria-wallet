@@ -27,7 +27,8 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { useNavigation, CommonActions } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ChevronLeft, ChevronDown, Search, X, ArrowUpDown, ArrowLeftRight, Check, Delete, Phone, Zap, Pen } from 'lucide-react-native';
+import { ChevronLeft, ChevronDown, Search, X, ArrowUpDown, ArrowLeftRight, Check, Phone, Zap, Pen } from 'lucide-react-native';
+import { NumKey } from '../../components/NumPad';
 
 import { colors, typography, spacing, radius } from '../../theme';
 import PrimaryButton from '../../components/PrimaryButton';
@@ -44,6 +45,22 @@ type Phase = 'idle' | 'processing' | 'success' | 'viewTransfer' | 'failed' | 're
 type Outcome = 'success' | 'failure';
 
 // ─── Primary receive currency per recipient country ───────────────────────────
+
+const QUICK_AMOUNTS: Record<string, number[]> = {
+  USD: [25,  50,   100,   500],
+  GBP: [20,  50,   100,   500],
+  EUR: [25,  50,   100,   500],
+  MXN: [200, 500,  1000,  5000],
+  PHP: [500, 1000, 2500,  5000],
+  INR: [500, 1000, 2500,  5000],
+  NGN: [2500, 5000, 10000, 50000],
+  GTQ: [100, 200,  500,   1000],
+  HNL: [200, 500,  1000,  2500],
+  DOP: [500, 1000, 2500,  5000],
+  COP: [50000, 100000, 250000, 500000],
+  MAD: [100, 250,  500,   1000],
+};
+const DEFAULT_QUICK_AMOUNTS = [25, 50, 100, 500];
 
 const PRIMARY_CURRENCY_BY_FLAG: Record<string, string> = {
   '🇲🇽': 'MXN',
@@ -93,24 +110,6 @@ function detectFromPhone(phone: string): { flag: string; currency: string } | nu
 // ─── Numpad ───────────────────────────────────────────────────────────────────
 
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
-
-function NumKey({ label, onPress }: { label: string; onPress: () => void }) {
-  const scale = useSharedValue(1);
-  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  const handlePress = () => {
-    scale.value = withSequence(withTiming(0.88, { duration: 60 }), withTiming(1, { duration: 100 }));
-    onPress();
-  };
-  return (
-    <Pressable onPress={handlePress} style={styles.key}>
-      <Animated.View style={animStyle}>
-        {label === '⌫'
-          ? <Delete size={22} color={colors.textPrimary} strokeWidth={1.8} />
-          : <Text style={styles.keyText}>{label}</Text>}
-      </Animated.View>
-    </Pressable>
-  );
-}
 
 // ─── Recent contact circle ────────────────────────────────────────────────────
 
@@ -678,11 +677,17 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
 
   const handleSelectContact = useCallback((contact: Contact) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const isSwap = selectedContact !== null;
     setSelectedContact(contact);
     setReceiveCurrency(getPrimaryCurrency(contact.flag));
     setContactQuery('');
+    if (isSwap) {
+      setSendRaw('0');
+      setReceiveRaw('0');
+      setActiveField('send');
+    }
     goToStep('amount');
-  }, [goToStep]);
+  }, [selectedContact, goToStep]);
 
   const handleSendToPhone = useCallback((phone: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -714,6 +719,9 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
   const handleSwapRecipient = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setContactQuery(selectedContact?.id.startsWith('adhoc-') ? selectedContact.phone : '');
+    setSendRaw('0');
+    setReceiveRaw('0');
+    setActiveField('send');
     goToStep('recipient');
   }, [selectedContact, goToStep]);
 
@@ -981,10 +989,53 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                   </View>
                 </ScrollView>
 
+                {/* ── Quick amounts ── */}
+                <View style={styles.quickAmounts}>
+                  {(activeField === 'send'
+                    ? (QUICK_AMOUNTS[sendWallet.currency] ?? DEFAULT_QUICK_AMOUNTS)
+                    : (QUICK_AMOUNTS[receiveCurrency]    ?? DEFAULT_QUICK_AMOUNTS)
+                  ).map((amt) => {
+                    const isSend = activeField === 'send';
+                    const symbol = isSend ? sendCurrency.symbol : getCurrency(receiveCurrency).symbol;
+                    const affordable = isSend
+                      ? amt <= sendWallet.balance
+                      : (amt / rate + getFee(amt / rate, sendWallet.currency)) <= sendWallet.balance;
+                    const activeAmt = isSend ? parseFloat(sendRaw) : parseFloat(receiveRaw);
+                    const isActive = activeAmt === amt;
+                    return (
+                      <Pressable
+                        key={amt}
+                        onPress={() => {
+                          if (!affordable) return;
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          if (isSend) {
+                            setSendRaw(String(amt));
+                          } else {
+                            setReceiveRaw(String(amt));
+                          }
+                        }}
+                        style={[
+                          styles.quickChip,
+                          isActive && styles.quickChipActive,
+                          !affordable && styles.quickChipDisabled,
+                        ]}
+                      >
+                        <Text style={[
+                          styles.quickChipText,
+                          isActive && styles.quickChipTextActive,
+                          !affordable && styles.quickChipTextDisabled,
+                        ]}>
+                          {symbol}{amt}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
                 {/* ── Numpad ── */}
                 <View style={styles.numpad}>
                   {KEYS.map((k) => (
-                    <NumKey key={k} label={k} onPress={() => handleKey(k)} />
+                    <NumKey key={k} label={k} onPress={() => handleKey(k)} style={styles.key} />
                   ))}
                 </View>
 
@@ -1291,6 +1342,42 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   rateChipText: { fontSize: typography.xs, color: colors.textSecondary, fontWeight: typography.medium },
+
+  // Quick amounts
+  quickAmounts: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm,
+  },
+  quickChip: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  quickChipActive: {
+    backgroundColor: colors.textPrimary,
+    borderColor: colors.textPrimary,
+  },
+  quickChipDisabled: {
+    opacity: 0.35,
+  },
+  quickChipText: {
+    fontSize: typography.sm,
+    color: colors.textSecondary,
+    fontWeight: typography.semibold,
+  },
+  quickChipTextActive: {
+    color: colors.bg,
+  },
+  quickChipTextDisabled: {
+    color: colors.textMuted,
+  },
 
   // Numpad
   numpad: {
