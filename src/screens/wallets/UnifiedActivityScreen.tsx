@@ -17,8 +17,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { colors, typography, spacing, radius } from '../../theme';
 import { useWalletStore } from '../../stores/useWalletStore';
-import { getCurrency, formatAmount } from '../../data/currencies';
-import StatusChip from '../../components/StatusChip';
+import { getCurrency } from '../../data/currencies';
+import TransactionRow from '../../components/TransactionRow';
 import type { Transaction } from '../../stores/types';
 import { useTabScrollReset } from '../../navigation/TabScrollContext';
 import type { RootStackParamList } from '../../navigation/types';
@@ -79,36 +79,6 @@ function FilterChip({
   );
 }
 
-// ─── Transaction row ──────────────────────────────────────────────────────────
-
-function TransactionRow({ tx, onPress }: { tx: Transaction; onPress: () => void }) {
-  const isCredit = tx.amount > 0;
-  const formatted = formatAmount(Math.abs(tx.amount), tx.currency);
-  const date = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(tx.date);
-  const currency = getCurrency(tx.currency);
-
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.txRow, pressed && styles.txRowPressed]}
-    >
-      <View style={styles.txAvatar}>
-        <Text style={styles.txAvatarText}>{tx.recipientName.charAt(0).toUpperCase()}</Text>
-      </View>
-      <View style={styles.txMiddle}>
-        <Text style={styles.txName}>{tx.recipientName}</Text>
-        <View style={styles.txMeta}>
-          <StatusChip status={tx.status} />
-          <Text style={styles.txDate}>{date}</Text>
-          <Text style={styles.txCurrencyFlag}>{currency.flag}</Text>
-        </View>
-      </View>
-      <Text style={[styles.txAmount, { color: isCredit ? colors.success : colors.textPrimary }]}>
-        {isCredit ? '+' : '−'}{formatted}
-      </Text>
-    </Pressable>
-  );
-}
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
@@ -210,10 +180,7 @@ export default function UnifiedActivityScreen() {
           renderItem={({ item }) => (
             <TransactionRow
               tx={item}
-              onPress={() => {
-                Haptics.selectionAsync();
-                navigation.navigate('TransactionDetail', { txId: item.id });
-              }}
+              onPress={() => navigation.navigate('TransactionDetail', { txId: item.id })}
             />
           )}
           renderSectionHeader={({ section }) => (

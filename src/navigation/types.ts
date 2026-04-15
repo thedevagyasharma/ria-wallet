@@ -23,7 +23,7 @@ export type RootStackParamList = {
   AddCardType: { walletId: string };
   AddCardName: { walletId: string; cardType: string };
   AddCardColor: { walletId: string; cardType: string; name: string };
-  AddCardReview: { walletId: string; cardType: string; name: string; color: string };
+  AddCardReview: { cardId: string };
   // Activity
   Activity: { walletId: string };
   TransactionDetail: { txId: string };

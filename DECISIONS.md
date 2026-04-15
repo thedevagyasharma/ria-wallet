@@ -849,3 +849,112 @@ The continuous direct mapping (`collapsed.value = clamp(y / ACTIONS_H, 0, 1)`) t
 
 **Why:** The controls exist to simulate different backend responses. Once a transfer attempt is in progress they are irrelevant — the outcome has already been captured. Leaving them visible during processing, success, or failure states made the prototype UI look unfinished and was distracting during the transition animations.
 
+
+---
+
+## Snapshot 14 — 2026-04-15
+*Covers: add card flow redesign, Ria Edition card customisation, metallic gradient, Ria logo overlay, adaptive text colours*
+
+### 81. Add Card review step removed — card created on the colour screen
+
+**Decision:** The `AddCardReview` screen no longer receives full card data as navigation params. The card is created (via `addCard`) directly inside `handleAddCard` on `AddCardColorScreen`, then navigated to `AddCardReview` with only `{ cardId }`. `AddCardReview` looks up the card from the store and acts as a pure success + wallet-provisioning screen.
+
+**Why:** Showing a preview of the card on the colour screen and then a near-identical preview on the review screen was redundant and felt like an extra step with no new information. Creating the card at the colour-confirm point and navigating directly to success is the same pattern used for wallet creation (`WalletReview` → card created → `WalletSuccess`). `AddCardReview` now has a distinct role: success confirmation + "Add to Apple/Google Wallet" entry point.
+
+---
+
+### 82. Ria Edition palette — 4 named options, finish baked in, no user toggle
+
+**Decision:** The colour screen has two sections: "Ria Edition" (4 fixed options) and "Color" (11 solid options). Ria Edition options are defined in `RIA_PALETTE` with their finish baked in:
+
+| Label   | Hex       | Finish    |
+|---------|-----------|-----------|
+| Classic | `#f97316` | plastic   |
+| Metal   | `#71717a` | metallic  |
+| Green   | `#14532d` | plastic   |
+| Black   | `#09090b` | plastic   |
+
+The old "Finish" section (plastic / metallic toggle) was removed entirely. Metal is the only card that gets metallic finish and it is the only way to get it.
+
+**Why:** Exposing finish as a user-selectable toggle invited nonsensical combinations (a bright orange metallic card). Baking finish into the palette entry enforces correct pairings and eliminates a UI section without removing capability.
+
+---
+
+### 83. Metallic card gradient — static 5-stop diagonal, no animation
+
+**Decision:** The Metal Ria Edition card uses a `LinearGradient` (`expo-linear-gradient`) with 5 stops:
+
+```
+colors:    ['#181818', '#404040', '#707070', '#404040', '#181818']
+locations: [0, 0.15, 0.5, 0.85, 1]
+start:     { x: 0, y: 0 }
+end:       { x: 1, y: 1 }
+```
+
+**Why — static:** Reanimated shimmer animations (`withRepeat` / `withSequence`) crashed Expo Go approximately 3 seconds after selecting the Metal card. Multiple workarounds (duration: 16, `runOnJS` recursive callback) all crashed. A third-party metal shader was rejected (user preference). Static gradient was accepted as the stable solution.
+
+**Why — 5 stops, not 11:** An earlier 11-stop symmetric gradient produced 3 visible streaks because too many stops were clustered at similar brightness values. Reducing to 5 stops with a single peak and wide location spread (15% dark zones at each edge) gives one smooth sheen across the full card face.
+
+**Why — these specific values:** Corners `#181818` (near-black) + peak `#707070` (mid-grey). Avoids the card looking overly light or silvery — the dominant read is dark gunmetal with a single diagonal light catch.
+
+**Metallic always uses white text.** `card.finish === 'metallic'` forces `light = false` in `CardFront`, bypassing the luminance check. The gradient peak is mid-grey, not near-white, so the luminance formula would otherwise incorrectly flag it as a light card.
+
+**Border:** `rgba(200,200,200,0.25)` for metallic vs. `card.color @ 6%` for plastic — subtle silver rim vs. colour-tinted rim.
+
+---
+
+### 84. Ria logo overlay — `ria-card-overlay.png` with soft-light blend mode
+
+**Decision:** Branded (Ria Edition) cards render a `<Image>` overlay using `assets/ria-card-overlay.png` (294×196 RGBA PNG) with `mixBlendMode: 'soft-light'` (cast as `any` — React Native doesn't type this). The image is left-aligned within the card's 18px content padding, not edge-to-edge.
+
+**Dimensions:**
+```
+CARD_PADDING = 18
+OVERLAY_H = CARD_HEIGHT - 4 - CARD_PADDING * 2   // content-area height
+OVERLAY_W = OVERLAY_H * (294 / 196)               // preserve source aspect ratio
+```
+
+`resizeMode="stretch"` with explicit pixel dimensions — required because Metro can't reliably apply `mixBlendMode` to auto-sized images.
+
+**Why soft-light:** Soft-light is additive on light areas and subtractive on dark areas, so the overlay tints the card surface rather than painting over it. The logo reads as a subtle texture rather than an opaque stamp.
+
+**Why left-aligned:** Matches the reference image the user provided. The right side of the card is reserved for the network logo and expiry/CVV data in the bottom row.
+
+**`branded` flag on `Card`:** Only cards with `branded: true` render the watermark. Solid-colour cards skip it.
+
+---
+
+### 85. Adaptive card text colours — luminance-based, metallic always white
+
+**Decision:** `isLightColor(hex)` computes perceived luminance: `(r*299 + g*587 + b*114)/1000 > 128`. `cardTextColors(light)` returns four RGBA values (primary, secondary, muted, icon) for dark-on-light or white-on-dark use. In `CardFront`, metallic cards hardcode `light = false` before the check.
+
+**Why:** Orange (`#f97316`) has luminance ≈ 145 → `light = true` → dark text. This was the trigger: brand orange was added as a card colour and the white text was illegible. The luminance formula covers all future palette additions automatically.
+
+**Metallic override:** The gradient peak is mid-grey (`#707070`, luminance ≈ 112 → `light = false` anyway), but the diagonal spread means some areas are near-black. Forcing `light = false` unconditionally ensures white text regardless of which part of the gradient underlies any given text element.
+
+---
+
+### 86. Card number fullNumber generation fix — always exactly 16 digits
+
+**Decision:** The first group (`g1`) is generated as `prefix + 3 random digits` (not 4). `fullNumber = g1 (4 chars) + g2 (4) + g3 (4) + last4 (4) = 16 digits`.
+
+**Why:** The original `g1 = prefix + Math.random().toString().slice(2, 6)` produced 5 characters in the first group (1 prefix + 4 random), giving a 17-digit full number. The card list rendered last4 from the store; the card detail screen derived last4 from `fullNumber.slice(-4)`. With 17 digits, `slice(-4)` matched but the displayed number was wrong — the mismatch surfaced visually when comparing the list card to the detail card.
+
+---
+
+### 87. Three-tier button system — Primary, Secondary, Flat
+
+**Decision:** The app uses exactly three button variants: `PrimaryButton` (orange/brand CTA), `SecondaryButton` (white/surface fill, bordered), and `FlatButton` (no chrome, opacity-press only). A fourth "ghost" variant (border only, no fill) was considered and rejected.
+
+**Why:** The UI had accumulated ad-hoc `Pressable` styling for low-priority actions — the "Hide balance" eye toggle had a custom surface background + border that duplicated SecondaryButton visually but wasn't using the component, and "Set primary" in ProfileScreen had its own ghost-like bordered style. This created visual inconsistency and no shared press feedback behaviour.
+
+**Variant semantics:**
+- **Primary** — forward-momentum action, one per screen, always bottom. "Confirm", "Send", "Add card".
+- **Secondary** — supporting action with chrome. "Add Wallet", "See all activity", "Contact support".
+- **Flat** — inline, subordinate, no chrome. "Hide balance" toggle, "Set primary".
+
+**Ghost rejected:** A border-only button only earns its place when sitting on a coloured or image background where white fill would look wrong. No such surface exists in this app. Both use cases were absorbed into Secondary or Flat.
+
+**Hierarchy rule:** On any given screen, Secondary is the supporting action and Flat is subordinate to it — never two Secondaries for actions of different weight. Example: WalletsScreen has "Add Wallet" as Secondary and "Hide balance" as Flat.
+
+**Quick action buttons excluded:** The Send / Receive / Add / Cards row uses a local `ActionBtn` component (vertical layout, animated coloured circle, label below). These are icon shortcuts, not CTA buttons, and don't belong in the three-tier family. `ActionBtn` stays local to WalletsScreen unless the pattern appears elsewhere.

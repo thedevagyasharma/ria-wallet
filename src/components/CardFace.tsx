@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Dimensions, Pressable } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, Dimensions, Pressable, Image } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -32,6 +33,23 @@ function hexToRgba(hex: string, alpha: number): string {
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r},${g},${b},${alpha})`;
+}
+
+/** True when the card background is light enough to need dark text. */
+function isLightColor(hex: string): boolean {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 128;
+}
+
+function cardTextColors(light: boolean) {
+  return {
+    primary:   light ? 'rgba(0,0,0,0.85)'  : 'rgba(255,255,255,0.92)',
+    secondary: light ? 'rgba(0,0,0,0.70)'  : 'rgba(255,255,255,0.75)',
+    muted:     light ? 'rgba(0,0,0,0.45)'  : 'rgba(255,255,255,0.38)',
+    icon:      light ? 'rgba(0,0,0,0.28)'  : 'rgba(255,255,255,0.28)',
+  };
 }
 
 // ─── Network logos ────────────────────────────────────────────────────────────
@@ -68,14 +86,36 @@ const TYPE_LABELS: Record<CardType, string> = {
   'single-use': 'Single-use',
 };
 
+
 // ─── Card surface ─────────────────────────────────────────────────────────────
 
 function CardSurface({ card, children }: { card: Card; children: React.ReactNode }) {
+  const isMetallic = card.finish === 'metallic';
+
   return (
-    <View style={[styles.cardOuter, { borderColor: hexToRgba(card.color, 0.06) }]}>
-      <View style={[styles.card, { backgroundColor: card.color }]}>
+    <View style={[styles.cardOuter, { borderColor: isMetallic ? 'rgba(200,200,200,0.25)' : hexToRgba(card.color, 0.06) }]}>
+      <View style={[styles.card, !isMetallic && { backgroundColor: card.color }]}>
+
+        {/* Metallic gradient background — replaces flat colour */}
+        {isMetallic && (
+          <LinearGradient
+            colors={[
+              '#181818',
+              '#404040',
+              '#707070',
+              '#404040',
+              '#181818',
+            ]}
+            locations={[0, 0.15, 0.5, 0.85, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+        )}
+
         <CardOverlay id={card.id} width={SVG_W} height={SVG_H} borderRadius={SVG_R} strokeWidth={2} />
         {children}
+
       </View>
     </View>
   );
@@ -89,11 +129,13 @@ function FlipChar({
   actual,
   revealed,
   delay,
+  color,
 }: {
   masked: string;
   actual: string;
   revealed: boolean;
   delay: number;
+  color?: string;
 }) {
   const progress = useSharedValue(0);
 
@@ -114,10 +156,10 @@ function FlipChar({
   return (
     <View style={styles.charCell}>
       <Animated.View style={[StyleSheet.absoluteFill, styles.charInner, backStyle]}>
-        <Text style={styles.charText}>{actual}</Text>
+        <Text style={[styles.charText, color ? { color } : undefined]}>{actual}</Text>
       </Animated.View>
       <Animated.View style={[styles.charInner, frontStyle]}>
-        <Text style={styles.charText}>{masked}</Text>
+        <Text style={[styles.charText, color ? { color } : undefined]}>{masked}</Text>
       </Animated.View>
     </View>
   );
@@ -125,14 +167,14 @@ function FlipChar({
 
 // ─── 16-digit card number ─────────────────────────────────────────────────────
 
-function FlipCardNumber({ fullNumber, revealed }: { fullNumber: string; revealed: boolean }) {
+function FlipCardNumber({ fullNumber, revealed, color }: { fullNumber: string; revealed: boolean; color?: string }) {
   const digits = fullNumber.replace(/\D/g, '').padEnd(16, '0');
   return (
     <View style={styles.flipRow}>
       {Array.from({ length: 16 }, (_, i) => (
         <React.Fragment key={i}>
           {i > 0 && i % 4 === 0 && <View style={styles.groupGap} />}
-          <FlipChar masked="•" actual={digits[i] ?? '0'} revealed={i >= 12 || revealed} delay={i * 38} />
+          <FlipChar masked="•" actual={digits[i] ?? '0'} revealed={i >= 12 || revealed} delay={i * 38} color={color} />
         </React.Fragment>
       ))}
     </View>
@@ -141,39 +183,105 @@ function FlipCardNumber({ fullNumber, revealed }: { fullNumber: string; revealed
 
 // ─── CVV digits ───────────────────────────────────────────────────────────────
 
-function FlipCvv({ cvv, revealed }: { cvv: string; revealed: boolean }) {
+function FlipCvv({ cvv, revealed, color }: { cvv: string; revealed: boolean; color?: string }) {
   return (
     <View style={styles.flipRow}>
       {Array.from(cvv).map((digit, i) => (
-        <FlipChar key={i} masked="•" actual={digit} revealed={revealed} delay={i * 70} />
+        <FlipChar key={i} masked="•" actual={digit} revealed={revealed} delay={i * 70} color={color} />
       ))}
     </View>
   );
 }
 
-// ─── "Copied" tooltip ─────────────────────────────────────────────────────────
-// Absolute-positioned, centered over the card face. Fades in/out.
+// ─── Animated copy → check flip icon ─────────────────────────────────────────
+// scaleX collapses Copy to 0 at the midpoint, then expands Check from 0.
 
-function CopiedTooltip({ copiedField }: { copiedField?: string | null }) {
-  const opacity = useSharedValue(0);
-  const [label, setLabel] = useState('');
+function AnimatedCopyIcon({ isCopied, color, size }: { isCopied: boolean; color?: string; size: number }) {
+  const progress = useSharedValue(0);
 
   useEffect(() => {
-    if (copiedField) setLabel(copiedField === 'number' ? 'Number copied' : 'CVV copied');
-    opacity.value = withTiming(copiedField ? 1 : 0, { duration: 180 });
-  }, [copiedField]);
+    progress.value = withTiming(isCopied ? 1 : 0, {
+      duration: 220,
+      easing: isCopied ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
+    });
+  }, [isCopied]);
 
-  const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  const copyStyle = useAnimatedStyle(() => ({
+    transform: [{ scaleX: progress.value < 0.5 ? 1 - progress.value * 2 : 0 }],
+    opacity: progress.value < 0.5 ? 1 : 0,
+  }));
+
+  const checkStyle = useAnimatedStyle(() => ({
+    transform: [{ scaleX: progress.value >= 0.5 ? (progress.value - 0.5) * 2 : 0 }],
+    opacity: progress.value >= 0.5 ? 1 : 0,
+  }));
 
   return (
-    <Animated.View style={[styles.tooltipWrap, animStyle]} pointerEvents="none">
-      <View style={styles.tooltipPill}>
-        <Check size={10} color="rgba(255,255,255,0.9)" strokeWidth={2.5} />
-        <Text style={styles.tooltipText}>{label}</Text>
-      </View>
+    <View style={{ width: size, height: size }}>
+      <Animated.View style={[StyleSheet.absoluteFill, styles.iconCenter, copyStyle]}>
+        <Copy size={size} color={color} strokeWidth={1.8} />
+      </Animated.View>
+      <Animated.View style={[StyleSheet.absoluteFill, styles.iconCenter, checkStyle]}>
+        <Check size={size} color={color} strokeWidth={2.5} />
+      </Animated.View>
+    </View>
+  );
+}
+
+// ─── Small floating tooltip above the copy icon ───────────────────────────────
+
+function MiniTooltip({ visible }: { visible: boolean }) {
+  const opacity = useSharedValue(0);
+  const tx = useSharedValue(-4);
+
+  useEffect(() => {
+    opacity.value = withTiming(visible ? 1 : 0, { duration: 180 });
+    tx.value = withTiming(visible ? 0 : -4, { duration: 180 });
+  }, [visible]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ translateX: tx.value }],
+  }));
+
+  return (
+    <Animated.View style={[styles.miniTooltip, animStyle]} pointerEvents="none">
+      <Text style={styles.miniTooltipText}>Copied</Text>
     </Animated.View>
   );
 }
+
+// ─── Ria branded card overlay ────────────────────────────────────────────────
+// ria-card-overlay.png is 294×196 (aspect ≈ 1.5:1).
+// The card content area (after 18px padding + 2px inner border each side) is
+// ~1.586:1, so the image is proportionally taller — fitting to the content
+// height leaves a small gap on the right, which is the desired left-aligned look.
+
+const CARD_PADDING = 18;
+const OVERLAY_H = CARD_HEIGHT - 4 - CARD_PADDING * 2;  // content-area height
+const OVERLAY_W = OVERLAY_H * (294 / 196);              // preserve source aspect ratio
+
+function RiaLogoWatermark() {
+  return (
+    <Image
+      source={require('../../assets/ria-card-overlay.png')}
+      style={watermarkStyles.overlay}
+      resizeMode="stretch"
+      pointerEvents="none"
+    />
+  );
+}
+
+const watermarkStyles = StyleSheet.create({
+  overlay: {
+    position: 'absolute',
+    top: CARD_PADDING,
+    left: CARD_PADDING,
+    width: OVERLAY_W,
+    height: OVERLAY_H,
+    mixBlendMode: 'soft-light',
+  } as any,
+});
 
 // ─── Front face ──────────────────────────────────────────────────────────────
 
@@ -196,14 +304,18 @@ export function CardFront({
 }) {
   const isFrozen = card.frozen;
   const interactive = !!onCopyNumber;
+  // Metallic gradient peaks at near-white, so always use dark text on metal cards
+  const light = card.finish === 'metallic' ? false : isLightColor(card.color);
+  const tc = cardTextColors(light);
 
   return (
     <CardSurface card={card}>
       {isFrozen && <View style={styles.frozenOverlay} />}
+      {card.branded && <RiaLogoWatermark />}
 
       {/* ── Top: name + frozen badge ── */}
       <View style={styles.topRow}>
-        <Text style={styles.cardName} numberOfLines={1}>{card.name}</Text>
+        <Text style={[styles.cardName, { color: tc.secondary }]} numberOfLines={1}>{card.name}</Text>
         {isFrozen && (
           <View style={styles.frozenBadge}>
             <Text style={styles.frozenIcon}>❄️</Text>
@@ -219,50 +331,51 @@ export function CardFront({
 
       {/* ── Card number ── */}
       {interactive ? (
-        // Subtle rect signals: this area is interactive (tap to copy when revealed)
         <Pressable
           onPress={revealedNumber ? onCopyNumber : undefined}
           style={styles.numRect}
         >
-          <FlipCardNumber fullNumber={card.fullNumber} revealed={revealedNumber} />
+          <FlipCardNumber fullNumber={card.fullNumber} revealed={revealedNumber} color={tc.primary} />
           {revealedNumber && (
-            <Copy size={17} color="rgba(255,255,255,0.28)" strokeWidth={1.8} style={{ marginLeft: 10 }} />
+            <View style={styles.copyWithTooltip}>
+              <AnimatedCopyIcon isCopied={copiedField === 'number'} color={tc.icon} size={17} />
+              <MiniTooltip visible={copiedField === 'number'} />
+            </View>
           )}
         </Pressable>
       ) : (
-        <Text style={styles.cardNumber}>•••• •••• •••• {card.last4}</Text>
+        <Text style={[styles.cardNumber, { color: tc.primary }]}>•••• •••• •••• {card.last4}</Text>
       )}
 
       {/* ── Bottom row: EXPIRES | CVV | spacer | network ── */}
       <View style={styles.bottomRow}>
 
         <View>
-          <Text style={styles.fieldLabel}>EXPIRES</Text>
-          {/* lineHeight: CHAR_H so it aligns with CVV flip chars */}
-          <Text style={styles.fieldValue}>{card.expiry}</Text>
+          <Text style={[styles.fieldLabel, { color: tc.muted }]}>EXPIRES</Text>
+          <Text style={[styles.fieldValue, { color: tc.primary }]}>{card.expiry}</Text>
         </View>
 
         {interactive && (
           <View style={styles.cvvBlock}>
-            <Text style={styles.fieldLabel}>CVV</Text>
-            {/* Pressable wraps flip chars — tap copies when revealed */}
+            <Text style={[styles.fieldLabel, { color: tc.muted }]}>CVV</Text>
             <Pressable
               onPress={revealedCvv ? onCopyCvv : undefined}
               style={styles.cvvRow}
             >
-              <FlipCvv cvv={card.cvv} revealed={revealedCvv} />
+              <FlipCvv cvv={card.cvv} revealed={revealedCvv} color={tc.primary} />
               {revealedCvv && (
-                <Copy size={17} color="rgba(255,255,255,0.28)" strokeWidth={1.8} style={{ marginLeft: 6 }} />
+                <View style={[styles.copyWithTooltip, { marginLeft: 6 }]}>
+                  <AnimatedCopyIcon isCopied={copiedField === 'cvv'} color={tc.icon} size={17} />
+                  <MiniTooltip visible={copiedField === 'cvv'} />
+                </View>
               )}
             </Pressable>
           </View>
         )}
 
         <View style={{ flex: 1 }} />
-        {card.network === 'Visa' ? <VisaLogo /> : <MastercardLogo />}
+        {card.network === 'Visa' ? <VisaLogo dark={light} /> : <MastercardLogo />}
       </View>
-
-      {interactive && <CopiedTooltip copiedField={copiedField} />}
     </CardSurface>
   );
 }
@@ -418,25 +531,32 @@ const styles = StyleSheet.create({
   cvvBlock: { marginLeft: spacing.xxl },
   cvvRow: { flexDirection: 'row', alignItems: 'center' },
 
-  // ── Copied tooltip ──
-  tooltipWrap: {
-    ...StyleSheet.absoluteFillObject,
+  // ── Copy icon wrapper — anchors the floating tooltip ──
+  // ── Icon + tooltip inline row ──
+  copyWithTooltip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginLeft: 10,
+  },
+
+  // ── Icon centering helper (used inside absoluteFill) ──
+  iconCenter: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tooltipPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(0,0,0,0.38)',
+
+  // ── Mini tooltip — sits inline to the right of the copy icon ──
+  miniTooltip: {
+    backgroundColor: 'rgba(0,0,0,0.65)',
     borderRadius: radius.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
   },
-  tooltipText: {
-    fontSize: 11,
+  miniTooltipText: {
+    fontSize: 10,
     color: 'rgba(255,255,255,0.9)',
     fontWeight: typography.semibold,
     letterSpacing: 0.3,

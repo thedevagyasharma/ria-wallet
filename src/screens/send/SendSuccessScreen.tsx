@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Pressable, ScrollView, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -117,6 +118,11 @@ export function SendSuccessContent({
 
   return (
     <Animated.View style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }, slideStyle]}>
+      <LinearGradient
+        colors={[colors.brandSubtle, colors.bg]}
+        locations={[0, 0.42]}
+        style={StyleSheet.absoluteFill}
+      />
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}

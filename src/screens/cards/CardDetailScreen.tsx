@@ -27,13 +27,19 @@ import {
   Shield,
   Eye,
   EyeOff,
+  CreditCard,
+  Globe,
+  Wallet as WalletIcon,
+  Activity,
+  Check,
 } from 'lucide-react-native';
 
 import { colors, typography, spacing, radius } from '../../theme';
+import SecondaryButton from '../../components/SecondaryButton';
 import { useCardStore } from '../../stores/useCardStore';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { getCurrency } from '../../data/currencies';
-import { CardFront, CARD_WIDTH, CARD_HEIGHT } from '../../components/CardFace';
+import { CardFront, CARD_WIDTH, CARD_HEIGHT, VisaLogo, MastercardLogo } from '../../components/CardFace';
 import type { RootStackProps } from '../../navigation/types';
 import type { Card, CardType } from '../../stores/types';
 
@@ -58,22 +64,29 @@ function ActionBtn({
   destructive?: boolean;
   disabled?: boolean;
 }) {
+  if (destructive) {
+    return (
+      <Pressable
+        onPress={onPress}
+        disabled={disabled}
+        style={({ pressed }) => [
+          styles.actionBtn,
+          styles.actionBtnDestructive,
+          pressed && { opacity: 0.7 },
+          disabled && { opacity: 0.45 },
+        ]}
+      >
+        <View style={styles.actionBtnIcon}>{icon}</View>
+        <Text style={[styles.actionBtnLabel, { color: colors.failed }]}>{label}</Text>
+      </Pressable>
+    );
+  }
+
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={({ pressed }) => [
-        styles.actionBtn,
-        destructive && styles.actionBtnDestructive,
-        pressed && { opacity: 0.7 },
-        disabled && { opacity: 0.45 },
-      ]}
-    >
+    <SecondaryButton onPress={onPress} disabled={disabled} shape="rect" style={styles.actionBtn}>
       <View style={styles.actionBtnIcon}>{icon}</View>
-      <Text style={[styles.actionBtnLabel, destructive && { color: colors.failed }]}>
-        {label}
-      </Text>
-    </Pressable>
+      <Text style={styles.actionBtnLabel}>{label}</Text>
+    </SecondaryButton>
   );
 }
 
@@ -343,12 +356,18 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
 
   const handleToggleRevealNumber = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setNumberRevealed((prev) => !prev);
+    setNumberRevealed((prev) => {
+      if (!prev) setCvvRevealed(false);
+      return !prev;
+    });
   }, []);
 
   const handleToggleRevealCvv = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setCvvRevealed((prev) => !prev);
+    setCvvRevealed((prev) => {
+      if (!prev) setNumberRevealed(false);
+      return !prev;
+    });
   }, []);
 
   const handleCopy = useCallback((field: string) => {
@@ -410,10 +429,7 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
 
         {/* Reveal controls */}
         <View style={styles.revealRow}>
-          <Pressable
-            onPress={handleToggleRevealNumber}
-            style={({ pressed }) => [styles.revealBtn, pressed && { opacity: 0.7 }]}
-          >
+          <SecondaryButton onPress={handleToggleRevealNumber} style={styles.revealBtn}>
             {numberRevealed
               ? <EyeOff size={16} color={colors.textSecondary} strokeWidth={1.8} />
               : <Eye    size={16} color={colors.textSecondary} strokeWidth={1.8} />
@@ -421,11 +437,8 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
             <Text style={styles.revealBtnText}>
               {numberRevealed ? 'Hide number' : 'Show number'}
             </Text>
-          </Pressable>
-          <Pressable
-            onPress={handleToggleRevealCvv}
-            style={({ pressed }) => [styles.revealBtn, pressed && { opacity: 0.7 }]}
-          >
+          </SecondaryButton>
+          <SecondaryButton onPress={handleToggleRevealCvv} style={styles.revealBtn}>
             {cvvRevealed
               ? <EyeOff size={16} color={colors.textSecondary} strokeWidth={1.8} />
               : <Eye    size={16} color={colors.textSecondary} strokeWidth={1.8} />
@@ -433,7 +446,7 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
             <Text style={styles.revealBtnText}>
               {cvvRevealed ? 'Hide CVV' : 'Show CVV'}
             </Text>
-          </Pressable>
+          </SecondaryButton>
         </View>
 
         {/* Actions */}
@@ -478,13 +491,41 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Card info</Text>
           <View style={styles.infoCard}>
-            <InfoRow label="Type" value={TYPE_LABELS[card.type]} />
+            <InfoRow
+              icon={<CreditCard size={14} color={colors.textMuted} strokeWidth={1.8} />}
+              label="Type"
+              value={TYPE_LABELS[card.type]}
+            />
             <View style={styles.divider} />
-            <InfoRow label="Network" value={card.network} />
+            <InfoRow
+              icon={<Globe size={14} color={colors.textMuted} strokeWidth={1.8} />}
+              label="Network"
+              right={card.network === 'Visa' ? <VisaLogo size="sm" dark /> : <MastercardLogo size="sm" />}
+            />
             <View style={styles.divider} />
-            <InfoRow label="Wallet" value={`${currency.flag} ${currency.code}`} />
+            <InfoRow
+              icon={<WalletIcon size={14} color={colors.textMuted} strokeWidth={1.8} />}
+              label="Wallet"
+              value={`${currency.flag}  ${currency.code}`}
+            />
             <View style={styles.divider} />
-            <InfoRow label="Status" value={card.frozen ? '❄️ Frozen' : '✅ Active'} />
+            <InfoRow
+              icon={<Activity size={14} color={colors.textMuted} strokeWidth={1.8} />}
+              label="Status"
+              right={
+                card.frozen ? (
+                  <View style={[styles.statusBadge, styles.statusFrozen]}>
+                    <Snowflake size={10} color="#3b82f6" strokeWidth={2.5} />
+                    <Text style={[styles.statusBadgeText, styles.statusFrozenText]}>Frozen</Text>
+                  </View>
+                ) : (
+                  <View style={[styles.statusBadge, styles.statusActive]}>
+                    <Check size={10} color="#16a34a" strokeWidth={2.5} />
+                    <Text style={[styles.statusBadgeText, styles.statusActiveText]}>Active</Text>
+                  </View>
+                )
+              }
+            />
           </View>
         </View>
 
@@ -512,11 +553,24 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({
+  icon,
+  label,
+  value,
+  right,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value?: string;
+  right?: React.ReactNode;
+}) {
   return (
     <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
+      <View style={styles.infoLabelGroup}>
+        {icon}
+        <Text style={styles.infoLabel}>{label}</Text>
+      </View>
+      {right ?? <Text style={styles.infoValue}>{value}</Text>}
     </View>
   );
 }
@@ -586,15 +640,12 @@ const styles = StyleSheet.create({
   },
   revealBtn: {
     flex: 1,
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 7,
     paddingVertical: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   revealBtnText: {
     fontSize: typography.sm,
@@ -612,13 +663,15 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     gap: spacing.xs,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
     paddingVertical: spacing.md,
   },
   actionBtnDestructive: {
+    flex: 1,
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
     borderColor: colors.failedSubtle,
     backgroundColor: colors.failedSubtle,
   },
@@ -643,7 +696,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.md + 2,
+  },
+  infoLabelGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   infoLabel: { fontSize: typography.base, color: colors.textSecondary },
   infoValue: {
@@ -651,6 +709,33 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: typography.semibold,
   },
+
+  // ── Status badge ──
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderWidth: 1,
+  },
+  statusActive: {
+    backgroundColor: 'rgba(22,163,74,0.08)',
+    borderColor: 'rgba(22,163,74,0.22)',
+  },
+  statusFrozen: {
+    backgroundColor: 'rgba(59,130,246,0.08)',
+    borderColor: 'rgba(59,130,246,0.22)',
+  },
+  statusBadgeText: {
+    fontSize: typography.xs,
+    fontWeight: typography.semibold,
+    letterSpacing: 0.3,
+  },
+  statusActiveText: { color: '#16a34a' },
+  statusFrozenText: { color: '#3b82f6' },
+
 
   // ── Bottom sheet ──
   sheetOverlay: {

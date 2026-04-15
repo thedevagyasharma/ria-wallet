@@ -28,6 +28,7 @@ import { colors, typography, spacing, radius } from '../../theme';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { usePrefsStore } from '../../stores/usePrefsStore';
 import { getCurrency, formatAmount } from '../../data/currencies';
+import FlatButton from '../../components/FlatButton';
 
 const H_PAD = 24;
 
@@ -158,12 +159,12 @@ function WalletRow({
           <Text style={[styles.primaryBadgeText, { color: accent }]}>Primary</Text>
         </View>
       ) : (
-        <Pressable
+        <FlatButton
           onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onSetPrimary(); }}
-          style={({ pressed }) => [styles.setPrimaryBtn, pressed && { opacity: 0.5 }]}
+          style={styles.setPrimaryBtn}
         >
           <Text style={styles.setPrimaryText}>Set primary</Text>
-        </Pressable>
+        </FlatButton>
       )}
     </View>
   );
@@ -421,9 +422,6 @@ const styles = StyleSheet.create({
   setPrimaryBtn: {
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   setPrimaryText: { fontSize: 11, color: colors.textSecondary, fontWeight: typography.medium },
 

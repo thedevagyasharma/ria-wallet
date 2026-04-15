@@ -7,22 +7,24 @@ import {
   StyleProp,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors } from '../theme';
+import { colors, radius } from '../theme';
 
 type Props = {
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
   disabled?: boolean;
+  shape?: 'pill' | 'rect';
   children: React.ReactNode;
 };
 
-export default function SecondaryButton({ onPress, style, disabled, children }: Props) {
+export default function SecondaryButton({ onPress, style, disabled, shape = 'pill', children }: Props) {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => [
         styles.base,
+        shape === 'rect' && styles.rect,
         disabled && styles.disabled,
         pressed && !disabled && styles.pressed,
         style,
@@ -57,6 +59,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 2,
     elevation: 1,
+  },
+  rect: {
+    borderRadius: radius.lg,
   },
   pressed: {
     backgroundColor: colors.surfaceHigh,

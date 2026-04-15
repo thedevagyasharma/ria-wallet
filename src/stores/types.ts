@@ -1,5 +1,6 @@
 export type CardType = 'physical' | 'virtual' | 'single-use';
 export type CardNetwork = 'Visa' | 'Mastercard';
+export type CardFinish = 'plastic' | 'metallic';
 export type TransactionStatus = 'pending' | 'completed' | 'failed';
 export type TransactionType = 'send' | 'receive';
 
@@ -8,6 +9,8 @@ export type Card = {
   walletId: string;
   name: string;
   color: string;
+  branded?: boolean;
+  finish?: CardFinish;
   last4: string;
   network: CardNetwork;
   cardholderName: string;

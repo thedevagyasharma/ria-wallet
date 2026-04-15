@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -51,6 +52,11 @@ export default function WalletSuccessScreen({ route }: RootStackProps<'WalletSuc
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <LinearGradient
+        colors={[colors.brandSubtle, colors.bg]}
+        locations={[0, 0.55]}
+        style={StyleSheet.absoluteFill}
+      />
       <View style={styles.content}>
         <Animated.View style={[styles.circle, circleStyle]}>
           <Text style={styles.flag}>{currency.flag}</Text>

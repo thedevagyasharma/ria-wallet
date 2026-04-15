@@ -17,7 +17,6 @@ import WalletsScreen from '../screens/wallets/WalletsScreen';
 import CurrencyPickerScreen from '../screens/wallets/CurrencyPickerScreen';
 import WalletReviewScreen from '../screens/wallets/WalletReviewScreen';
 import WalletSuccessScreen from '../screens/wallets/WalletSuccessScreen';
-import ActivityScreen from '../screens/wallets/ActivityScreen';
 import UnifiedActivityScreen from '../screens/wallets/UnifiedActivityScreen';
 import TransactionDetailScreen from '../screens/activity/TransactionDetailScreen';
 
@@ -152,15 +151,47 @@ export default function RootNavigator() {
         <Stack.Screen name="Main" component={TabNavigator} />
 
         {/* Wallet flows */}
-        <Stack.Screen name="Activity" component={ActivityScreen} />
+        <Stack.Screen name="Activity" component={UnifiedActivityScreen} />
         <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} />
         <Stack.Screen name="CurrencyPicker" component={CurrencyPickerScreen} />
         <Stack.Screen name="WalletReview" component={WalletReviewScreen} />
         <Stack.Screen name="WalletSuccess" component={WalletSuccessScreen} options={{ animation: 'fade' }} />
 
-        {/* Send money flows */}
+        {/* Send money flows
+         *
+         * TRANSITION RULE — read before editing these options:
+         *
+         * SendMoney and SendSuccess both use a custom Reanimated slide animation
+         * (enterY / slideY) to move their content off-screen before calling
+         * navigation.popToTop().  For this to work without a blank-screen flash,
+         * BOTH screens MUST be declared with  presentation: 'transparentModal'.
+         *
+         * Why transparentModal matters:
+         *   - Regular stack screens: iOS UIKit does NOT keep the screen beneath
+         *     them composited.  When the JS content translates off-screen the
+         *     native view behind it is blank (white window background) until
+         *     popToTop() completes its own transition.  This produces the flash.
+         *   - transparentModal screens: UIKit keeps the presenting screen (Main /
+         *     WalletsScreen) fully rendered and visible at all times.  As the
+         *     animated content slides away, wallets are revealed naturally.
+         *     popToTop() then just removes the transparent overlay — no flash.
+         *
+         * STRICTLY NOT ALLOWED on these screens:
+         *   - Removing  presentation: 'transparentModal'  (causes blank flash)
+         *   - Removing  contentStyle: { backgroundColor: 'transparent' }
+         *   - Replacing  animation: 'none'  with any native transition
+         *   - Calling  navigation.goBack()  instead of  navigation.popToTop()
+         *     when multiple transparent screens are stacked
+         *   - Running the JS exit animation AFTER popToTop (wrong order — animate
+         *     first, navigate when the callback fires)
+         *
+         * SendMoney inline-success path (handleCloseToWallets):
+         *   setShowSuccessBg(false) → slide enterY to screenHeight → popToTop()
+         * SendSuccess standalone path (handleBack):
+         *   slide slideY to screenHeight → popToTop()
+         */}
         <Stack.Screen name="SendMoney" component={SendMoneyScreen} options={{ animation: 'none', presentation: 'transparentModal', gestureEnabled: false, contentStyle: { backgroundColor: 'transparent' } }} />
-        <Stack.Screen name="SendSuccess" component={SendSuccessScreen} options={{ animation: 'none', gestureEnabled: false, contentStyle: { backgroundColor: 'transparent' } }} />
+        <Stack.Screen name="SendSuccess" component={SendSuccessScreen} options={{ animation: 'none', presentation: 'transparentModal', gestureEnabled: false, contentStyle: { backgroundColor: 'transparent' } }} />
         <Stack.Screen name="SendError" component={SendErrorScreen} options={{ animation: 'fade', gestureEnabled: false }} />
 
         {/* Card flows */}
