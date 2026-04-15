@@ -41,6 +41,7 @@ import {
 } from 'lucide-react-native';
 
 import { colors, typography, spacing, radius } from '../../theme';
+import { alpha } from '../../utils/color';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useCardStore } from '../../stores/useCardStore';
 import { usePrefsStore } from '../../stores/usePrefsStore';
@@ -48,8 +49,7 @@ import { getCurrency, formatAmount } from '../../data/currencies';
 import SecondaryButton from '../../components/SecondaryButton';
 import TransactionRow from '../../components/TransactionRow';
 import FlatButton from '../../components/FlatButton';
-import { STACK_CARD_H, STACK_V_OFFSET } from '../../components/CardStackPreview';
-import CardOverlay from '../../components/CardOverlay';
+import StackCardFace, { STACK_CARD_H, STACK_V_OFFSET } from '../../components/StackCardFace';
 import type { RootStackParamList } from '../../navigation/types';
 import { useTabScrollReset } from '../../navigation/TabScrollContext';
 import type { Transaction, Wallet, Card } from '../../stores/types';
@@ -77,12 +77,6 @@ const WALLET_ACCENTS: Record<string, string> = {
   HNL: '#0369a1', DOP: '#dc2626', COP: '#ca8a04', MAD: '#ea580c',
 };
 function walletAccent(c: string, override?: string) { return override ?? WALLET_ACCENTS[c] ?? colors.brand; }
-function alpha(hex: string, o: number) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${o})`;
-}
 
 // ─── Per-digit slot drum ──────────────────────────────────────────────────────
 //
@@ -323,10 +317,6 @@ function ActionBtn({
 
 const CARD_SLOTS = 3;
 
-const CARD_OUTER_W = W - H_PAD * 2;
-const CARD_SVG_W   = CARD_OUTER_W - 2;
-const CARD_SVG_H   = STACK_CARD_H - 2;
-const CARD_SVG_R   = radius.lg - 1;
 
 // Container height for n visible cards
 function stackH(n: number): number {
@@ -408,27 +398,14 @@ function AnimatedCardStack({ walletIndex, cards, accent, onPress, scrollX }: {
           </View>
         </Animated.View>
       ) : (
-        cards.slice(0, n).map((card, idx) => {
-          const typeLabel = card.type === 'single-use' ? 'Single-use'
-            : card.type.charAt(0).toUpperCase() + card.type.slice(1);
-          return (
-            <Animated.View
-              key={card.id}
-              style={[styles.cardSlot, { zIndex: n - idx, borderColor: alpha(card.color, 0.06) }, animStyles[idx]]}
-            >
-              <View style={[styles.cardInner, { backgroundColor: card.color }]}>
-                <CardOverlay id={card.id} width={CARD_SVG_W} height={CARD_SVG_H} borderRadius={CARD_SVG_R} strokeWidth={1} />
-                <View style={styles.cardTop}>
-                  <Text style={styles.cardName}>{card.name}</Text>
-                  <View style={styles.cardTypeBadge}>
-                    <Text style={styles.cardTypeText}>{typeLabel}</Text>
-                  </View>
-                </View>
-                {idx === 0 && <Text style={styles.cardLast4}>•••• •••• •••• {card.last4}</Text>}
-              </View>
-            </Animated.View>
-          );
-        })
+        cards.slice(0, n).map((card, idx) => (
+          <Animated.View
+            key={card.id}
+            style={[styles.cardSlot, { zIndex: n - idx, borderColor: alpha(card.color, 0.06) }, animStyles[idx]]}
+          >
+            <StackCardFace card={card} showLast4={idx === 0} />
+          </Animated.View>
+        ))
       )}
     </Pressable>
   );
@@ -473,6 +450,11 @@ export default function WalletsScreen() {
   const cardStackHeightAnim = useRef(
     new RNAnimated.Value(stackH(Math.min(activeCards.length, CARD_SLOTS)))
   ).current;
+
+  // Keep height in sync when cards are added/removed on the active wallet.
+  useEffect(() => {
+    cardStackHeightAnim.setValue(stackH(Math.min(activeCards.length, CARD_SLOTS)));
+  }, [activeCards.length]);
 
   // JS-thread side-effects: state updates + haptics (called via runOnJS)
   const handleScrollJS = useCallback((x: number) => {
@@ -917,42 +899,6 @@ const styles = StyleSheet.create({
     height: STACK_CARD_H,
     borderRadius: radius.lg,
     borderWidth: 1,
-  },
-  cardInner: {
-    flex: 1,
-    borderRadius: radius.lg - 1,
-    padding: 16,
-    justifyContent: 'space-between',
-    overflow: 'hidden',
-  },
-  cardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  cardName: {
-    fontSize: typography.base,
-    color: 'rgba(255,255,255,0.95)',
-    fontWeight: typography.semibold,
-  },
-  cardTypeBadge: {
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
-    borderRadius: radius.full,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  cardTypeText: {
-    fontSize: 9,
-    color: 'rgba(255,255,255,0.60)',
-    fontWeight: typography.semibold,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
-  cardLast4: {
-    fontSize: typography.sm,
-    color: 'rgba(255,255,255,0.55)',
-    letterSpacing: 2,
   },
   cardEmpty: {
     height: STACK_CARD_H,

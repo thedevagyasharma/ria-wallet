@@ -1080,3 +1080,118 @@ All four accept a `label` prop that renders text internally with correct weight,
 **Why:** Swipe-to-dismiss is not universally appropriate — confirmation sheets intentionally require an explicit tap to prevent accidental dismissal. The limit sheet benefits from it because it is a tall input sheet (not a quick confirm) where the user may want to cancel mid-entry without reaching for the Cancel button.
 
 **Implementation:** A `dragY` shared value is added on top of the existing `sheetY` open/close animation value. The pan gesture runs on the handle area only to avoid conflicting with interactive children (numpad keys, toggles).
+
+---
+
+### 97. "Customize" replaces "Cards" quick action on WalletsScreen
+
+**Decision:** The fourth quick action button on WalletsScreen changed from "Cards" (`CreditCard` icon → `WalletCardList`) to "Customize" (`SlidersHorizontal` icon → `WalletSettings`). Cards remain accessible via the "View all →" / "Add card →" link in the Cards section directly below.
+
+**Why:** The "Cards" action was redundant — the animated card stack with its own header link already covers navigation to cards. "Customize" surfaces per-wallet settings that had no entry point from the wallet view itself.
+
+---
+
+### 98. WalletSettings modal — rename, accent color, set primary
+
+**Decision:** A `WalletSettings` screen (slide-from-bottom modal, `walletId` param) provides three controls for the active wallet: rename (via `Alert.prompt`), accent color (16-swatch grid of preset hex colors), and set-as-primary (with a styled `ConfirmSheet` confirmation). The screen is reached from the "Customize" quick action on WalletsScreen.
+
+**Why:** Wallet customization had no dedicated surface — rename and set-primary were buried in Profile, and accent-color override didn't exist at all. Grouping them in a focused modal keeps the wallet carousel screen clean while making per-wallet settings discoverable in context.
+
+**Type change:** `Wallet` gains `accentColor?: string`. `walletAccent(currency, override?)` checks the override first, falling back to the currency default map. The override propagates to the carousel gradient, liquid dots, card stack accent, and ProfileScreen wallet rows.
+
+---
+
+### 99. Native Alert replaced with ConfirmSheet for set-primary confirmation
+
+**Decision:** Confirming "set as primary wallet" uses the styled `ConfirmSheet` component rather than `Alert.alert`. Both `WalletSettingsScreen` and `ProfileScreen` use the same `SetPrimarySheet` wrapper (which delegates to `ConfirmSheet`).
+
+**Why:** Native dialogs break the visual language — they render outside the app's theme, ignore the dark/light surface, and don't support the branded `PrimaryButton`. `ConfirmSheet` provides the same semantic (icon + title + body + confirm + cancel) with consistent typography and animation.
+
+**Rule:** Native `Alert.alert` is prohibited for confirmations. `Alert.prompt` remains acceptable for single-line text input (rename) until a custom inline text field is designed.
+
+---
+
+### 100. BottomSheet, ConfirmSheet, SetPrimarySheet as shared components
+
+**Decision:** `BottomSheet`, `ConfirmSheet`, and `SetPrimarySheet` live in `src/components/` and are imported by any screen that needs them. Inline sheet definitions inside screen files are prohibited.
+
+**Why:** The animated sheet logic (`overlayOpacity`, `sheetY`, mount/unmount guard) was copy-pasted into `CardDetailScreen`, `WalletSettingsScreen`, and `ProfileScreen` — three identical ~50-line blocks. Extracting to a single component means animation tweaks, safe-area handling, and gesture behaviour are fixed once everywhere.
+
+---
+
+## Snapshot 15 — 2026-04-15
+*Covers: prototype state simulator, card face badge system, badgeTheme palette annotation*
+
+### 101. Prototype state simulator — expired card and freeze failure on CardDetailScreen
+
+**Decision:** A "Prototype" section at the bottom of `CardDetailScreen` (after Danger zone, separated by a top border) exposes two `SegControl` rows: "Card status" (Active / Expired) and "Freeze action" (Success / Fail). These write `expired` and `freezeSimulateError` flags directly to the card in the store. The expired flag shows an "Expired" badge on the card face and disables the Freeze action button. The freeze-failure flag causes the 1.8s freeze animation to complete but then show an error sheet ("Freeze failed" / "Unfreeze failed") instead of committing the state change. The same `SegControl` + `protoWrap`/`protoTitle` pattern used in the send flow (Decision 80) is used here for visual consistency.
+
+**Why:** Reviewers need to see expired and error states without adding special-case mock data. Two flags cover the two most meaningful card lifecycle states that affect user behaviour — expired (card unusable, UI should communicate clearly) and freeze failure (common action, error handling must be clear). Adding more failure states (suspend, network decline) would start to feel like a QA harness rather than a prototype reviewer tool.
+
+**`ConfirmSheet` additions:** A `secondary` prop (renders `SecondaryButton` instead of `PrimaryButton`) and `hideCancelButton` prop were added to support the single-button dismiss sheet for the freeze error — no cancel needed on a pure-informational error alert.
+
+---
+
+### 102. Prototype seg controls on the Design Your Card screen
+
+**Decision:** The same `SegControl` pattern was added to `AddCardColorScreen` as a proto section after the solid colour palette. A single three-way control ("Card status: Active / Frozen / Expired") updates local `previewFrozen` / `previewExpired` state, which is wired into the live `CardFront` preview immediately. This lets a reviewer verify all three badge states against all colour options before the card is created.
+
+**Why:** Verifying badge contrast requires seeing the badge on the actual card face. Doing that from `CardDetailScreen` requires first creating the card, then navigating to its detail screen, then toggling the state — three steps. Putting the controls on the colour screen collapses this to one toggle while the palette is still in view, which is the right moment to check contrast.
+
+**Three-way instead of two toggles:** A single segmented control (Active / Frozen / Expired) is cleaner than two independent toggles — the states are mutually exclusive anyway, and the three-way control makes that explicit.
+
+---
+
+### 103. Card face badge system — near-opaque fills, outline type badge, Lucide icons
+
+**Decision:** The three badge types on the card face use distinct visual treatments:
+
+- **Type badge** (Physical / Virtual / Single-use) — outline only, no fill. `borderColor` and text adapt to card lightness: `rgba(0,0,0,0.40)` / `rgba(0,0,0,0.72)` on light cards, `rgba(255,255,255,0.38)` / `rgba(255,255,255,0.65)` on dark. The badge communicates metadata, not urgency.
+- **Frozen badge** — near-opaque dark blue fill (`rgba(30,64,175,0.88)`) + `#bfdbfe` text + `Snowflake` icon (size 9, strokeWidth 2.5). Inverted to white (`rgba(255,255,255,0.88)`) with dark navy text on cards where `badgeTheme = 'inverted'`.
+- **Expired badge** — near-opaque dark red fill (`rgba(153,27,27,0.88)`) + `#fecaca` text + `Clock` icon (size 9, strokeWidth 2.5). Fixed — no light/dark inversion. Dark maroon over any card hue (including orange) reads as clearly distinct and communicates danger without ambiguity.
+
+**Why near-opaque instead of semi-transparent tints:** Semi-transparent fills blend into same-hue card backgrounds — blue frozen badge disappears on blue cards, amber expired badge disappears on orange cards. Near-opaque fills guarantee sufficient contrast on any background at the cost of a slightly heavier badge. The trade-off is acceptable: state badges (especially expired) need to be immediately readable at a glance.
+
+**Why Lucide icons instead of emoji:** `❄️` and similar emoji cannot accept a `color` prop, size inconsistently across platforms, and don't optically match the badge text size. `Snowflake` and `Clock` at size 9 match the 10px badge text optically and inherit the correct colour without platform variance.
+
+**Expired fixed, frozen adaptive:** Expired uses a fixed dark red with no inversion because red-on-orange and red-on-dark are both clearly distinct (maroon reads as different from orange; maroon shows on dark cards). Frozen uses inversion because dark-blue-on-blue is genuinely hard to distinguish regardless of opacity.
+
+---
+
+### 104. `badgeTheme` field on Card — palette-declared, not runtime-computed
+
+**Decision:** `Card` gains a `badgeTheme?: 'default' | 'inverted'` field. Every entry in `RIA_PALETTE` and `SOLID_PALETTE` in `AddCardColorScreen` declares its own `badgeTheme`. `'inverted'` means the frozen badge renders as a white pill with dark navy text (high contrast on dark/blue cards). When a card is created, `badgeTheme` is written to the store alongside `color` and `finish`. `CardFront` reads `card.badgeTheme === 'inverted'` directly — no heuristic checks at render time.
+
+**Why not runtime heuristics:** Earlier iterations used `isLightColor` (luminance check) and `isBluish` (blue-channel dominance check) computed per render. These required two separate checks and still failed for edge cases — orange is classified as "light" by luminance so the frozen badge got the faint low-opacity treatment, not the near-opaque one. Every new card colour required verifying the heuristic produced the right result. Declaring `badgeTheme` in the palette makes the decision explicit and auditable: a new colour is added with a deliberate annotation, and the renderer asks no questions.
+
+**Current annotation:** All palette entries are `'inverted'` except Classic (`#f97316`) and Blaze (`#f97316`) — the only warm/light card colours. Orange is the one case where the dark blue frozen badge reads clearly. All dark, blue, and neutral cards use `'inverted'` (white pill).
+
+**Mock cards** (`mockData.ts`) annotated manually with `badgeTheme: 'inverted'` — all three are dark colours (Midnight, Ocean, Plum).
+
+---
+
+## Snapshot 16 — 2026-04-15
+*Covers: StackCardFace extraction, WalletsScreen inline renderer unification*
+
+### 106. `StackCardFace` — single source of truth for stack card rendering
+
+**Decision:** All card face rendering logic (colored background, `CardOverlay`, name, type badge, frozen/expired badges with icons, last4 text) is extracted into `src/components/StackCardFace.tsx`. `StackCardFace` also owns the shared constants `STACK_CARD_H`, `STACK_V_OFFSET`, `SVG_W`, `SVG_H`, `SVG_R`. Both `CardStackPreview` and `WalletsScreen`'s `AnimatedCardStack` import and render `StackCardFace` inside their own outer shells.
+
+**Why:** After the badge system (`badgeTheme`, expired/frozen icons) was added to `CardStackPreview`, the `WalletsScreen` had its own separate inline card renderer (`AnimatedCardStack`) that diverged — it retained hardcoded white text and had no badge support. The fix required duplicating all the badge logic into WalletsScreen. Extracting to `StackCardFace` means any future change to card face appearance — new badge type, colour tweak, layout adjustment — is made once and reflected in both the wallet home stack and the static stack in `AllCardsScreen`.
+
+**Split of responsibility:**
+- `StackCardFace` — face content and the colored container. Stateless, no animation.
+- `CardStackPreview` outer shell — absolute positioning, border, scale transform, container height. Used in static contexts (`AllCardsScreen`).
+- `AnimatedCardStack` outer shell — `Animated.View` with three hardcoded animated styles driven by `scrollX: SharedValue`. Not extractable (violates Rules of Hooks if made dynamic). Used only on the wallet home carousel.
+
+**What was wrong before:** `WalletsScreen` imported `STACK_CARD_H` / `STACK_V_OFFSET` from `CardStackPreview` (layout constants) but rendered its own card face with entirely separate, hardcoded styles. Adding badging to `CardStackPreview` had no effect on the wallet home screen.
+
+---
+
+### 105. No enforced card limit per wallet
+
+**Decision:** No hard cap on cards per wallet. `CARD_SLOTS = 3` in `WalletsScreen` and `MAX_STACK = 3` in `CardStackPreview` are purely rendering constants — they control how many cards the stack UI fans out, not how many can exist. The wallet review screen no longer advertises "Up to 3 per wallet".
+
+**Why:** No product justification for the limit. A user might hold a travel card, everyday card, and per-family-member cards in a single wallet — 3 is too low without a business rule behind it. If an issuer constraint exists, it belongs as a server-side rejection, not a client-side gate.
+
+**Trade-off:** The stack visually shows only the first 3 cards. Cards beyond that exist in the store and are accessible via the card list, but aren't visible in the wallet home stack. Acceptable for now.
