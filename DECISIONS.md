@@ -437,6 +437,69 @@ The continuous direct mapping (`collapsed.value = clamp(y / ACTIONS_H, 0, 1)`) t
 
 ---
 
+---
+
+## Snapshot 7 — 2026-04-14
+*Covers: custom tab navigator, send flow transitions, FAB positioning, scroll-to-top, sharing infrastructure*
+
+### 45. Custom Reanimated tab navigator — replaced @react-navigation/bottom-tabs
+
+**Decision:** Removed `createBottomTabNavigator` entirely. Replaced with a custom `TabNavigator` component: a side-by-side `Animated.View` row of all four tab screens, clipped by an `overflow: 'hidden'` container. Switching tabs animates `translateX` with `withTiming(duration: 280, Easing.out(Easing.cubic))`.
+
+**Why:** React Navigation's bottom tabs use a JS-driven `display: none` / `display: flex` toggle to unmount hidden tabs, not a position-based transition. There is no first-class API to animate between tabs with a slide. Overriding this via a custom `tabBarButton` or `sceneContainerStyle` produces visual artifacts. A fully custom navigator gives complete control over the animation — the same `translateX` pattern used for the SendMoney step transition — with no special-casing needed.
+
+**Trade-off:** All four tab screens are mounted simultaneously and never unmounted. Memory cost is fixed and low for this app's screen count. The scroll position of each tab is preserved automatically as a result.
+
+---
+
+### 46. SendMoney opens from bottom, dismisses to the right — transparentModal + Reanimated
+
+**Decision:** `SendMoney` is registered as `presentation: 'transparentModal', animation: 'none'`. Entry is a Reanimated `translateY` from `screenHeight → 0`. Dismiss (back button or swipe) is a `translateX` from `0 → screenWidth`, then `navigation.goBack()` via `runOnJS`.
+
+**Why:** The native `slide_from_bottom` animation unmounts the background screen during the return transition, producing a white flash. `transparentModal` keeps the background mounted and visible through both entry and exit. `animation: 'none'` is required permanently (not set via `setOptions`) because `setOptions` is async — calling `goBack()` in the same JS tick still sees the old animation value. The dismiss-to-right direction communicates "cancelled" rather than "backed out downward", which matches the X button intent.
+
+**`contentStyle: { backgroundColor: 'transparent' }`** is required on the SendMoney screen options because the global `screenOptions.contentStyle` paints a solid background over the transparent modal. Per-screen override wins.
+
+**`useSafeAreaInsets()` instead of `SafeAreaView`:** Inside a `transparentModal`, `SafeAreaView` with `edges={['top']}` cannot measure insets correctly. Replaced with a plain `View` + `paddingTop: insets.top`.
+
+---
+
+### 47. Side-by-side row with overflow clipping for step transitions inside SendMoney
+
+**Decision:** The recipient and amount steps are two full-width `View`s inside a single `Animated.View` row (`width: screenWidth * 2`). Step transitions animate `translateX` between `0` and `-screenWidth`. The outer container has `overflow: 'hidden'`.
+
+**Why:** The original implementation used two `absoluteFill` views switching visibility. When dismissing from the amount step (`dismissX: 0 → screenWidth`), the recipient view at `translateX: -screenWidth` would travel to `0` — sliding into view as the wrong background during the dismiss. The row approach ties both panels to the same translate space, so they move together during dismiss and neither bleeds into view.
+
+---
+
+### 48. Send FAB absolutely positioned above the tab bar — does not set bar height
+
+**Decision:** The Send FAB (`SendCTAButton`) is rendered outside the tab bar flex row as a `position: 'absolute', top: -30` sibling. A `View` spacer with `flex: 1` holds the center slot in the flex row so the four tab items don't collapse inward. The outer wrapper has `pointerEvents="box-none"` so touches pass through to the tab items; only the circle and label are interactive.
+
+**Why:** Placing the FAB in the flex row made it a flex child whose height (60px circle + label + padding) set the tab bar height, making the bar taller than intended. Absolute positioning decouples the FAB's visual size from the bar layout. `top: -30` centers the 60px circle on the tab bar's top border line — the same visual treatment used in the original React Navigation implementation. `pointerEvents="box-none"` on the overlay is essential; without it the full `left: 0, right: 0` overlay intercepts all taps across the bar width.
+
+---
+
+### 49. Double-tap tab to scroll to top via TabScrollContext
+
+**Decision:** Tapping an already-active tab increments a per-tab reset counter stored in `useState`. Each tab screen is wrapped in its own `TabScrollContext.Provider` keyed to that counter. Screens consume `useTabScrollReset()` and call `scrollTo` / `scrollToLocation` in a `useEffect` when the count increments.
+
+**Why:** React Navigation's `useScrollToTop` hook works by listening for a `tabPress` event emitted by the native tab navigator. The custom navigator does not emit this event. A context counter is the equivalent mechanism — a signal that increments rather than a callback that fires, which integrates cleanly with `useEffect` dependency arrays.
+
+**`TabScrollContext` extracted to its own file** (`src/navigation/TabScrollContext.ts`) to break a require cycle: `RootNavigator` imports the screens, and the screens would have imported from `RootNavigator`. A standalone context file has no imports from the project, so nothing can cycle through it.
+
+---
+
+### 50. EAS Update for over-the-air distribution via Expo Go
+
+**Decision:** The app is published via EAS Update (`branch: main`, `runtimeVersion: exposdk:54.0.0`) to Expo's CDN. A static HTML landing page hosted on Vercel shows a QR code pointing to `exp://u.expo.dev/{projectId}?channel-name=main`.
+
+**Why:** Running `expo start --tunnel` requires the developer's machine to be on and produces a new URL every session. EAS Update gives a permanent URL that resolves to the latest bundle on the `main` branch automatically — reviewers always get the current version without any action from the developer. `runtimeVersion: exposdk:54.0.0` is required for Expo Go compatibility; the default `appVersion` policy sets it to `1.0.0` which Expo Go does not recognise as a compatible runtime.
+
+**Vercel landing page** at `ria-wallet-preview.vercel.app` uses `api.qrserver.com` to render the QR code inline — no JS framework, single `index.html`, zero build step.
+
+---
+
 ### 31. Lucide icons everywhere — no emoji UI icons
 
 **Decision:** All navigation icons (back button `‹`, forward chevron `›`), action icons (freeze/unfreeze, add, send, receive, cards), and status icons (check, copy, delete, search, clear) use `lucide-react-native` components. Emoji are retained only for currency flags, category labels in AddCardCategories, and the inline `💡` tip text in the error screen.
@@ -444,3 +507,345 @@ The continuous direct mapping (`collapsed.value = clamp(y / ACTIONS_H, 0, 1)`) t
 **Why:** Text-based navigation characters (`‹`, `›`) render at different optical weights on different fonts and operating systems — they look misaligned on Android particularly. Emoji icons in action buttons (`❄️`, `🗑️`, `🔢`) have inconsistent sizes and padding across platforms and cannot be reliably tinted to match the design system's colour tokens. Lucide icons have consistent `strokeWidth`, predictable `size`, and accept a `color` prop — making them directly themeable and cross-platform reliable.
 
 **Exceptions kept as emoji:** Currency flags (universal standard, no Lucide equivalent), spending category icons in AddCardCategories (🛒, 🍽️, etc. — no close Lucide equivalents, and the emoji add visual warmth to a functional list), and the inline `💡` tip text in SendErrorScreen (inline emoji in a text paragraph, not a pressable UI element).
+
+---
+
+## Snapshot 8 — 2026-04-14
+*Covers: card detail screen, card face reveal interactions, bottom sheet animation, card face layout*
+
+### 51. Removed card flip animation — replaced with inline slot-machine reveal
+
+**Decision:** The `rotateY` flip animation (Decision 9) was removed entirely. `CardFront` is now the only rendered face. Sensitive digits reveal in-place using a slot-machine (`translateY`) animation: the masked dot exits upward out of a clipped cell while the actual digit rolls up from below.
+
+**Why:** The flip animation requires both faces to exist in the same view stack simultaneously, using `backfaceVisibility: 'hidden'` to suppress whichever face is currently away from the viewer. This technique is unreliable in React Native — both faces were rendering visibly on some Android configurations, producing the duplicate "Frozen" badge bug. Beyond correctness, the flip metaphor is aesthetically cliché and the motion is heavy for a UI that's otherwise subtle. The slot-machine animation is lighter, scoped to exactly the digits that are changing, and reads as a security reveal rather than a page turn.
+
+**Implementation:** Each `FlipChar` has two `Animated.View`s — front (masked `•`) and back (actual digit) — clipped by `overflow: 'hidden'` on a `CHAR_W × CHAR_H` cell. `progress` drives `translateY` from `[0, -CHAR_H]` (front) and `[CHAR_H, 0]` (back) simultaneously. Each character gets a staggered `withDelay(i * 38ms)` so the number reads left to right.
+
+---
+
+### 52. Last 4 digits always visible regardless of reveal state
+
+**Decision:** Positions 12–15 of the card number (`FlipChar` indices ≥ 12) receive `revealed={true}` unconditionally. The reveal toggle only unmasks the first 12 digits.
+
+**Why:** The last 4 digits are already present on every bank statement, receipt, and card-linked account screen. They are not sensitive in isolation. Keeping them visible provides a constant identity anchor — the user can confirm "this is the right card" before initiating a reveal — without requiring a security interaction. It also makes the masked card number feel deliberate (partial obscuring) rather than completely redacted, which reads as paranoid.
+
+---
+
+### 53. Separate reveal toggles for card number and CVV
+
+**Decision:** Card number and CVV have independent revealed states (`numberRevealed`, `cvvRevealed`) and separate toggle handlers. The reveal buttons live outside the card face in `CardDetailScreen` — two equal-width labelled pills ("Show number" / "Show CVV") in a dedicated row between the card and the action buttons.
+
+**Why:** Number and CVV serve different purposes. The number is needed to make online purchases; the CVV is the second factor that authorises a transaction. Revealing both together when only one is needed unnecessarily exposes the other. Separating them also makes the reveal interaction unambiguous — each button has a single, legible purpose — compared to a single "Reveal" toggle that changes the entire card face state at once.
+
+**Reveal buttons outside the card:** Earlier iterations embedded the eye icons directly on the card face (first inside the digit row, then inside the bottom row label). Both placements were too small and hard to tap accurately. Moving them outside the card as full-width labelled buttons makes them obviously interactive, consistent in size, and readable without requiring the user to hunt around the card surface.
+
+---
+
+### 54. Copy interactions on the card face, not the reveal buttons
+
+**Decision:** Tapping the card number or CVV area on the card face copies to clipboard (when revealed). The reveal buttons only toggle visibility. The two interactions are never conflated.
+
+**Why:** Merging reveal and copy onto a single button creates ambiguous state — the first tap reveals, the second copies, but there is no way to distinguish these states visually before tapping. By separating them spatially (reveal = external button, copy = card face tap), each surface has a single, consistent meaning. The card number area shows a copy icon at matching text height (17px) when revealed to confirm that tapping will copy. A centred "Number copied" / "CVV copied" tooltip fades in over the card to confirm the action.
+
+---
+
+### 55. Bottom sheet overlay fades independently of the sheet slide
+
+**Decision:** `BottomSheet` uses `animationType="none"` on the `Modal` and runs two independent Reanimated animations: `overlayOpacity` (`withTiming`, 240ms fade) for the dark backdrop and `sheetY` (`withTiming`, 340ms ease-out cubic) for the sheet slide. On close, the overlay fades out (200ms) while the sheet slides out (260ms ease-in quad), then `runOnJS(setMounted)(false)` unmounts after the animation completes.
+
+**Why:** Using `animationType="slide"` on the Modal animates the entire modal container — including the dark overlay — from the bottom of the screen, making the backdrop appear to rise up rather than fade in. This reads as physically incorrect (overlays don't emerge from under the content). Independent animations allow the backdrop to behave like a darkening of the scene (fade) while the sheet behaves like a surface arriving from off-screen (slide), which matches the established pattern in iOS and Android system sheets.
+
+---
+
+### 56. CardFront layout — padding 18px, chip at spacing.lg, number at spacing.xxl below chip
+
+**Decision:** Card inner padding is 18px (reduced from `spacing.xl = 24px`). The EMV chip sits `spacing.lg (16px)` below the card name. The card number sits `spacing.xxl (32px)` below the chip. The bottom row (EXPIRES + CVV + network logo) uses `marginTop: 'auto'` to float to the card bottom.
+
+**Why:** At 24px padding, the vertical content budget (inner height ≈ 168px) left only ~4px of auto-margin above the bottom row, making the layout feel top-heavy with no breathing room below the number. Reducing to 18px (inner ≈ 180px) and using 32px below the chip gives a balanced vertical distribution: name at top, chip+number in the upper-middle, bottom row anchored to the foot. The `marginTop: 'auto'` pattern is preferred over fixed gap values because it self-adjusts if any content above the number changes height.
+
+**Alignment rule:** `fieldValue` (EXPIRES) uses `fontSize: 17, lineHeight: CHAR_H (22)` to exactly match the height of a `FlipCvv` character cell. With `alignItems: 'flex-end'` on the bottom row, their baselines align without any per-platform hacks.
+
+**Duplicate style bug:** A `cvvValue` key was defined twice in the same `StyleSheet.create` call — once for the card front (white text) and once for `CardBack` (dark text on a white box). JavaScript object literals take the last value for duplicate keys, so the back face's `color: '#18181b'` silently overwrote the front face definition, making CVV text appear dark on the card. Fixed by renaming the back-face styles to `backCvvBox` / `backCvvValue`.
+
+---
+
+## Snapshot 9 — 2026-04-14
+*Covers: send flow completion — confirmation embedded in modal, morphing CTA button, drawer-to-tracking reveal*
+
+### 57. Confirmation step merged into SendMoneyScreen — ConfirmationScreen eliminated
+
+**Decision:** The separate `ConfirmationScreen` navigation screen was removed. The confirmation UI (recipient summary, breakdown card, MorphButton) is now an `absoluteFill` overlay inside `SendMoneyScreen`, sliding in from the right via `confirmSlideX` when the user taps "Next". `step` state becomes `'recipient' | 'amount' | 'confirm'`. `ConfirmationScreen` is unregistered from the navigator and its file is now dead code.
+
+**Why:** The original flow navigated to `ConfirmationScreen` as a separate stack screen. When the user tapped "View transfer", the intended effect was: drawer closes, revealing the already-present `SendSuccessScreen` behind it. With `ConfirmationScreen` as a separate screen, any attempt to reset the navigation stack to `[Main, SendSuccess]` while the drawer was animating caused `ConfirmationScreen` to briefly re-mount or its transition to play, producing a visible flash. The root problem was that the `SendMoney` modal needed to own the full lifecycle from input → confirmation → success transition, with only one navigation event (`reset`) at the very end. Embedding confirmation inside the modal achieves this — the single `transparentModal` is on screen for the entire flow, and only the drawer's `translateY` out + `navigation.reset` fires at the end.
+
+**Back gesture:** `panGesture.enabled(step !== 'confirm')` disables the swipe-to-dismiss gesture during confirmation so the pan recogniser doesn't compete with the confirmation scroll. Android `BackHandler` is updated to handle the confirm step: pressing back closes confirmation if not processing, otherwise exits the modal.
+
+---
+
+### 58. MorphButton — slot machine flip with RGB component animation
+
+**Decision:** The "Confirm and send" CTA morphs through five phases: `idle → processing → success → viewTransfer` (and `failed` on error). Each phase transition animates the icon and text out upward (`translateY: -SLOT_H` in 110ms ease-in) then enters from below (`translateY: SLOT_H → 0` in 190ms ease-out), with a 50ms exit stagger and 40ms enter stagger between icon and text. Background colour transitions between phases using three independent `useSharedValue`s (`bgR`, `bgG`, `bgB`) animated directly to the target RGB components.
+
+**Why — slot machine over other animations:** Springs were rejected (too bouncy for a financial action). Opacity-only was rejected (same background colour, no sense of content changing). The slot machine exit-up / enter-below matches ATM receipt metaphors and reads as a clean "state replacing state" transition rather than a crossfade.
+
+**Why — RGB component interpolation over `interpolateColor`:** Reanimated's `interpolateColor` with multi-stop arrays bleeds intermediate hues between non-adjacent stops (e.g. orange → grey → green produced a brown intermediate). Direct `bgR/bgG/bgB` shared values eliminate any colour bleed — each component transitions independently on a straight line, producing accurate in-between colours.
+
+**Phase colour choices:**
+- `processing`: snap to `colors.surfaceHigh` (`#e4e4e7`) — grey, no animation, communicates "disabled"
+- `success`: animate to `colors.successSubtle` (`#dcfce7`) with dark green text — light green feels celebratory without being garish
+- `failed`: animate to `colors.failedSubtle` (`#fee2e2`) with dark red text — mirrors success pattern
+- `viewTransfer`: animate back to brand orange (`#f97316`) — same as `idle`, signals interactivity has returned
+
+---
+
+### 59. No opacity animations anywhere in the UI
+
+**Decision:** All transitions in the app use `translateX` / `translateY` and `scale` only. No `withTiming` or `withSpring` calls targeting `opacity`.
+
+**Why:** Opacity animations tend to look like the app is "fading out" rather than content leaving purposefully. Scale and translation animations communicate spatial relationships — content slides in from a direction, or shrinks away — which is more appropriate for a navigation-heavy mobile UI. The one visual exception that needed fading (the dark backdrop in `BottomSheet`) uses a `Modal` overlay rather than an opacity-animated in-tree `View`.
+
+---
+
+### 60. "Back to wallets" as a plain text secondary button
+
+**Decision:** The footer on `SendSuccessScreen` has a plain text "Back to wallets" link (`alignSelf: 'center'`, no border, no background), with only a `scale: 0.96` pressed state. The full-width primary orange button was removed.
+
+**Why:** After a successful transfer, the screen is informational — the user's task is complete. A large primary CTA at the bottom implies there is another action required. Demoting it to a quiet text link reduces visual noise and prevents the footer from competing with the tracking content above it. The "Share receipt / Send again" secondary row remains as the two peer actions, divided by a hairline, at the same visual weight.
+
+---
+
+### 61. SendSuccessContent extracted as a presentational component — used as drawer background layer
+
+**Decision:** `SendSuccessScreen.tsx` exports `SendSuccessContent({ params, onBack, onSendAgain, animated })` — a pure presentational component with no navigation hooks. `SendSuccessScreen` is a thin wrapper that reads `route.params` and wires up navigation callbacks. In `SendMoneyScreen`, when the transfer is committed (`handleConfirm`), a `successBgParams` state is set immediately. The background layer behind the modal renders `<SendSuccessContent params={successBgParams} animated={false} />` instead of a plain white view.
+
+**Why:** When "View transfer" is tapped, `enterY` animates from `0 → screenHeight` (the drawer slides down). At the end of the animation, `navigation.reset([Main, SendSuccess])` fires. The problem: before this fix, the background behind the departing drawer was a plain `colors.bg` white view. The user sees a white blank for ~320ms before the reset fires and `SendSuccessScreen` renders. With `SendSuccessContent` as the background, the actual tracking screen content is painted behind the drawer before the animation starts — the drawer slides down to reveal it, with no white flash and no navigation pop visible to the user.
+
+**`animated={false}`:** When rendered as background, the shared values are initialised to `0` (final positions) and the entrance `withSpring` calls are skipped. The background appears fully settled. When `navigation.reset` fires and the real `SendSuccessScreen` mounts in its place, `animated={true}` (default) triggers the entrance springs — the user sees a subtle spring settle that confirms the screen is "live", not a frozen snapshot.
+
+---
+
+## Snapshot 10 — 2026-04-14
+*Covers: profile/settings screen, hide-balances toggle, slot-machine balance animation, eye toggle pill, app lock feature, mock authentication*
+
+---
+
+### 57. Profile screen structure — four iOS-style sections
+
+**Decision:** The Profile screen is organised into four grouped-card sections: **Wallets** (wallet list with rename and set-primary), **Preferences** (hide balances, default send currency), **Security** (app lock toggle, Change PIN stub), **Support** (help centre, privacy policy, terms). Each section sits inside a rounded card with dividers between rows and no divider on the last row. A user block (avatar initials, name, member since) anchors the top.
+
+**Why:** The iOS Settings / grouped-table pattern is the most legible approach for a list of independent settings. Grouping under labelled sections reduces cognitive load — a user hunting for the PIN option knows to look under "Security" rather than scanning all rows. A footer version label ("Ria Wallet v1.0.0") closes the scroll, following the established convention in mobile apps.
+
+**Wallet rows inline in Profile:** Rather than a separate "Wallet Management" screen, wallets are listed directly in Profile. The set is small (max 12) and most users will have 2–4. Inline avoids an extra navigation hop for the common case of renaming a wallet or switching primary.
+
+**Trade-off:** Alert.prompt for rename (iOS only). Android would need a custom modal. Acceptable for the prototype stage; a cross-platform rename sheet would be the production fix.
+
+---
+
+### 58. Hide-balances mask — always `$•••.••`, never variable-width
+
+**Decision:** When `hideBalances` is true the balance is always rendered as `$•••.••` (fixed 7 characters, 3 masked integer digits, 2 masked decimal digits) regardless of the actual amount. On the Profile screen wallet rows, the format is `{symbol}•••.••` using the wallet's own currency symbol.
+
+**Why:** Showing the real number of digits (e.g. `$•••,•••.••` for a 7-digit balance) reveals order-of-magnitude information — an observer can still tell whether the balance is hundreds or millions. Using a fixed-width mask (`$•••.••`) provides no information about magnitude, which is what "hiding" a balance is actually supposed to accomplish. The trade-off is that the reveal animation must add characters rather than simply swapping symbols — see decision 59.
+
+---
+
+### 59. Per-digit slot-machine balance animation with expanding extra digits
+
+**Decision:** The `FlipBalance` component in `WalletsScreen` decomposes the formatted balance string into three zones:
+1. **Symbol** — static, never animated (e.g. `$`)
+2. **Extra chars** — all digits/separators to the left of the rightmost 3 integer digits; width-animated from 0 → totalWidth via `ExtraExpand`
+3. **Core chars** — the rightmost 3 integer digits plus any separators between them, plus 2 fractional digits; each char gets a vertical `BalanceFlipChar` slot-machine flip
+
+`BalanceFlipChar` is a fixed 27×54px `overflow:hidden` cell. The masked char (`•`) exits upward while the real char enters from below, using `withDelay(delay, withTiming(...))` to stagger each digit by 45ms (mirroring `FlipChar` in `CardFace`).
+
+`ExtraExpand` wraps the extra chars in an animated `width: 0 → totalWidth` container with `overflow:hidden`, creating the effect of extra digits sliding out from behind the currency symbol as the balance reveals.
+
+**Why:** A character-count-preserving swap animation (flip every `•` to its real digit in place) would still reveal magnitude. The expanding-width approach keeps the mask at a fixed 3 integer digits and only materialises additional digits at reveal time. It also produces a more interesting visual: the amount "grows" out of the compact masked form, reinforcing the reveal metaphor.
+
+**Character width constants:** Digits are `27px` wide, separators (`,` and `.`) are `14px` wide. These values were chosen to match the `CHAR_W = 27` / `CHAR_H = 54` constants already used in `CardFace.tsx`, so the two slot-machine animations feel visually consistent.
+
+---
+
+### 60. Eye toggle as pill button inside the wallet carousel card
+
+**Decision:** The show/hide balance control is a full-width pill button (`Eye`/`EyeOff` icon + "Show balance"/"Hide balance" label) placed directly below the balance row inside each wallet carousel card, separated by `marginTop: 20px`. The button uses the surface background colour with a subtle border.
+
+**Why:** Earlier iterations put the eye icon in the greeting row header (too crowded, too small), and then as a bare icon inside the carousel (still too small, not obviously a button). The pill treatment makes the control clearly tappable, large enough for reliable finger targeting, and self-labelled so there is no ambiguity about what the button does. Placing it inside the card ties the control visually to the balance it affects.
+
+**Spacing:** `currencyRow.marginBottom: 20` (space above balance) and `eyeToggle.marginTop: 20` (space below balance, above toggle) are equal, centering the balance amount between the currency label and the toggle button.
+
+---
+
+### 61. App lock via `AppLockGate` overlay — preserves navigation state
+
+**Decision:** `AppLockGate` wraps the entire React tree in `App.tsx`. When `appLockEnabled && locked` is true, it renders a `StyleSheet.absoluteFill` `View` over the app — the navigator and all screens remain mounted underneath. The lock overlay re-appears when `AppState` transitions from `background` to `active`.
+
+**Why:** Unmounting the navigator on lock would reset navigation state (active tab, scroll positions, stack depth). Users returning to the app after Face ID would land on the home tab regardless of where they were. The overlay pattern keeps all navigation state intact; the lock screen is purely a presentation layer. `absoluteFill` is simpler than a dedicated auth navigator level and avoids transition animations between lock and app.
+
+**Auto-prompt on mount:** When the lock screen appears it immediately calls `authenticate()` so the system biometric prompt appears without the user needing to tap anything. The manual "Unlock with Face ID" button is a fallback for when the prompt is dismissed or times out.
+
+---
+
+### 62. Auth-gate on app lock toggle (both enable and disable require authentication)
+
+**Decision:** The App Lock toggle in Profile calls `authenticate()` before calling `toggleAppLock()`. The toggle is only changed if authentication succeeds. This applies to both enabling and disabling app lock.
+
+**Why:** Requiring auth to disable app lock prevents a physical attacker from simply opening Settings and turning off the lock before the session re-locks. Requiring auth to enable app lock is consistent (and guards against accidental toggling). If auth fails or is cancelled the toggle state is unchanged and an error haptic fires.
+
+---
+
+---
+
+## Snapshot 11 — 2026-04-14
+*Covers: transaction detail / tracking screen, activity list navigation, shared step components*
+
+### 64. Every activity row navigates to a dedicated transaction detail screen
+
+**Decision:** Each row in `UnifiedActivityScreen` is a `Pressable` that pushes `TransactionDetailScreen` with the transaction ID. The detail screen shows a hero amount, status badge, details card (date, reference, wallet, note/reason), and a three-step tracking timeline.
+
+**Why:** The activity list is a summary view — it shows status and amount but gives no context about *why* something is pending or failed, no reference number, and no delivery timeline. For a money transfer product these are the three most common support triggers ("when will it arrive?", "what's my reference?", "why did it fail?"). Linking every row to a detail screen answers all three without requiring the user to contact support in the normal case.
+
+---
+
+### 65. Transaction detail reuses the same tracking timeline as SendSuccessScreen
+
+**Decision:** The step icons (`DoneIcon`, `ActiveIcon`, `FailedIcon`, `PendingIcon`) and `StepRow` were extracted from `SendSuccessScreen` into `src/components/TransferSteps.tsx`. Both screens import from there.
+
+**Why:** The tracking timeline is the same UI regardless of whether you're viewing it immediately after sending or opening a historical transaction. Duplicating the components would mean maintaining two copies of the pulse animation, connector logic, and step styles. The shared file is the single source of truth — a visual change to the timeline (new colour, new icon size) propagates to both screens automatically.
+
+**`FailedIcon` added:** `SendSuccessScreen` only ever shows `done`, `active`, and `pending` states. The detail screen adds `failed` (red filled circle with X) to represent a step that was attempted and rejected. Adding it to the shared file keeps all five icon variants together.
+
+---
+
+### 66. Failed transaction timeline shows failure at step 2 (Processing), not step 1 or 3
+
+**Decision:** For `status: 'failed'` transactions, step 1 ("Transfer initiated") is `done`, step 2 ("Processing transfer") is `failed`, and step 3 ("Recipient receives funds") is `pending`.
+
+**Why:** Step 1 always completes — the app has recorded the transfer intent and reserved the funds. The failure occurs during network processing (step 2), which is where payment network rejections, compliance checks, and insufficient-liquidity errors actually happen. Step 3 never fires if step 2 fails, so it stays pending. This reflects the real failure topology of a remittance pipeline and sets accurate expectations for the user ("the money left my wallet briefly but was returned — it didn't reach the recipient").
+
+---
+
+### 67. Failed transactions use `tx.note` as the failure reason, not a hardcoded message
+
+**Decision:** The "Reason" row in the details card shows `tx.note` when present, otherwise falls back to "Transfer rejected by payment network". The "Note" row is suppressed for failed transactions — the note *is* the reason.
+
+**Why:** Some mock transactions (and real future transactions) carry a note that describes the failure cause (e.g. "Insufficient funds"). Showing both a "Note" row and a separate hardcoded "Reason" row produced two rows with related but inconsistent content on the same screen. Treating the note as the canonical reason for failed transactions removes the duplication and uses the most specific information available. The fallback covers failures where no reason was recorded.
+
+---
+
+### 68. "Contact support" is a sticky footer, not scroll content — refund notice is at the top
+
+**Decision:** For failed transactions, a "Contact support" `SecondaryButton` sits in a sticky footer outside the `ScrollView`, visible immediately without scrolling. The refund notice ("Your funds were not deducted…") moved from the bottom of the scroll to just below the hero, before the details card.
+
+**Why:** Both pieces of content are most useful at the moment the user understands the transaction failed — which is immediately on opening the screen, not after reading all the detail rows. The refund notice answers the first anxiety ("did I lose money?") and should appear before any other detail. The support button is an action, not content — burying it at the bottom of a scrollable list means users who need it most (confused or frustrated users) are least likely to find it. A sticky footer is permanently reachable regardless of scroll position, matching the pattern used for CTAs on confirmation and success screens.
+
+**SecondaryButton styling:** The support button uses the same `SecondaryButton` component as "Back to wallets" on `SendSuccessScreen` — zinc surface, pill shape, no colour. Red was rejected because it implies destructive action; the button is a help request, not a warning.
+
+---
+
+**Decision:** `src/utils/auth.ts` exports a single `authenticate(promptMessage)` function that shows a native `Alert` with "Cancel" and "Authenticate" buttons instead of calling `expo-local-authentication`. Both `AppLockGate` and `ProfileScreen` import from this utility rather than calling `LocalAuthentication` directly.
+
+**Why:** `expo-local-authentication` requires a native development build (not Expo Go) and prompts for the reviewer's real device PIN or Face ID. This makes the prototype awkward to review and can feel invasive. The mock lets any reviewer tap "Authenticate" to proceed through the flow without entering real credentials. The utility is the single source of truth for auth — swapping in real biometrics for production only requires changing this one file.
+
+---
+
+## Snapshot 12 — 2026-04-14
+*Covers: balance digit animation, wallet carousel interaction*
+
+### 69. Balance re-flips on wallet swipe — one element, not one per wallet
+
+**Decision:** `FlipBalance` is rendered once at the screen level in `WalletsScreen`, not inside each `WalletItem`. It receives the active wallet's balance as a prop (`real`) and the global `hideBalances` flag (`revealed`). Switching wallets changes `real`, which triggers each digit drum's animation independently.
+
+**Why:** The original approach rendered a balance inside each `WalletItem`. Swiping to a new wallet mounted a fresh balance component which always started in the masked (dots) state before animating in — a visible flash of dots even when balances were already revealed. Lifting the balance to screen level means there is one persistent drum per digit position. When the wallet changes, each drum animates from its current digit to the new one with no reset — a true value-to-value transition with no intermediate masked state.
+
+---
+
+### 70. Slot-drum architecture replaces two-layer flip for digit animation
+
+**Decision:** `BalanceDrumChar` renders a vertical column of 11 items (`• 0 1 2 3 4 5 6 7 8 9`) inside a clipping cell. A single `translateY` shared value selects which item is visible: `y = 0` shows `•`, `y = -(d+1) * BALANCE_DIGIT_H` shows digit `d`. Animating `y` transitions directly from one visible item to another.
+
+**Why:** The previous `BalanceFlipChar` used two layers (front = dot, back = digit) and swapped text content via React state. React state updates are asynchronous — `progress.value = 0` (Reanimated, synchronous on the UI thread) and `setLeaving/setArriving` (React, scheduled) would desync, producing one-frame flashes of wrong content during rapid swipes. The slot drum has no React state in the animation path at all: `translateY` is a single number on the UI thread, and changing `actual` (a prop) simply re-runs the `useEffect` to animate to the new Y target. No state, no race.
+
+---
+
+### 71. `onScroll` midpoint detection instead of `onMomentumScrollEnd` for wallet switch
+
+**Decision:** `handleScroll` fires on every scroll frame (`scrollEventThrottle={16}`) and computes `nearest = Math.round(x / W)`. When `nearest !== pendingIdx.current` the active wallet and balance are updated immediately. `onMomentumScrollEnd` is kept as a safety reconciliation pass only.
+
+**Why:** `onMomentumScrollEnd` fires after the FlatList has fully snapped to a page — typically 200–400ms after the user crosses the midpoint. This made the digit flip feel disconnected from the physical swipe gesture: the swipe would complete, pause, then the numbers would change. `Math.round(x / W)` crosses the threshold exactly at 50% between pages, so the drum animation starts while the user is still mid-swipe. `pendingIdx` ref prevents the handler from re-firing for the same index on subsequent frames.
+
+---
+
+### 72. FlatList height extended to cover balance region — swipe works over digits
+
+**Decision:** `carousel` style sets `height: ITEM_H + BALANCE_H`. The `WalletItem` render function only fills `ITEM_H`; the remaining `BALANCE_H` is empty FlatList space. The balance overlay sits absolutely on top of that space with `pointerEvents="box-none"` (digits are `pointerEvents="none"`; the eye toggle is a tappable `Pressable`).
+
+**Why:** With the balance in a separate `View` below the FlatList, touch events over the digits were consumed by that View and never reached the FlatList — the user could not swipe when their finger started on the numbers. Extending the FlatList to cover the full region makes it the gesture responder for the entire carousel area. The `box-none` overlay means swipes pass through to the FlatList while the toggle still intercepts taps.
+
+---
+
+### 73. Removed "N cards linked" from wallet item header
+
+**Decision:** The wallet item in the carousel no longer shows a "N cards linked" subtitle. Only the primary badge and currency row (flag + code) are rendered.
+
+**Why:** The cards linked to the active wallet are already visible in the `CardStackPreview` section immediately below the carousel. Repeating the count in the carousel header was redundant — it added visual noise without adding information the user didn't already have on screen.
+
+---
+
+### 74. Equal flex spacers above and below the balance amount — toggle pinned at bottom
+
+**Decision:** The `balanceOverlay` contains: a `flex: 1` spacer, the `FlipBalance` digits, another `flex: 1` spacer, then the eye toggle `Pressable`. The overlay has a fixed `height: BALANCE_H` and `paddingBottom: 16`.
+
+**Why:** Earlier approaches used `paddingTop` + `gap` to position the digits, which meant changing the top padding shifted the toggle as a side effect. Equal flex spacers distribute all remaining height symmetrically above and below the digits regardless of the toggle's intrinsic height. The toggle is pinned to the bottom of the overlay by being the last non-flex child. `BALANCE_H` is now the single knob that controls overall breathing room; the spacing around the digits adjusts automatically.
+
+---
+
+## Snapshot 13 — 2026-04-14
+*Covers: send flow transition polish, failure state UI, unified confirm screen*
+
+### 75. `useSafeAreaInsets` instead of `SafeAreaView` in `SendSuccessContent`
+
+**Decision:** `SendSuccessContent` uses `useSafeAreaInsets()` and applies `paddingTop`/`paddingBottom` manually to a plain `View`, rather than wrapping in `SafeAreaView`.
+
+**Why:** `SafeAreaView` fires a native measurement pass after the first render to determine its padding. When the component is mounted inside a `transparentModal` container (as the background layer in `SendMoneyScreen`), the native measurement context differs from a regular screen — the first render paints with no padding, then jumps to the correct value on the next frame. This produced the "content at top then jitters into place" symptom. `useSafeAreaInsets()` reads directly from the React context provided by `SafeAreaProvider` at the app root — the correct value is available synchronously on the first render, so there is no layout update after mount.
+
+---
+
+### 76. `contentStyle: { backgroundColor: 'transparent' }` on `SendSuccess` navigation screen
+
+**Decision:** `SendSuccessScreen` is registered with `contentStyle: { backgroundColor: 'transparent' }` in the navigator, identical to `SendMoney`.
+
+**Why:** `SendSuccessContent` wraps its content in an `Animated.View` with `backgroundColor: colors.bg` — solid while on screen. When "Back to wallets" slides it down via `translateY`, the native screen container was opaque, so the area above the departing content showed the container's white background rather than the `Main` screen behind it. Making the native container transparent lets the already-mounted `Main` screen show through as the content slides down — the same technique used for `SendMoney`.
+
+---
+
+### 77. `showSuccessBg` flag separates "reveal tracking screen" from "reveal wallets" on dismiss
+
+**Decision:** A `showSuccessBg` boolean state (separate from `successBgParams`) controls whether `SendSuccessContent` is rendered as the background layer in `SendMoneyScreen`. It is set `true` when a transfer succeeds and `false` before `handleCloseToWallets` animates (for the "Close" path after success/failure).
+
+**Why:** `successBgParams` tells us *if* tracking data exists but not *which screen* should show behind the departing drawer. "View transfer" should reveal the tracking screen. "Close" after success/failure should reveal wallets (the `Main` screen via native modal transparency). Using a single background layer for both would require knowing the user's intent before the animation starts. `showSuccessBg = false` before `handleCloseToWallets` hides the tracking content, so the native transparency of the `transparentModal` shows through to wallets — no extra screen, no white flash. The white fallback `<View bg={colors.bg}>` was removed entirely; all dismiss paths either use `SendSuccessContent` (for View transfer) or native transparency (for everything else).
+
+---
+
+### 78. `retryReady` phase — slot machine flip from "Transfer failed" to "Try again"
+
+**Decision:** After a failed transfer, `phase` auto-transitions `'failed' → 'retryReady'` after 2 seconds. `MorphButton` slot-machine flips from the red "Transfer failed" state to an orange "Try again" button — identical animation mechanics to `'success' → 'viewTransfer'`. Tapping "Try again" calls `setPhase('idle')`, resetting the confirm screen so the user can re-attempt without re-entering amounts.
+
+**Why:** The `'failed'` state is non-interactive — it confirms what happened. It should not stay there permanently because the user has no obvious next step. Auto-transitioning to `'retryReady'` gives them a clear primary action with the same motion they saw on success, making the two outcomes feel like a unified system. The slot machine flip communicates that the button state has changed and a new action is available. Resetting to `'idle'` (rather than directly re-triggering) lets the user review the breakdown and change the outcome or delay settings before retrying.
+
+---
+
+### 79. Failure banner replaces the hero section in the confirm overlay — persists through `retryReady`
+
+**Decision:** When `phase === 'failed' || phase === 'retryReady'`, the hero section (recipient flag, amount, ETA chip) is replaced by a centred failure banner: a red-tinted circle with an X icon, "Transfer failed" heading, and "No funds were deducted from your wallet." subtext. The breakdown cards remain visible and scrollable. The banner stays visible for the full `failed → retryReady` lifecycle.
+
+**Why:** The hero amount is no longer meaningful after a failure — no money moved. Showing it alongside an error message creates a confusing read ("Maria receives ₱5,684 … Transfer failed"). Replacing it with explicit failure feedback is clearer. The reassurance copy ("No funds were deducted") answers the user's first anxiety before they read anything else. The banner persists through `retryReady` because the failure context is still relevant — the user is about to retry, and removing the banner too early would make "Try again" feel contextless.
+
+---
+
+### 80. Prototype settings hidden during active transfer phases
+
+**Decision:** The prototype outcome/delay controls are gated behind `phase === 'idle'` and disappear as soon as the user taps "Confirm and send".
+
+**Why:** The controls exist to simulate different backend responses. Once a transfer attempt is in progress they are irrelevant — the outcome has already been captured. Leaving them visible during processing, success, or failure states made the prototype UI look unfinished and was distracting during the transition animations.
+

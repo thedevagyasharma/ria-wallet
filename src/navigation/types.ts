@@ -26,9 +26,9 @@ export type RootStackParamList = {
   AddCardReview: { walletId: string; cardType: string; name: string; color: string };
   // Activity
   Activity: { walletId: string };
+  TransactionDetail: { txId: string };
   // Send money
   SendMoney: { walletId?: string };
-  Confirmation: { walletId: string; contactId: string; amount: number; receiveCurrency: string };
   SendSuccess: { recipientName: string; amount: number; currency: string; receivedAmount: number; receiveCurrency: string; eta: string; txRef: string };
   SendError: { reason: 'insufficient_funds' | 'transfer_failed' };
 };

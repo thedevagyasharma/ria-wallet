@@ -75,11 +75,6 @@ export default function WalletCardListScreen({ route }: RootStackProps<'WalletCa
                 style={({ pressed }) => [styles.cardWrap, pressed && { opacity: 0.9 }]}
               >
                 <CardFront card={card} currency={currency?.code ?? ''} />
-                {card.frozen && (
-                  <View style={styles.frozenOverlayLabel}>
-                    <Text style={styles.frozenOverlayText}>❄️ Frozen</Text>
-                  </View>
-                )}
               </Pressable>
             ))}
 
@@ -131,21 +126,6 @@ const styles = StyleSheet.create({
   cardWrap: {
     position: 'relative',
   },
-  frozenOverlayLabel: {
-    position: 'absolute',
-    bottom: spacing.lg,
-    right: spacing.lg,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 4,
-  },
-  frozenOverlayText: {
-    fontSize: typography.xs,
-    color: '#93c5fd',
-    fontWeight: typography.medium,
-  },
-
   addCardRow: {
     flexDirection: 'row',
     alignItems: 'center',

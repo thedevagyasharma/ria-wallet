@@ -1,4 +1,11 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withDelay,
+  Easing,
+} from 'react-native-reanimated';
 import {
   View,
   Text,
@@ -21,11 +28,14 @@ import {
   Plus,
   CreditCard,
   UserCircle,
+  Eye,
+  EyeOff,
 } from 'lucide-react-native';
 
 import { colors, typography, spacing, radius } from '../../theme';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useCardStore } from '../../stores/useCardStore';
+import { usePrefsStore } from '../../stores/usePrefsStore';
 import { getCurrency, formatAmount } from '../../data/currencies';
 import StatusChip from '../../components/StatusChip';
 import SecondaryButton from '../../components/SecondaryButton';
@@ -39,8 +49,14 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 const { width: W } = Dimensions.get('window');
 const H_PAD = 24;
 
-const GREETING_H = 52;
-const ITEM_H     = 196;
+const GREETING_H      = 52;
+const ITEM_H          = 72;   // carousel header — snug to content
+const BALANCE_H       = 210;  // digit area + equal top/bottom space + toggle
+const BALANCE_DIGIT_H = 54;   // clip height per digit cell
+const BALANCE_DIGIT_W = 27;   // fixed width per digit (tabular-nums at fontSize 44)
+const BALANCE_SEP_W   = 14;   // comma / space width at fontSize 44
+
+function charW(c: string) { return /\d/.test(c) ? BALANCE_DIGIT_W : BALANCE_SEP_W; }
 
 const MAX_PREVIEW_TXS = 3;
 
@@ -58,12 +74,134 @@ function alpha(hex: string, o: number) {
   return `rgba(${r},${g},${b},${o})`;
 }
 
-// ─── Wallet item ──────────────────────────────────────────────────────────────
+// ─── Per-digit slot drum ──────────────────────────────────────────────────────
+//
+// Each digit position is a vertical drum containing: • 0 1 2 3 4 5 6 7 8 9
+// The drum's translateY selects which item is visible through the clipping cell:
+//
+//   y = 0              → • (masked)
+//   y = -(d+1) * H     → digit d
+//
+// Wallet switch: `actual` prop changes → animate from old Y to new Y.
+// Reveal/hide:   `revealed` changes   → animate between digit Y and 0.
+//
+// No text swapping, no React state timing races, no resets.
 
-function WalletItem({ wallet, cardCount }: { wallet: Wallet; cardCount: number }) {
-  const currency  = getCurrency(wallet.currency);
-  const accent    = walletAccent(wallet.currency);
-  const formatted = formatAmount(wallet.balance, wallet.currency);
+const DRUM_ITEMS = ['•', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+function drumY(d: string) { return -(parseInt(d, 10) + 1) * BALANCE_DIGIT_H; }
+
+function BalanceDrumChar({ actual, revealed, delay }: {
+  actual: string; revealed: boolean; delay: number;
+}) {
+  const y = useSharedValue(revealed ? drumY(actual) : 0);
+
+  useEffect(() => {
+    y.value = withDelay(
+      delay,
+      withTiming(revealed ? drumY(actual) : 0, { duration: 340, easing: Easing.out(Easing.cubic) }),
+    );
+  }, [revealed, actual]);
+
+  const drumStyle = useAnimatedStyle(() => ({ transform: [{ translateY: y.value }] }));
+
+  return (
+    <View style={styles.balanceDigitCell}>
+      <Animated.View style={drumStyle}>
+        {DRUM_ITEMS.map((item, i) => (
+          <Text key={i} style={styles.balanceDigit}>{item}</Text>
+        ))}
+      </Animated.View>
+    </View>
+  );
+}
+
+// Expanding container for the "extra" chars that don't exist in the mask.
+function ExtraExpand({ chars, revealed }: { chars: string[]; revealed: boolean }) {
+  const totalW = chars.reduce((sum, c) => sum + charW(c), 0);
+  const animW  = useSharedValue(revealed ? totalW : 0);
+
+  useEffect(() => {
+    animW.value = withTiming(revealed ? totalW : 0, {
+      duration: 360,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [revealed, totalW]);
+
+  const style = useAnimatedStyle(() => ({ width: animW.value }));
+
+  return (
+    <Animated.View style={[styles.extraExpand, style]}>
+      {chars.map((c, i) =>
+        /\d/.test(c)
+          ? <BalanceDrumChar key={i} actual={c} revealed={revealed} delay={0} />
+          : <Text key={i} style={[styles.balanceStatic, { width: BALANCE_SEP_W }]}>{c}</Text>
+      )}
+    </Animated.View>
+  );
+}
+
+// Parses the formatted balance string and builds the animated row.
+function FlipBalance({ real, revealed }: { real: string; revealed: boolean }) {
+  const dotIdx       = real.indexOf('.');
+  const fracStr      = dotIdx >= 0 ? real.slice(dotIdx + 1) : '';
+  const beforeDot    = dotIdx >= 0 ? real.slice(0, dotIdx) : real;
+
+  // Split symbol (everything before first digit) from integer digits+separators
+  const firstDigit   = beforeDot.search(/\d/);
+  const symbol       = firstDigit > 0 ? beforeDot.slice(0, firstDigit) : '';
+  const intChars     = Array.from(beforeDot.slice(firstDigit >= 0 ? firstDigit : 0));
+
+  // Identify the rightmost 3 digit positions → "core" that maps to the mask •••
+  const MASK_DIGITS  = 3;
+  let digitsFromRight = 0;
+  let coreStart      = intChars.length;
+  for (let i = intChars.length - 1; i >= 0; i--) {
+    if (/\d/.test(intChars[i])) {
+      digitsFromRight++;
+      if (digitsFromRight === MASK_DIGITS) { coreStart = i; break; }
+    }
+  }
+
+  const extraChars = intChars.slice(0, coreStart);
+  const coreChars  = intChars.slice(coreStart);
+  const fracChars  = Array.from(fracStr);
+
+  // Stagger delays: left-to-right cascade across the whole number
+  let flipIdx = 0;
+  const coreDelays = coreChars.map(c => /\d/.test(c) ? flipIdx++ * 45 + 30 : -1);
+  const fracDelays = fracChars.map(() => flipIdx++ * 45 + 30);
+
+  return (
+    <View style={styles.balanceRow}>
+      <Text style={styles.balanceStatic}>{symbol}</Text>
+
+      {extraChars.length > 0 && (
+        <ExtraExpand chars={extraChars} revealed={revealed} />
+      )}
+
+      {coreChars.map((c, i) =>
+        /\d/.test(c) ? (
+          <BalanceDrumChar key={i} actual={c} revealed={revealed} delay={coreDelays[i]} />
+        ) : (
+          <Text key={i} style={[styles.balanceStatic, { width: BALANCE_SEP_W }]}>{c}</Text>
+        )
+      )}
+
+      <Text style={styles.balanceStatic}>{'.'}</Text>
+
+      {fracChars.map((c, i) => (
+        <BalanceDrumChar key={i} actual={c} revealed={revealed} delay={fracDelays[i]} />
+      ))}
+    </View>
+  );
+}
+
+// ─── Wallet item — pure display, no animation state ──────────────────────────
+// Balance lives at the screen level so one element drives the flip.
+
+function WalletItem({ wallet }: { wallet: Wallet }) {
+  const currency = getCurrency(wallet.currency);
+  const accent   = walletAccent(wallet.currency);
 
   return (
     <View style={styles.walletItem}>
@@ -80,21 +218,8 @@ function WalletItem({ wallet, cardCount }: { wallet: Wallet; cardCount: number }
 
       <View style={styles.currencyRow}>
         <Text style={styles.itemFlag}>{currency.flag}</Text>
-        <Text style={styles.itemCode}>{currency.code}</Text>
+        <Text style={styles.itemCode}>{wallet.nickname ?? currency.code}</Text>
       </View>
-
-      <Text
-        style={styles.balanceAmount}
-        adjustsFontSizeToFit
-        numberOfLines={1}
-        minimumFontScale={0.5}
-      >
-        {formatted}
-      </Text>
-
-      <Text style={styles.linkedText}>
-        {cardCount === 0 ? 'No cards linked' : `${cardCount} ${cardCount === 1 ? 'card' : 'cards'} linked`}
-      </Text>
     </View>
   );
 }
@@ -143,9 +268,12 @@ export default function WalletsScreen() {
   const navigation = useNavigation<Nav>();
   const { wallets, transactions, setActiveWallet } = useWalletStore();
   const { getWalletCards } = useCardStore();
+  const { hideBalances, toggleHideBalances } = usePrefsStore();
 
   const startIdx = wallets.findIndex((w) => w.isPrimary);
   const [currentIndex, setCurrentIndex] = useState(startIdx >= 0 ? startIdx : 0);
+  // Track the last index we fired for so onScroll doesn't double-fire.
+  const pendingIdx = useRef(startIdx >= 0 ? startIdx : 0);
   const flatListRef = useRef<FlatList<Wallet>>(null);
   const scrollRef = useRef<ScrollView>(null);
   const scrollReset = useTabScrollReset();
@@ -161,23 +289,38 @@ export default function WalletsScreen() {
     .sort((a, b) => b.date.getTime() - a.date.getTime());
   const previewTxs = walletTxs.slice(0, MAX_PREVIEW_TXS);
 
+  // Fires every frame during the swipe. Updates currentIndex (and thus the
+  // balance flipKey) the moment the user crosses the midpoint — no waiting
+  // for the snap to complete.
+  const handleScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const x = e.nativeEvent.contentOffset.x;
+      const nearest = Math.max(0, Math.min(Math.round(x / W), wallets.length - 1));
+      if (nearest !== pendingIdx.current) {
+        pendingIdx.current = nearest;
+        setCurrentIndex(nearest);
+        setActiveWallet(wallets[nearest].id);
+        Haptics.selectionAsync();
+      }
+    },
+    [wallets, setActiveWallet],
+  );
+
+  // Safety net: reconcile to the final snapped position after momentum ends.
   const handleCarouselEnd = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const idx = Math.round(e.nativeEvent.contentOffset.x / W);
       const clamped = Math.max(0, Math.min(idx, wallets.length - 1));
-      if (clamped !== currentIndex) {
-        setCurrentIndex(clamped);
-        setActiveWallet(wallets[clamped].id);
-        Haptics.selectionAsync();
-      }
+      pendingIdx.current = clamped;
+      setCurrentIndex(clamped);
+      setActiveWallet(wallets[clamped].id);
     },
-    [wallets, currentIndex, setActiveWallet],
+    [wallets, setActiveWallet],
   );
 
   const renderWallet = useCallback(
-    ({ item }: ListRenderItemInfo<Wallet>) =>
-      <WalletItem wallet={item} cardCount={getWalletCards(item.id).length} />,
-    [getWalletCards],
+    ({ item }: ListRenderItemInfo<Wallet>) => <WalletItem wallet={item} />,
+    [],
   );
 
   const handleSend      = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); if (active) navigation.navigate('SendMoney', { walletId: active.id }); }, [active, navigation]);
@@ -213,20 +356,59 @@ export default function WalletsScreen() {
           </View>
         </View>
 
-        {/* ── Wallet carousel ───────────────────────────────────────────── */}
-        <FlatList
-          ref={flatListRef}
-          data={wallets}
-          horizontal
-          pagingEnabled
-          keyExtractor={(item) => item.id}
-          renderItem={renderWallet}
-          showsHorizontalScrollIndicator={false}
-          onMomentumScrollEnd={handleCarouselEnd}
-          scrollEventThrottle={16}
-          style={styles.carousel}
-          nestedScrollEnabled
-        />
+        {/* ── Wallet carousel + balance overlay ────────────────────────── */}
+        {/* The FlatList covers ITEM_H + BALANCE_H so swipes work over the
+            digits. The balance is an absolute overlay on the bottom half;
+            pointerEvents="box-none" lets swipes pass through to the FlatList
+            while the eye-toggle Pressable still intercepts taps. */}
+        <View style={styles.carouselWrap}>
+          <FlatList
+            ref={flatListRef}
+            data={wallets}
+            horizontal
+            pagingEnabled
+            keyExtractor={(item) => item.id}
+            renderItem={renderWallet}
+            showsHorizontalScrollIndicator={false}
+            onScroll={handleScroll}
+            onMomentumScrollEnd={handleCarouselEnd}
+            scrollEventThrottle={16}
+            style={styles.carousel}
+            nestedScrollEnabled
+          />
+
+          <View style={styles.balanceOverlay} pointerEvents="box-none">
+            {/* equal spacer above digits */}
+            <View style={{ flex: 1 }} pointerEvents="none" />
+
+            {/* digits — swipes pass through to FlatList */}
+            <View pointerEvents="none">
+              {active && (
+                <FlipBalance
+                  real={formatAmount(active.balance, active.currency)}
+                  revealed={!hideBalances}
+                />
+              )}
+            </View>
+
+            {/* equal spacer below digits */}
+            <View style={{ flex: 1 }} pointerEvents="none" />
+
+            {/* eye toggle — tappable, pinned at bottom */}
+            <Pressable
+              onPress={() => { Haptics.selectionAsync(); toggleHideBalances(); }}
+              style={({ pressed }) => [styles.eyeToggle, pressed && { opacity: 0.5 }]}
+            >
+              {hideBalances
+                ? <EyeOff size={18} color={colors.textSecondary} strokeWidth={1.8} />
+                : <Eye    size={18} color={colors.textSecondary} strokeWidth={1.8} />
+              }
+              <Text style={styles.eyeToggleLabel}>
+                {hideBalances ? 'Show balance' : 'Hide balance'}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
 
         {/* ── Dots ──────────────────────────────────────────────────────── */}
         {wallets.length > 1 && (
@@ -321,8 +503,26 @@ const styles = StyleSheet.create({
   },
   addBtnText: { fontSize: 11, color: colors.textMuted, fontWeight: typography.medium },
 
-  // ── Carousel ──
-  carousel: { height: ITEM_H },
+  // ── Carousel + balance overlay ──
+  // carouselWrap is relative-positioned so the balance overlay can be absolute.
+  carouselWrap: { position: 'relative' },
+
+  // FlatList covers the full height (header + balance area) so swipes work
+  // anywhere in the region, including over the digit display.
+  carousel: { height: ITEM_H + BALANCE_H },
+
+  // Absolute overlay: digits + eye toggle centred in the bottom half.
+  // pointerEvents="box-none" is set in JSX so swipes pass through to FlatList.
+  balanceOverlay: {
+    position: 'absolute',
+    top: ITEM_H,
+    left: 0,
+    right: 0,
+    height: BALANCE_H,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingBottom: 16,
+  },
 
   walletItem: {
     width: W,
@@ -336,18 +536,17 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     paddingHorizontal: 9,
     paddingVertical: 3,
-    marginBottom: 14,
+    marginBottom: 10,
   },
   primaryChipPlaceholder: {
     height: 22,
-    marginBottom: 14,
+    marginBottom: 10,
   },
   primaryChipText: { fontSize: 10, fontWeight: typography.semibold, letterSpacing: 0.2 },
   currencyRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
-    marginBottom: 18,
   },
   itemFlag: { fontSize: 20 },
   itemCode: {
@@ -356,21 +555,57 @@ const styles = StyleSheet.create({
     fontWeight: typography.semibold,
     letterSpacing: 0.4,
   },
-  balanceAmount: {
+  // ── Per-digit balance flip ──
+  balanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: BALANCE_DIGIT_H,
+  },
+  // Extra chars that slide out from behind the currency symbol
+  extraExpand: {
+    flexDirection: 'row',
+    overflow: 'hidden',
+    height: BALANCE_DIGIT_H,
+    alignItems: 'center',
+  },
+  balanceDigitCell: {
+    width: BALANCE_DIGIT_W,
+    height: BALANCE_DIGIT_H,
+    overflow: 'hidden',
+    alignItems: 'center',
+    // no justifyContent — drum flows from top so translateY positions correctly
+  },
+  balanceDigit: {
     fontSize: 44,
     color: colors.textPrimary,
     fontWeight: typography.bold,
-    letterSpacing: -1.5,
-    lineHeight: 50,
+    lineHeight: BALANCE_DIGIT_H,
     textAlign: 'center',
-    width: '100%',
+    fontVariant: ['tabular-nums'],
   },
-  linkedText: {
-    fontSize: 11,
-    color: colors.textMuted,
-    marginTop: 12,
+  balanceStatic: {
+    fontSize: 44,
+    color: colors.textPrimary,
+    fontWeight: typography.bold,
+    lineHeight: BALANCE_DIGIT_H,
   },
-
+  eyeToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  eyeToggleLabel: {
+    fontSize: typography.sm,
+    color: colors.textSecondary,
+    fontWeight: typography.medium,
+  },
   // ── Dots ──
   dotsRow: {
     flexDirection: 'row',

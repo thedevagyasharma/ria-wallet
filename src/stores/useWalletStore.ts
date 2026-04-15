@@ -12,6 +12,8 @@ type WalletStore = {
   addTransaction: (tx: Transaction) => void;
   getWalletTransactions: (walletId: string) => Transaction[];
   deductBalance: (walletId: string, amount: number) => void;
+  setPrimary: (id: string) => void;
+  setNickname: (id: string, nickname: string) => void;
 };
 
 export const useWalletStore = create<WalletStore>((set, get) => ({
@@ -37,6 +39,18 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
     set((state) => ({
       wallets: state.wallets.map((w) =>
         w.id === walletId ? { ...w, balance: w.balance - amount } : w
+      ),
+    })),
+
+  setPrimary: (id) =>
+    set((state) => ({
+      wallets: state.wallets.map((w) => ({ ...w, isPrimary: w.id === id })),
+    })),
+
+  setNickname: (id, nickname) =>
+    set((state) => ({
+      wallets: state.wallets.map((w) =>
+        w.id === id ? { ...w, nickname } : w
       ),
     })),
 }));

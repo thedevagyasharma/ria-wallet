@@ -18,10 +18,11 @@ import CurrencyPickerScreen from '../screens/wallets/CurrencyPickerScreen';
 import WalletReviewScreen from '../screens/wallets/WalletReviewScreen';
 import WalletSuccessScreen from '../screens/wallets/WalletSuccessScreen';
 import ActivityScreen from '../screens/wallets/ActivityScreen';
+import UnifiedActivityScreen from '../screens/wallets/UnifiedActivityScreen';
+import TransactionDetailScreen from '../screens/activity/TransactionDetailScreen';
 
 // Send screens
 import SendMoneyScreen from '../screens/send/SendMoneyScreen';
-import ConfirmationScreen from '../screens/send/ConfirmationScreen';
 import SendSuccessScreen from '../screens/send/SendSuccessScreen';
 import SendErrorScreen from '../screens/send/SendErrorScreen';
 
@@ -42,7 +43,7 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 const TABS = [
   { key: 'Wallets',     label: 'Wallets',   Icon: Wallet2,    Screen: WalletsScreen  as React.ComponentType },
   { key: 'Cards',       label: 'Cards',     Icon: CreditCard, Screen: AllCardsScreen as React.ComponentType },
-  { key: 'ActivityTab', label: 'Activity',  Icon: Clock,      Screen: ActivityScreen as React.ComponentType },
+  { key: 'ActivityTab', label: 'Activity',  Icon: Clock,      Screen: UnifiedActivityScreen as React.ComponentType },
   { key: 'Profile',     label: 'Profile',   Icon: UserCircle, Screen: ProfileScreen  as React.ComponentType },
 ];
 
@@ -152,14 +153,14 @@ export default function RootNavigator() {
 
         {/* Wallet flows */}
         <Stack.Screen name="Activity" component={ActivityScreen} />
+        <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} />
         <Stack.Screen name="CurrencyPicker" component={CurrencyPickerScreen} />
         <Stack.Screen name="WalletReview" component={WalletReviewScreen} />
         <Stack.Screen name="WalletSuccess" component={WalletSuccessScreen} options={{ animation: 'fade' }} />
 
         {/* Send money flows */}
         <Stack.Screen name="SendMoney" component={SendMoneyScreen} options={{ animation: 'none', presentation: 'transparentModal', gestureEnabled: false, contentStyle: { backgroundColor: 'transparent' } }} />
-        <Stack.Screen name="Confirmation" component={ConfirmationScreen} />
-        <Stack.Screen name="SendSuccess" component={SendSuccessScreen} options={{ animation: 'fade', gestureEnabled: false }} />
+        <Stack.Screen name="SendSuccess" component={SendSuccessScreen} options={{ animation: 'none', gestureEnabled: false, contentStyle: { backgroundColor: 'transparent' } }} />
         <Stack.Screen name="SendError" component={SendErrorScreen} options={{ animation: 'fade', gestureEnabled: false }} />
 
         {/* Card flows */}

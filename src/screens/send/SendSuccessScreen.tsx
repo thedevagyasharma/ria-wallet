@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, Pressable, ScrollView, Dimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
   withDelay,
   withTiming,
-  withRepeat,
-  withSequence,
+  runOnJS,
+  Easing,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
@@ -17,17 +17,16 @@ import { Check, Copy } from 'lucide-react-native';
 
 import { colors, typography, spacing, radius } from '../../theme';
 import { getCurrency, formatAmount } from '../../data/currencies';
-import PrimaryButton from '../../components/PrimaryButton';
 import type { RootStackProps, RootStackParamList } from '../../navigation/types';
+import SecondaryButton from '../../components/SecondaryButton';
+import { StepRow } from '../../components/TransferSteps';
+import type { Step } from '../../components/TransferSteps';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-type StepStatus = 'done' | 'active' | 'pending';
 
 // ─── Tracking step definitions ────────────────────────────────────────────────
 
-type Step = { label: string; sub: string; status: StepStatus };
-
-function buildSteps(eta: string, firstName: string, receivedFormatted: string, receiveCurrency: string): Step[] {
+function buildSteps(eta: string, firstName: string): Step[] {
   const isInstant = eta === 'Instantly';
   return [
     {
@@ -48,113 +47,32 @@ function buildSteps(eta: string, firstName: string, receivedFormatted: string, r
   ];
 }
 
-// ─── Step icon components ─────────────────────────────────────────────────────
+// ─── Presentational content (no navigation deps) ─────────────────────────────
 
-function DoneIcon() {
-  return (
-    <View style={stepStyles.done}>
-      <Check size={14} color='#fff' strokeWidth={2.5} />
-    </View>
-  );
-}
+export type SendSuccessParams = RootStackParamList['SendSuccess'];
 
-function ActiveIcon() {
-  const pulse = useSharedValue(1);
-  useEffect(() => {
-    pulse.value = withRepeat(
-      withSequence(withTiming(0.35, { duration: 700 }), withTiming(1, { duration: 700 })),
-      -1,
-      false,
-    );
-  }, []);
-  const ringStyle = useAnimatedStyle(() => ({ opacity: pulse.value }));
-  return (
-    <View style={stepStyles.activeWrap}>
-      <Animated.View style={[stepStyles.activeRing, ringStyle]} />
-      <View style={stepStyles.activeDot} />
-    </View>
-  );
-}
+export function SendSuccessContent({
+  params,
+  onBack,
+  onSendAgain,
+  animated = true,
+}: {
+  params: SendSuccessParams;
+  onBack?: () => void;
+  onSendAgain?: () => void;
+  animated?: boolean;
+}) {
+  const insets = useSafeAreaInsets();
+  const screenHeight = Dimensions.get('window').height;
+  const slideY = useSharedValue(0);
+  const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateY: slideY.value }] }));
 
-function PendingIcon() {
-  return <View style={stepStyles.pending} />;
-}
+  const handleBack = () => {
+    slideY.value = withTiming(screenHeight, { duration: 320, easing: Easing.in(Easing.cubic) },
+      (done) => { if (done && onBack) runOnJS(onBack)(); });
+  };
 
-const stepStyles = StyleSheet.create({
-  done: {
-    width: 28,
-    height: 28,
-    borderRadius: radius.full,
-    backgroundColor: colors.success,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  activeWrap: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
-  activeRing: {
-    position: 'absolute',
-    width: 28,
-    height: 28,
-    borderRadius: radius.full,
-    borderWidth: 2,
-    borderColor: colors.brand,
-  },
-  activeDot: {
-    width: 12,
-    height: 12,
-    borderRadius: radius.full,
-    backgroundColor: colors.brand,
-  },
-
-  pending: {
-    width: 28,
-    height: 28,
-    borderRadius: radius.full,
-    borderWidth: 2,
-    borderColor: colors.border,
-  },
-});
-
-// ─── Single step row ──────────────────────────────────────────────────────────
-
-function StepRow({ step, isLast }: { step: Step; isLast: boolean }) {
-  return (
-    <View style={styles.stepRow}>
-      <View style={styles.stepIconCol}>
-        {step.status === 'done'    && <DoneIcon />}
-        {step.status === 'active'  && <ActiveIcon />}
-        {step.status === 'pending' && <PendingIcon />}
-        {!isLast && (
-          <View style={[
-            styles.stepConnector,
-            step.status === 'done' && styles.stepConnectorDone,
-          ]} />
-        )}
-      </View>
-      <View style={styles.stepBody}>
-        <Text style={[
-          styles.stepLabel,
-          step.status === 'pending' && styles.stepLabelMuted,
-        ]}>
-          {step.label}
-        </Text>
-        <Text style={[
-          styles.stepSub,
-          step.status === 'done'   && styles.stepSubDone,
-          step.status === 'active' && styles.stepSubActive,
-        ]}>
-          {step.sub}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-// ─── Main screen ─────────────────────────────────────────────────────────────
-
-export default function SendSuccessScreen({ route }: RootStackProps<'SendSuccess'>) {
-  const navigation = useNavigation<Nav>();
-  const { recipientName, amount, currency, receivedAmount, receiveCurrency, eta, txRef } = route.params;
+  const { recipientName, amount, currency, receivedAmount, receiveCurrency, eta, txRef } = params;
 
   const recipientCurrency = getCurrency(receiveCurrency);
   const firstName = recipientName.split(' ')[0];
@@ -165,9 +83,8 @@ export default function SendSuccessScreen({ route }: RootStackProps<'SendSuccess
     maximumFractionDigits: 2,
   }).format(receivedAmount);
 
-  const steps = buildSteps(eta, firstName, receivedFormatted, receiveCurrency);
+  const steps = buildSteps(eta, firstName);
 
-  // Ref copy feedback
   const [copied, setCopied] = useState(false);
   const handleCopyRef = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -175,26 +92,21 @@ export default function SendSuccessScreen({ route }: RootStackProps<'SendSuccess
     setTimeout(() => setCopied(false), 1800);
   };
 
-  // Entrance animations
-  const headerOpacity = useSharedValue(0);
-  const headerY      = useSharedValue(12);
-  const cardOpacity  = useSharedValue(0);
-  const cardY        = useSharedValue(16);
+  // Entrance animations — skip when rendered as static background
+  const headerY = useSharedValue(animated ? 16 : 0);
+  const cardY   = useSharedValue(animated ? 20 : 0);
 
   useEffect(() => {
+    if (!animated) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    headerOpacity.value = withTiming(1, { duration: 350 });
-    headerY.value       = withSpring(0, { damping: 18, stiffness: 140 });
-    cardOpacity.value   = withDelay(180, withTiming(1, { duration: 400 }));
-    cardY.value         = withDelay(180, withSpring(0, { damping: 18, stiffness: 120 }));
-  }, []);
+    headerY.value = withSpring(0, { damping: 18, stiffness: 140 });
+    cardY.value   = withDelay(70, withSpring(0, { damping: 18, stiffness: 120 }));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const headerStyle = useAnimatedStyle(() => ({
-    opacity: headerOpacity.value,
     transform: [{ translateY: headerY.value }],
   }));
   const cardStyle = useAnimatedStyle(() => ({
-    opacity: cardOpacity.value,
     transform: [{ translateY: cardY.value }],
   }));
 
@@ -204,7 +116,7 @@ export default function SendSuccessScreen({ route }: RootStackProps<'SendSuccess
   const statusBorder = isInstant ? colors.success : colors.brand;
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <Animated.View style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }, slideStyle]}>
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
@@ -271,10 +183,6 @@ export default function SendSuccessScreen({ route }: RootStackProps<'SendSuccess
 
       {/* ── Footer actions ── */}
       <View style={styles.footer}>
-        <PrimaryButton onPress={() => navigation.popToTop()} style={styles.doneBtn}>
-          <Text style={styles.doneBtnText}>Back to wallets</Text>
-        </PrimaryButton>
-
         <View style={styles.secondaryRow}>
           <Pressable
             onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
@@ -286,17 +194,35 @@ export default function SendSuccessScreen({ route }: RootStackProps<'SendSuccess
           <View style={styles.secondaryDivider} />
 
           <Pressable
-            onPress={() => {
-              navigation.popToTop();
-              navigation.navigate('SendMoney', {});
-            }}
+            onPress={onSendAgain}
             style={styles.secondaryBtn}
           >
             <Text style={styles.secondaryBtnText}>Send again</Text>
           </Pressable>
         </View>
+
+        <SecondaryButton onPress={handleBack} style={styles.backBtn}>
+          <Text style={styles.backBtnText}>Back to wallets</Text>
+        </SecondaryButton>
       </View>
-    </SafeAreaView>
+    </Animated.View>
+  );
+}
+
+// ─── Main screen ─────────────────────────────────────────────────────────────
+
+export default function SendSuccessScreen({ route }: RootStackProps<'SendSuccess'>) {
+  const navigation = useNavigation<Nav>();
+  return (
+    <SendSuccessContent
+      params={route.params}
+      animated={false}
+      onBack={() => navigation.popToTop()}
+      onSendAgain={() => {
+        navigation.popToTop();
+        navigation.navigate('SendMoney', {});
+      }}
+    />
   );
 }
 
@@ -444,12 +370,6 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     gap: spacing.sm,
   },
-  doneBtn: {
-    paddingVertical: spacing.lg,
-    alignItems: 'center',
-  },
-  doneBtnText: { fontSize: typography.md, color: '#441306', fontWeight: typography.bold },
-
   secondaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -458,4 +378,14 @@ const styles = StyleSheet.create({
   secondaryBtn: { flex: 1, alignItems: 'center', paddingVertical: spacing.md },
   secondaryBtnText: { fontSize: typography.base, color: colors.textSecondary, fontWeight: typography.medium },
   secondaryDivider: { width: 1, height: 16, backgroundColor: colors.border },
+
+  backBtn: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  backBtnText: {
+    fontSize: typography.base,
+    color: colors.textSecondary,
+    fontWeight: typography.medium,
+  },
 });

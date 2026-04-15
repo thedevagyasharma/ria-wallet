@@ -15,7 +15,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { colors, typography, spacing, radius } from '../../theme';
 import { useWalletStore } from '../../stores/useWalletStore';
-import { formatAmount } from '../../data/currencies';
+import { getCurrency, formatAmount } from '../../data/currencies';
 import StatusChip from '../../components/StatusChip';
 import type { RootStackParamList } from '../../navigation/types';
 import type { Transaction } from '../../stores/types';
@@ -61,9 +61,13 @@ function TransactionRow({ tx }: { tx: Transaction }) {
 export default function ActivityScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute();
-  const { transactions, activeWalletId } = useWalletStore();
+  const { transactions, wallets, activeWalletId } = useWalletStore();
   const walletId = (route.params as { walletId?: string } | undefined)?.walletId ?? activeWalletId;
   const canGoBack = navigation.canGoBack();
+  const wallet = wallets.find((w) => w.id === walletId);
+  const screenTitle = wallet
+    ? `${getCurrency(wallet.currency).flag}  ${wallet.currency} Activity`
+    : 'Activity';
   const [query, setQuery] = useState('');
   const listRef = useRef<SectionListType<Transaction>>(null);
   const scrollReset = useTabScrollReset();
@@ -104,7 +108,7 @@ export default function ActivityScreen() {
         ) : (
           <View style={styles.backBtn} />
         )}
-        <Text style={styles.title}>Activity</Text>
+        <Text style={styles.title}>{screenTitle}</Text>
         <View style={styles.headerRight} />
       </View>
 

@@ -23,6 +23,7 @@ export type Wallet = {
   currency: string;
   balance: number;
   isPrimary: boolean;
+  nickname?: string;
 };
 
 export type Transaction = {

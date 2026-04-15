@@ -13,7 +13,10 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Ria Wallet uses Face ID to keep your account secure."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -25,6 +28,16 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "53d660c2-8a41-4adb-bf7c-40fb7ba20ec4"
+      }
+    },
+    "owner": "devagyasharma",
+    "runtimeVersion": "exposdk:54.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/53d660c2-8a41-4adb-bf7c-40fb7ba20ec4"
     }
   }
 }
