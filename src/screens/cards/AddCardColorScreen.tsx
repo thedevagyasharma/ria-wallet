@@ -5,7 +5,6 @@ import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ChevronLeft, Check } from 'lucide-react-native';
-
 import { colors, typography, spacing, radius } from '../../theme';
 import PrimaryButton from '../../components/PrimaryButton';
 import { CardFront } from '../../components/CardFace';
@@ -15,27 +14,29 @@ import type { Card, CardType, CardFinish } from '../../stores/types'; // CardFin
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
+type BadgeTheme = 'default' | 'inverted';
+
 // Curated Ria Edition colors — Metal automatically gets metallic finish
 const RIA_PALETTE = [
-  { label: 'Classic', hex: '#f97316', finish: 'plastic'  as CardFinish },
-  { label: 'Metal',   hex: '#71717a', finish: 'metallic' as CardFinish },
-  { label: 'Green',   hex: '#14532d', finish: 'plastic'  as CardFinish },
-  { label: 'Black',   hex: '#09090b', finish: 'plastic'  as CardFinish },
+  { label: 'Classic', hex: '#f97316', finish: 'plastic'  as CardFinish, badgeTheme: 'default'  as BadgeTheme },
+  { label: 'Metal',   hex: '#71717a', finish: 'metallic' as CardFinish, badgeTheme: 'inverted' as BadgeTheme },
+  { label: 'Green',   hex: '#14532d', finish: 'plastic'  as CardFinish, badgeTheme: 'inverted' as BadgeTheme },
+  { label: 'Black',   hex: '#09090b', finish: 'plastic'  as CardFinish, badgeTheme: 'inverted' as BadgeTheme },
 ];
 
 // Full solid color palette
 const SOLID_PALETTE = [
-  { label: 'Midnight',  hex: '#1a1f3c' },
-  { label: 'Ocean',     hex: '#0f4c75' },
-  { label: 'Plum',      hex: '#2c1a38' },
-  { label: 'Forest',    hex: '#1c3020' },
-  { label: 'Slate',     hex: '#1e293b' },
-  { label: 'Crimson',   hex: '#7f1d1d' },
-  { label: 'Amber',     hex: '#78350f' },
-  { label: 'Onyx',      hex: '#09090b' },
-  { label: 'Cobalt',    hex: '#1e3a5f' },
-  { label: 'Charcoal',  hex: '#27272a' },
-  { label: 'Blaze',     hex: '#f97316' },
+  { label: 'Midnight',  hex: '#1a1f3c', badgeTheme: 'inverted' as BadgeTheme },
+  { label: 'Ocean',     hex: '#0f4c75', badgeTheme: 'inverted' as BadgeTheme },
+  { label: 'Plum',      hex: '#2c1a38', badgeTheme: 'inverted' as BadgeTheme },
+  { label: 'Forest',    hex: '#1c3020', badgeTheme: 'inverted' as BadgeTheme },
+  { label: 'Slate',     hex: '#1e293b', badgeTheme: 'inverted' as BadgeTheme },
+  { label: 'Crimson',   hex: '#7f1d1d', badgeTheme: 'inverted' as BadgeTheme },
+  { label: 'Amber',     hex: '#78350f', badgeTheme: 'inverted' as BadgeTheme },
+  { label: 'Onyx',      hex: '#09090b', badgeTheme: 'inverted' as BadgeTheme },
+  { label: 'Cobalt',    hex: '#1e3a5f', badgeTheme: 'inverted' as BadgeTheme },
+  { label: 'Charcoal',  hex: '#27272a', badgeTheme: 'inverted' as BadgeTheme },
+  { label: 'Blaze',     hex: '#f97316', badgeTheme: 'default'  as BadgeTheme },
 ];
 
 const SWATCH = 52;
@@ -49,10 +50,15 @@ export default function AddCardColorScreen({ route }: RootStackProps<'AddCardCol
 
   const [selectedRia, setSelectedRia] = useState(0);        // index into RIA_PALETTE
   const [selectedSolid, setSelectedSolid] = useState<string | null>(null);  // null = Ria active
+  const [previewFrozen, setPreviewFrozen] = useState(false);
+  const [previewExpired, setPreviewExpired] = useState(false);
 
   const branded = selectedSolid === null;
   const selectedColor = branded ? RIA_PALETTE[selectedRia].hex : selectedSolid!;
   const finish: CardFinish = branded ? RIA_PALETTE[selectedRia].finish : 'plastic';
+  const badgeTheme: BadgeTheme = branded
+    ? RIA_PALETTE[selectedRia].badgeTheme
+    : (SOLID_PALETTE.find((p) => p.hex === selectedSolid)?.badgeTheme ?? 'inverted');
 
   const previewCard: Card = {
     id: 'preview',
@@ -67,7 +73,9 @@ export default function AddCardColorScreen({ route }: RootStackProps<'AddCardCol
     expiry: 'MM/YY',
     cvv: '000',
     fullNumber: '0000 0000 0000 0000',
-    frozen: false,
+    frozen: previewFrozen,
+    expired: previewExpired,
+    badgeTheme,
     type: cardType as CardType,
   };
 
@@ -111,6 +119,7 @@ export default function AddCardColorScreen({ route }: RootStackProps<'AddCardCol
       cvv: String(Math.floor(100 + Math.random() * 900)),
       fullNumber,
       frozen: false,
+      badgeTheme,
       type: cardType as CardType,
     });
 
@@ -171,16 +180,72 @@ export default function AddCardColorScreen({ route }: RootStackProps<'AddCardCol
           })}
         </View>
 
+        {/* Prototype controls */}
+        <View style={styles.protoWrap}>
+          <Text style={styles.protoTitle}>⚙  Prototype</Text>
+          <SegControl
+            label="Card status"
+            value={previewExpired ? 'expired' : previewFrozen ? 'frozen' : 'active'}
+            onChange={(v) => {
+              setPreviewFrozen(v === 'frozen');
+              setPreviewExpired(v === 'expired');
+            }}
+            options={[
+              { label: 'Active',   value: 'active'   },
+              { label: 'Frozen',   value: 'frozen'   },
+              { label: 'Expired',  value: 'expired'  },
+            ]}
+          />
+        </View>
+
       </ScrollView>
 
       <View style={styles.footer}>
-        <PrimaryButton onPress={handleAddCard} style={styles.addBtn}>
-          <Text style={styles.addBtnText}>{btnLabel}</Text>
-        </PrimaryButton>
+        <PrimaryButton onPress={handleAddCard} style={styles.addBtn} label={btnLabel} />
       </View>
     </SafeAreaView>
   );
 }
+
+// ─── Prototype seg control ────────────────────────────────────────────────────
+
+function SegControl<T extends string>({
+  label, options, value, onChange,
+}: {
+  label: string;
+  options: { label: string; value: T }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <View style={segStyles.row}>
+      <Text style={segStyles.label}>{label}</Text>
+      <View style={segStyles.track}>
+        {options.map((opt) => (
+          <Pressable
+            key={opt.value}
+            onPress={() => { Haptics.selectionAsync(); onChange(opt.value); }}
+            style={[segStyles.seg, value === opt.value && segStyles.segActive]}
+          >
+            <Text style={[segStyles.segText, value === opt.value && segStyles.segTextActive]}>
+              {opt.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const segStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.xs },
+  label: { fontSize: typography.sm, color: colors.textSecondary, fontWeight: typography.medium },
+  track: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
+  seg: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 2 },
+  segActive: { backgroundColor: colors.textPrimary },
+  segText: { fontSize: typography.xs, color: colors.textSecondary, fontWeight: typography.semibold },
+  segTextActive: { color: colors.bg },
+});
 
 const SWATCH_W = (SCREEN_WIDTH - spacing.xl * 2 - spacing.lg * (COLS - 1)) / COLS;
 
@@ -265,6 +330,9 @@ const styles = StyleSheet.create({
     fontWeight: typography.semibold,
   },
 
+  protoWrap: { marginTop: spacing.lg, paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.borderSubtle, gap: spacing.sm },
+  protoTitle: { fontSize: typography.xs, color: colors.textMuted, fontWeight: typography.semibold, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: spacing.xs },
+
   footer: {
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xl,
@@ -273,5 +341,4 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
     alignItems: 'center',
   },
-  addBtnText: { fontSize: typography.md, color: '#441306', fontWeight: typography.bold },
 });

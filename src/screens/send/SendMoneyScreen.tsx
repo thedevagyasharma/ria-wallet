@@ -10,6 +10,9 @@ import {
   Dimensions,
   BackHandler,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,23 +25,27 @@ import Animated, {
   withSpring,
   runOnJS,
   Easing,
+  interpolateColor,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { useNavigation, CommonActions } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ChevronLeft, ChevronDown, Search, X, ArrowUpDown, ArrowLeftRight, Check, Phone, Zap, Pen } from 'lucide-react-native';
-import { NumKey } from '../../components/NumPad';
+import { ChevronLeft, ChevronDown, Search, X, ArrowUpDown, Check, Phone, Zap, Pen, RefreshCw } from 'lucide-react-native';
 
 import { colors, typography, spacing, radius } from '../../theme';
 import PrimaryButton from '../../components/PrimaryButton';
+import SecondaryButton from '../../components/SecondaryButton';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { getCurrency, formatAmount } from '../../data/currencies';
+import FlagIcon from '../../components/FlagIcon';
+import Avatar from '../../components/Avatar';
 import { MOCK_CONTACTS } from '../../data/mockData';
 import { getRate, getFee, getETA } from '../../data/exchangeRates';
 import type { RootStackProps, RootStackParamList } from '../../navigation/types';
 import type { Contact, Transaction } from '../../stores/types';
 import { SendSuccessContent } from './SendSuccessScreen';
+import { getInitials } from '../../utils/strings';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Phase = 'idle' | 'processing' | 'success' | 'viewTransfer' | 'failed' | 'retryReady';
@@ -62,28 +69,63 @@ const QUICK_AMOUNTS: Record<string, number[]> = {
 };
 const DEFAULT_QUICK_AMOUNTS = [25, 50, 100, 500];
 
-const PRIMARY_CURRENCY_BY_FLAG: Record<string, string> = {
-  '🇲🇽': 'MXN',
-  '🇺🇸': 'USD',
-  '🇵🇭': 'PHP',
-  '🇮🇳': 'INR',
-  '🇳🇬': 'NGN',
-  '🇬🇧': 'GBP',
-  '🇪🇺': 'EUR',
-  '🇬🇹': 'GTQ',
-  '🇭🇳': 'HNL',
-  '🇩🇴': 'DOP',
-  '🇨🇴': 'COP',
-  '🇲🇦': 'MAD',
+const PRIMARY_CURRENCY_BY_ISO: Record<string, string> = {
+  MX: 'MXN',
+  US: 'USD',
+  PH: 'PHP',
+  IN: 'INR',
+  NG: 'NGN',
+  GB: 'GBP',
+  EU: 'EUR',
+  GT: 'GTQ',
+  HN: 'HNL',
+  DO: 'DOP',
+  CO: 'COP',
+  MA: 'MAD',
+};
+
+// Currencies a recipient in each country can receive, primary-first
+const RECEIVE_CURRENCIES_BY_ISO: Record<string, string[]> = {
+  MX: ['MXN', 'USD'],
+  US: ['USD'],
+  PH: ['PHP', 'USD'],
+  IN: ['INR', 'USD'],
+  NG: ['NGN', 'USD'],
+  GB: ['GBP', 'EUR', 'USD'],
+  EU: ['EUR', 'GBP', 'USD'],
+  GT: ['GTQ', 'USD'],
+  HN: ['HNL', 'USD'],
+  DO: ['DOP', 'USD'],
+  CO: ['COP', 'USD'],
+  MA: ['MAD', 'EUR'],
 };
 
 function getPrimaryCurrency(flag: string): string {
-  return PRIMARY_CURRENCY_BY_FLAG[flag] ?? 'USD';
+  return PRIMARY_CURRENCY_BY_ISO[flag] ?? 'USD';
+}
+
+function getReceiveCurrencies(flag: string): string[] {
+  return RECEIVE_CURRENCIES_BY_ISO[flag] ?? ['USD'];
 }
 
 // Returns true when the query has enough digits to be treated as a phone number
 function looksLikePhone(q: string): boolean {
   return q.replace(/\D/g, '').length >= 4;
+}
+
+// Sanitize free-form decimal input: one '.', max 2 decimal places, max 8 integer digits, no leading zeros
+function sanitizeAmount(text: string): string {
+  let s = text.replace(/[^0-9.]/g, '');
+  const dotIdx = s.indexOf('.');
+  if (dotIdx !== -1) {
+    s = s.slice(0, dotIdx + 1) + s.slice(dotIdx + 1).replace(/\./g, '');
+    const dec = s.split('.')[1] ?? '';
+    if (dec.length > 2) s = s.slice(0, dotIdx + 3);
+  }
+  const intPart = s.split('.')[0];
+  if (intPart.length > 8) s = intPart.slice(0, 8) + (s.includes('.') ? s.slice(s.indexOf('.')) : '');
+  if (s.length > 1 && s[0] === '0' && s[1] !== '.') s = s.slice(1);
+  return s || '0';
 }
 
 const CALLING_CODE_BY_CURRENCY: Record<string, string> = {
@@ -94,22 +136,21 @@ const CALLING_CODE_BY_CURRENCY: Record<string, string> = {
 
 // Best-effort country detection from international prefix. Returns null if unknown.
 function detectFromPhone(phone: string): { flag: string; currency: string } | null {
-  if (phone.startsWith('+52'))  return { flag: '🇲🇽', currency: 'MXN' };
-  if (phone.startsWith('+63'))  return { flag: '🇵🇭', currency: 'PHP' };
-  if (phone.startsWith('+91'))  return { flag: '🇮🇳', currency: 'INR' };
-  if (phone.startsWith('+234')) return { flag: '🇳🇬', currency: 'NGN' };
-  if (phone.startsWith('+44'))  return { flag: '🇬🇧', currency: 'GBP' };
-  if (phone.startsWith('+502')) return { flag: '🇬🇹', currency: 'GTQ' };
-  if (phone.startsWith('+504')) return { flag: '🇭🇳', currency: 'HNL' };
-  if (phone.startsWith('+57'))  return { flag: '🇨🇴', currency: 'COP' };
-  if (phone.startsWith('+212')) return { flag: '🇲🇦', currency: 'MAD' };
-  if (phone.startsWith('+1'))   return { flag: '🇺🇸', currency: 'USD' };
+  if (phone.startsWith('+52'))  return { flag: 'MX', currency: 'MXN' };
+  if (phone.startsWith('+63'))  return { flag: 'PH', currency: 'PHP' };
+  if (phone.startsWith('+91'))  return { flag: 'IN', currency: 'INR' };
+  if (phone.startsWith('+234')) return { flag: 'NG', currency: 'NGN' };
+  if (phone.startsWith('+44'))  return { flag: 'GB', currency: 'GBP' };
+  if (phone.startsWith('+502')) return { flag: 'GT', currency: 'GTQ' };
+  if (phone.startsWith('+504')) return { flag: 'HN', currency: 'HNL' };
+  if (phone.startsWith('+57'))  return { flag: 'CO', currency: 'COP' };
+  if (phone.startsWith('+212')) return { flag: 'MA', currency: 'MAD' };
+  if (phone.startsWith('+1'))   return { flag: 'US', currency: 'USD' };
   return null;
 }
 
 // ─── Numpad ───────────────────────────────────────────────────────────────────
 
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
 
 // ─── Recent contact circle ────────────────────────────────────────────────────
 
@@ -119,9 +160,7 @@ function RecentCircle({ contact, onPress }: { contact: Contact; onPress: () => v
       onPress={onPress}
       style={({ pressed }) => [styles.recentCircleWrap, pressed && { opacity: 0.7 }]}
     >
-      <View style={styles.recentCircle}>
-        <Text style={styles.recentCircleInitial}>{contact.name.charAt(0).toUpperCase()}</Text>
-      </View>
+      <Avatar name={contact.name} size="xl" style={{ marginBottom: spacing.xs }} />
       <Text style={styles.recentCircleName} numberOfLines={1}>
         {contact.name.split(' ')[0]}
       </Text>
@@ -169,13 +208,82 @@ const segStyles = StyleSheet.create({
   segTextActive: { color: colors.bg },
 });
 
+// ─── Drum / slot-machine quick-amount chip ────────────────────────────────────
+
+function DrumChip({ label, isActive, isDisabled, onPress, index, animKey }: {
+  label: string;
+  isActive: boolean;
+  isDisabled: boolean;
+  onPress: () => void;
+  index: number;
+  animKey: string;
+}) {
+  // flip: 0 = at rest, 0→1 = exiting upward, -1→0 = entering from below
+  // translateY = -flip * 10,  opacity = 1 - |flip|
+  const flip = useSharedValue(0);
+  const activeProgress = useSharedValue(isActive ? 1 : 0);
+  const [displayLabel, setDisplayLabel] = useState(label);
+  const mounted = useRef(false);
+  const prevAnimKey = useRef(animKey);
+
+  useEffect(() => {
+    const isFlip = prevAnimKey.current !== animKey;
+    prevAnimKey.current = animKey;
+    if (!mounted.current) { mounted.current = true; return; }
+
+    const nextLabel = label;
+
+    if (isFlip) {
+      const delay = index * 40;
+      flip.value = withDelay(delay, withTiming(1, { duration: 80, easing: Easing.in(Easing.quad) }, (done) => {
+        'worklet';
+        if (!done) return;
+        runOnJS(setDisplayLabel)(nextLabel);
+        flip.value = -1;
+        flip.value = withTiming(0, { duration: 100, easing: Easing.out(Easing.quad) });
+      }));
+      activeProgress.value = withDelay(delay, withTiming(isActive ? 1 : 0, { duration: 80 }));
+    } else {
+      setDisplayLabel(nextLabel);
+      activeProgress.value = withTiming(isActive ? 1 : 0, { duration: 100 });
+    }
+  }, [animKey, isActive, label]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const chipStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(activeProgress.value, [0, 1], [colors.surface, colors.textPrimary]),
+    borderColor: interpolateColor(activeProgress.value, [0, 1], [colors.border, colors.textPrimary]),
+  }));
+
+  const textStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -flip.value * 10 }],
+    opacity: flip.value >= 0 ? 1 - flip.value : 1 + flip.value,
+    color: interpolateColor(activeProgress.value, [0, 1], [colors.textSecondary, colors.bg]),
+  }));
+
+  return (
+    <Animated.View style={[styles.quickChip, isDisabled && styles.quickChipDisabled, chipStyle]}>
+      <Animated.Text style={[styles.quickChipText, textStyle]}>
+        {displayLabel}
+      </Animated.Text>
+      <Pressable onPress={onPress} style={StyleSheet.absoluteFill} />
+    </Animated.View>
+  );
+}
+
 // ─── Confirmation breakdown row ───────────────────────────────────────────────
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value, flagCode }: { label: string; value: string; flagCode?: string }) {
   return (
     <View style={rowStyles.row}>
       <Text style={rowStyles.label}>{label}</Text>
-      <Text style={rowStyles.value}>{value}</Text>
+      {flagCode ? (
+        <View style={rowStyles.valueWithFlag}>
+          <FlagIcon code={flagCode} size={14} />
+          <Text style={rowStyles.value}>{value}</Text>
+        </View>
+      ) : (
+        <Text style={rowStyles.value}>{value}</Text>
+      )}
     </View>
   );
 }
@@ -184,6 +292,7 @@ const rowStyles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   label: { fontSize: typography.base, color: colors.textSecondary },
   value: { fontSize: typography.base, color: colors.textPrimary },
+  valueWithFlag: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 });
 
 // ─── Morphing button ──────────────────────────────────────────────────────────
@@ -377,15 +486,33 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
   const [sendRaw, setSendRaw] = useState('0');
   const [receiveRaw, setReceiveRaw] = useState('0');
 
-  // Blinking caret
-  const [caretVisible, setCaretVisible] = useState(true);
+  const sendInputRef = useRef<TextInput>(null);
+  const receiveInputRef = useRef<TextInput>(null);
+
+  // Always-fresh refs so focus handlers never read stale closure values
+  const sendRawRef = useRef(sendRaw);
+  sendRawRef.current = sendRaw;
+  const receiveRawRef = useRef(receiveRaw);
+  receiveRawRef.current = receiveRaw;
+
+  // Did the user actually type in the receive field (vs it being auto-computed)?
+  const receiveUserEditedRef = useRef(false);
+
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   useEffect(() => {
-    const timer = setInterval(() => setCaretVisible((v) => !v), 530);
-    return () => clearInterval(timer);
+    const show = Keyboard.addListener('keyboardWillShow', () => setKeyboardVisible(true));
+    const hide = Keyboard.addListener('keyboardWillHide', () => setKeyboardVisible(false));
+    return () => { show.remove(); hide.remove(); };
   }, []);
 
   const [showWalletDropdown, setShowWalletDropdown] = useState(false);
+  const [showReceiveDropdown, setShowReceiveDropdown] = useState(false);
   const [contactQuery, setContactQuery] = useState('');
+
+  const receiveCurrencies = useMemo(
+    () => (selectedContact ? getReceiveCurrencies(selectedContact.flag) : ['USD']),
+    [selectedContact],
+  );
 
   // Confirm step state
   const [phase, setPhase] = useState<Phase>('idle');
@@ -419,7 +546,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
     activeField === 'send'
       ? sendRaw
       : sendAmountNum > 0
-      ? String(parseFloat(sendAmountNum.toFixed(2)))
+      ? sendAmountNum.toFixed(2)
       : '0';
 
   const receiveDisplayText =
@@ -428,8 +555,6 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
       : receiveAmountNum > 0
       ? new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(receiveAmountNum)
       : '0.00';
-
-  const caretColor = caretVisible ? colors.brand : 'transparent';
 
   // Confirm step derived values
   const eta = selectedContact ? getETA(sendWallet.currency, receiveCurrency) : 'Instantly';
@@ -452,10 +577,18 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
   useEffect(() => {
     enterY.value = withTiming(0, { duration: 380, easing: Easing.out(Easing.cubic) });
   }, [enterY]);
+
+  useEffect(() => {
+    if (step === 'amount') {
+      const t = setTimeout(() => sendInputRef.current?.focus(), 300);
+      return () => clearTimeout(t);
+    }
+  }, [step]);
   const finishDismiss = useCallback(() => {
     navigation.goBack();
   }, [navigation]);
   const dismiss = useCallback(() => {
+    Keyboard.dismiss();
     dismissX.value = withTiming(
       screenWidth,
       { duration: 300, easing: Easing.in(Easing.cubic) },
@@ -614,43 +747,52 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
     );
   }, [amountShake]);
 
-  // ── Field activation ──
-  const handleActivateField = useCallback(
-    (field: 'send' | 'receive') => {
-      if (field === activeField) return;
-      Haptics.selectionAsync();
-      if (field === 'receive') {
-        const computed = (parseFloat(sendRaw) || 0) * rate;
-        setReceiveRaw(computed > 0 ? String(parseFloat(computed.toFixed(2))) : '0');
-      } else {
-        const computed = (parseFloat(receiveRaw) || 0) / rate;
-        setSendRaw(computed > 0 ? String(parseFloat(computed.toFixed(2))) : '0');
-      }
-      setActiveField(field);
-    },
-    [activeField, sendRaw, receiveRaw, rate],
-  );
+  // ── Amount input handlers ──
+  const handleSendChange = useCallback((text: string) => {
+    setSendRaw(sanitizeAmount(text));
+    setActiveField('send');
+  }, []);
 
-  // ── Numpad ──
-  const handleKey = useCallback(
-    (key: string) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const setRaw = activeField === 'send' ? setSendRaw : setReceiveRaw;
-      setRaw((prev) => {
-        if (key === '⌫') return prev.length > 1 ? prev.slice(0, -1) : '0';
-        if (key === '.') return prev.includes('.') ? prev : prev + '.';
-        const [integer] = prev.split('.');
-        if (!prev.includes('.') && integer.length >= 8) return prev;
-        if (prev.includes('.')) {
-          const [, dec] = prev.split('.');
-          if (dec && dec.length >= 2) return prev;
-        }
-        if (prev === '0') return key;
-        return prev + key;
-      });
-    },
-    [activeField],
-  );
+  const handleReceiveChange = useCallback((text: string) => {
+    setReceiveRaw(sanitizeAmount(text));
+    setActiveField('receive');
+    receiveUserEditedRef.current = true;
+  }, []);
+
+  const handleSendFocus = useCallback(() => {
+    if (activeField === 'receive') {
+      // Only recompute send if the user actually typed in receive; otherwise keep whatever they typed
+      if (receiveUserEditedRef.current) {
+        const computed = (parseFloat(receiveRawRef.current) || 0) / rate;
+        if (computed > 0) setSendRaw(computed.toFixed(2));
+        else setSendRaw('0');
+      }
+      receiveUserEditedRef.current = false;
+    }
+    setActiveField('send');
+    setTimeout(() => sendInputRef.current?.setNativeProps({ selection: { start: 999, end: 999 } }), 0);
+  }, [activeField, rate]);
+
+  const handleReceiveFocus = useCallback(() => {
+    if (activeField === 'send') {
+      const computed = (parseFloat(sendRawRef.current) || 0) * rate;
+      if (computed > 0) setReceiveRaw(computed.toFixed(2));
+      else setReceiveRaw('0');
+      receiveUserEditedRef.current = false;
+    }
+    setActiveField('receive');
+    setTimeout(() => receiveInputRef.current?.setNativeProps({ selection: { start: 999, end: 999 } }), 0);
+  }, [activeField, rate]);
+
+  const handleSendBlur = useCallback(() => {
+    const val = parseFloat(sendRawRef.current) || 0;
+    if (val > 0) setSendRaw(val.toFixed(2));
+  }, []);
+
+  const handleReceiveBlur = useCallback(() => {
+    const val = parseFloat(receiveRawRef.current) || 0;
+    if (val > 0) setReceiveRaw(val.toFixed(2));
+  }, []);
 
   // ── Review ──
   const handleReview = useCallback(() => {
@@ -660,6 +802,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
+    Keyboard.dismiss();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     openConfirm();
   }, [selectedContact, sendAmountNum, hasFunds, shake, openConfirm]);
@@ -837,9 +980,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                           pressed && { backgroundColor: colors.surfaceHigh },
                         ]}
                       >
-                        <View style={styles.contactAvatar}>
-                          <Text style={styles.contactAvatarInitial}>{item.name.charAt(0).toUpperCase()}</Text>
-                        </View>
+                        <Avatar name={item.name} size="md" />
                         <View style={styles.contactInfo}>
                           <Text style={styles.contactName}>{item.name}</Text>
                           <Text style={styles.contactPhone}>{item.phone}</Text>
@@ -858,7 +999,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
             </View>
 
             <View style={{ width: screenWidth, flex: 1 }}>
-              <View style={[styles.safe, { paddingTop: insets.top }]}>
+              <View style={[styles.safe, { paddingTop: insets.top, flex: 1 }]}>
                 {/* ── Header ── */}
                 <View style={styles.header}>
                   <Pressable onPress={dismiss} style={styles.backBtn}>
@@ -868,7 +1009,11 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                   <View style={styles.backBtn} />
                 </View>
 
-                {/* ── Scrollable content ── */}
+                {/* ── Scrollable content + sticky bottom ── */}
+                <KeyboardAvoidingView
+                  behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                  style={{ flex: 1 }}
+                >
                 <ScrollView
                   style={styles.scroll}
                   contentContainerStyle={styles.scrollContent}
@@ -876,189 +1021,168 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                   keyboardShouldPersistTaps="handled"
                 >
                   {/* Recipient — always selected here, swap button to change */}
-                  <View style={styles.fieldGroup}>
+                  <View style={[styles.fieldGroup, { marginBottom: spacing.lg }]}>
                     <Text style={styles.fieldLabel}>To</Text>
                     {selectedContact && (
                       <View style={styles.selectedRecipient}>
-                        <View style={styles.recipientAvatarWrap}>
-                          <Text style={styles.recipientAvatarFlag}>{selectedContact.flag}</Text>
-                        </View>
-                        <View style={styles.recipientInfo}>
-                          <Text style={styles.recipientName}>{selectedContact.name}</Text>
-                          <Text style={styles.recipientPhone}>{selectedContact.phone}</Text>
-                        </View>
-                        <Pressable
+                        <Avatar name={selectedContact.name} size="sm" />
+                        <Text style={styles.recipientName}>{selectedContact.name}</Text>
+                        <SecondaryButton
                           onPress={handleSwapRecipient}
-                          hitSlop={10}
-                          style={styles.swapRecipientBtn}
+                          style={styles.changeBtn}
                         >
-                          <ArrowLeftRight size={15} color={colors.textMuted} strokeWidth={1.8} />
-                        </Pressable>
+                          <RefreshCw size={11} color={colors.textSecondary} strokeWidth={2} />
+                          <Text style={styles.changeBtnLabel}>Change</Text>
+                        </SecondaryButton>
                       </View>
                     )}
                   </View>
 
-                  {/* You send */}
-                  <View style={styles.fieldGroup}>
-                    <Text style={styles.fieldLabel}>You send</Text>
-                    <View style={[styles.amountRow, activeField === 'send' && styles.amountRowActive, !hasFunds && sendAmountNum > 0 && styles.amountRowError]}>
-                      <Pressable
-                        onPress={() => setShowWalletDropdown(true)}
-                        style={({ pressed }) => [styles.currencyBtn, pressed && { opacity: 0.7 }]}
-                      >
-                        <Text style={styles.currencyBtnFlag}>{sendCurrency.flag}</Text>
-                        <Text style={styles.currencyBtnCode}>{sendCurrency.code}</Text>
-                        <ChevronDown size={12} color={colors.textSecondary} strokeWidth={2} />
-                      </Pressable>
-
-                      <View style={styles.amountDivider} />
-
-                      <Pressable
-                        style={styles.amountTouchArea}
-                        onPress={() => handleActivateField('send')}
-                      >
-                        <Animated.Text
-                          style={[
-                            styles.amountText,
-                            activeField !== 'send' && styles.amountTextComputed,
-                            !hasFunds && sendAmountNum > 0 && styles.amountTextError,
-                            amountStyle,
-                          ]}
-                          numberOfLines={1}
-                          adjustsFontSizeToFit
+                  {/* Combined exchange card */}
+                  <Animated.View style={[styles.exchangeCard, amountStyle]}>
+                    {/* You send */}
+                    <Pressable onPress={() => { sendInputRef.current?.focus(); setTimeout(() => sendInputRef.current?.setNativeProps({ selection: { start: 999, end: 999 } }), 0); }} style={[styles.exchangeSection, activeField === 'send' && styles.exchangeSectionActive, !hasFunds && sendAmountNum > 0 && styles.exchangeSectionError]}>
+                      <View style={styles.exchangeLabelRow}>
+                        <Text style={styles.fieldLabel}>You send</Text>
+                        <Text style={[styles.fieldHint, !hasFunds && sendAmountNum > 0 && { color: colors.failed }]}>
+                          {!hasFunds && sendAmountNum > 0
+                            ? `Insufficient · ${formatAmount(sendWallet.balance, sendWallet.currency)}`
+                            : `Balance: ${formatAmount(sendWallet.balance, sendWallet.currency)}`}
+                        </Text>
+                      </View>
+                      <View style={styles.exchangeInputRow}>
+                        <Pressable
+                          onPress={() => setShowWalletDropdown(true)}
+                          style={({ pressed }) => [styles.currencyBtn, pressed && { opacity: 0.7 }]}
                         >
-                          {sendDisplayText}
-                          <Text style={[styles.caretText, { color: activeField === 'send' ? caretColor : 'transparent' }]}>|</Text>
-                        </Animated.Text>
-                      </Pressable>
-                    </View>
-                    <Text style={[styles.fieldHint, !hasFunds && sendAmountNum > 0 && { color: colors.failed }]}>
-                      {!hasFunds && sendAmountNum > 0
-                        ? `Insufficient funds · Balance: ${formatAmount(sendWallet.balance, sendWallet.currency)}`
-                        : `Balance: ${formatAmount(sendWallet.balance, sendWallet.currency)}`}
-                    </Text>
-                  </View>
+                          <FlagIcon code={sendCurrency.flag} size={20} />
+                          <Text style={styles.currencyBtnCode}>{sendCurrency.code}</Text>
+                          <ChevronDown size={12} color={colors.textSecondary} strokeWidth={2} />
+                        </Pressable>
+                        <View style={styles.amountDivider} onStartShouldSetResponder={() => true} />
+                        <TextInput
+                          ref={sendInputRef}
+                          style={[styles.exchangeInput, activeField !== 'send' && styles.amountInputInactive, !hasFunds && sendAmountNum > 0 && styles.amountInputError]}
+                          value={sendDisplayText === '0' ? '' : sendDisplayText}
+                          onChangeText={handleSendChange}
+                          onFocus={handleSendFocus}
+                          onBlur={handleSendBlur}
+                          onSelectionChange={() => sendInputRef.current?.setNativeProps({ selection: { start: 999, end: 999 } })}
+                          keyboardType="decimal-pad"
+                          placeholder="0"
+                          placeholderTextColor={colors.textMuted}
+                          textAlign="right"
+                        />
+                      </View>
+                    </Pressable>
 
-                  {/* Rate indicator */}
-                  <View style={styles.rateRow}>
-                    {sendAmountNum > 0 ? (
-                      <View style={styles.rateChip}>
-                        <Text style={styles.rateChipText}>
+                    {/* Floating rate badge — straddles both sections */}
+                    <View style={styles.exchangeBadgeZone} onStartShouldSetResponder={() => true}>
+                      <View style={styles.exchangeBadgeHairline} />
+                      <View style={styles.exchangeRateBadge}>
+                        <ArrowUpDown size={11} color={colors.textMuted} strokeWidth={2} />
+                        <Text style={styles.exchangeRateBadgeText}>
                           1 {sendCurrency.code} = {rate.toFixed(4)} {receiveCurrency}
                         </Text>
                       </View>
-                    ) : (
-                      <View style={styles.exchangeArrow}>
-                        <ArrowUpDown size={16} color={colors.textSecondary} strokeWidth={2} />
-                      </View>
-                    )}
-                  </View>
-
-                  {/* They receive */}
-                  <View style={styles.fieldGroup}>
-                    <Text style={styles.fieldLabel}>They receive</Text>
-                    <View style={[styles.amountRow, activeField === 'receive' && styles.amountRowActive]}>
-                      <View style={[styles.currencyBtn, styles.currencyBtnLocked]}>
-                        <Text style={styles.currencyBtnFlag}>{getCurrency(receiveCurrency).flag}</Text>
-                        <Text style={styles.currencyBtnCode}>{receiveCurrency}</Text>
-                      </View>
-
-                      <View style={styles.amountDivider} />
-
-                      <Pressable
-                        style={styles.amountTouchArea}
-                        onPress={() => handleActivateField('receive')}
-                      >
-                        <Text
-                          style={[
-                            styles.amountText,
-                            activeField !== 'receive' && styles.amountTextComputed,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {receiveDisplayText}
-                          <Text style={[styles.caretText, { color: activeField === 'receive' ? caretColor : 'transparent' }]}>|</Text>
-                        </Text>
-                      </Pressable>
                     </View>
-                    {sendAmountNum > 0 && (
-                      <Text style={styles.fieldHint}>
-                        Fee: {formatAmount(fee, sendWallet.currency)}  ·  Total deducted: {formatAmount(total, sendWallet.currency)}
-                      </Text>
-                    )}
-                  </View>
+
+                    {/* They receive */}
+                    <Pressable onPress={() => { receiveInputRef.current?.focus(); setTimeout(() => receiveInputRef.current?.setNativeProps({ selection: { start: 999, end: 999 } }), 0); }} style={[styles.exchangeSection, { paddingTop: spacing.md, paddingBottom: spacing.sm }, activeField === 'receive' && styles.exchangeSectionActive]}>
+                      <View style={styles.exchangeLabelRow}>
+                        <Text style={styles.fieldLabel}>They receive</Text>
+                      </View>
+                      <View style={styles.exchangeInputRow}>
+                        <Pressable
+                          onPress={() => setShowReceiveDropdown(true)}
+                          style={({ pressed }) => [styles.currencyBtn, pressed && { opacity: 0.7 }]}
+                        >
+                          <FlagIcon code={getCurrency(receiveCurrency).flag} size={20} />
+                          <Text style={styles.currencyBtnCode}>{receiveCurrency}</Text>
+                          <ChevronDown size={12} color={colors.textSecondary} strokeWidth={2} />
+                        </Pressable>
+                        <View style={styles.amountDivider} onStartShouldSetResponder={() => true} />
+                        <TextInput
+                          ref={receiveInputRef}
+                          style={[styles.exchangeInput, (activeField !== 'receive' || parseFloat(receiveRaw) === 0) && styles.amountInputInactive]}
+                          value={receiveDisplayText === '0.00' || receiveDisplayText === '0' ? '' : receiveDisplayText}
+                          onChangeText={handleReceiveChange}
+                          onFocus={handleReceiveFocus}
+                          onBlur={handleReceiveBlur}
+                          onSelectionChange={() => receiveInputRef.current?.setNativeProps({ selection: { start: 999, end: 999 } })}
+                          keyboardType="decimal-pad"
+                          placeholder="0"
+                          placeholderTextColor={colors.textMuted}
+                          textAlign="right"
+                        />
+                      </View>
+                    </Pressable>
+                  </Animated.View>
+                  {sendAmountNum > 0 && (
+                    <Text style={styles.feeHint}>
+                      Fee: {formatAmount(fee, sendWallet.currency)}  ·  Total: {formatAmount(total, sendWallet.currency)}
+                    </Text>
+                  )}
                 </ScrollView>
 
-                {/* ── Quick amounts ── */}
-                <View style={styles.quickAmounts}>
-                  {(activeField === 'send'
-                    ? (QUICK_AMOUNTS[sendWallet.currency] ?? DEFAULT_QUICK_AMOUNTS)
-                    : (QUICK_AMOUNTS[receiveCurrency]    ?? DEFAULT_QUICK_AMOUNTS)
-                  ).map((amt) => {
-                    const isSend = activeField === 'send';
-                    const symbol = isSend ? sendCurrency.symbol : getCurrency(receiveCurrency).symbol;
-                    const affordable = isSend
-                      ? amt <= sendWallet.balance
-                      : (amt / rate + getFee(amt / rate, sendWallet.currency)) <= sendWallet.balance;
-                    const activeAmt = isSend ? parseFloat(sendRaw) : parseFloat(receiveRaw);
-                    const isActive = activeAmt === amt;
-                    return (
-                      <Pressable
-                        key={amt}
-                        onPress={() => {
-                          if (!affordable) return;
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          if (isSend) {
-                            setSendRaw(String(amt));
-                          } else {
-                            setReceiveRaw(String(amt));
-                          }
-                        }}
-                        style={[
-                          styles.quickChip,
-                          isActive && styles.quickChipActive,
-                          !affordable && styles.quickChipDisabled,
-                        ]}
-                      >
-                        <Text style={[
-                          styles.quickChipText,
-                          isActive && styles.quickChipTextActive,
-                          !affordable && styles.quickChipTextDisabled,
-                        ]}>
-                          {symbol}{amt}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
+                  <View style={styles.quickAmounts}>
+                    {(activeField === 'send'
+                      ? (QUICK_AMOUNTS[sendWallet.currency] ?? DEFAULT_QUICK_AMOUNTS)
+                      : (QUICK_AMOUNTS[receiveCurrency]    ?? DEFAULT_QUICK_AMOUNTS)
+                    ).map((amt, i) => {
+                      const isSend = activeField === 'send';
+                      const symbol = isSend ? sendCurrency.symbol : getCurrency(receiveCurrency).symbol;
+                      const affordable = isSend
+                        ? amt <= sendWallet.balance
+                        : (amt / rate + getFee(amt / rate, sendWallet.currency)) <= sendWallet.balance;
+                      const activeAmt = isSend ? parseFloat(sendRaw) : parseFloat(receiveRaw);
+                      const isActive = activeAmt === amt;
+                      return (
+                        <DrumChip
+                          key={i}
+                          index={i}
+                          animKey={activeField}
+                          label={`${symbol}${amt}`}
+                          isActive={isActive}
+                          isDisabled={!affordable}
+                          onPress={() => {
+                            if (!affordable) return;
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            if (isSend) {
+                              setSendRaw(String(amt));
+                              sendInputRef.current?.setNativeProps({ text: String(amt) });
+                            } else {
+                              setReceiveRaw(String(amt));
+                              receiveInputRef.current?.setNativeProps({ text: String(amt) });
+                              receiveUserEditedRef.current = true;
+                            }
+                          }}
+                        />
+                      );
+                    })}
+                  </View>
 
-                {/* ── Numpad ── */}
-                <View style={styles.numpad}>
-                  {KEYS.map((k) => (
-                    <NumKey key={k} label={k} onPress={() => handleKey(k)} style={styles.key} />
-                  ))}
-                </View>
-
-                {/* ── CTA ── */}
-                <View style={styles.footer}>
-                  <PrimaryButton
-                    onPress={handleReview}
-                    disabled={!canReview}
-                    style={styles.reviewBtn}
-                  >
-                    <Text style={styles.reviewBtnText}>Next</Text>
-                  </PrimaryButton>
-                </View>
+                  <View style={[styles.footer, { paddingBottom: keyboardVisible ? 6 : insets.bottom + 6 }]}>
+                    <PrimaryButton
+                      label="Next"
+                      onPress={handleReview}
+                      disabled={!canReview}
+                      style={styles.reviewBtn}
+                    />
+                  </View>
+                </KeyboardAvoidingView>
 
                 {/* ══ Wallet Dropdown Modal ══ */}
-                <Modal visible={showWalletDropdown} transparent animationType="fade">
+                <Modal visible={showWalletDropdown} transparent animationType="slide">
                   <Pressable style={styles.dropdownBackdrop} onPress={() => setShowWalletDropdown(false)}>
                     <Pressable style={styles.dropdownPanel} onPress={() => {}}>
-                      <Text style={styles.dropdownTitle}>Select wallet</Text>
-                      {wallets.map((w) => {
+                      <View style={styles.dropdownHandle} />
+                      <Text style={styles.dropdownTitle}>Send from</Text>
+                      {wallets.map((w, i) => {
                         const cur = getCurrency(w.currency);
                         const active = w.id === sendWalletId;
                         const disabled = w.balance <= 0;
+                        const isLast = i === wallets.length - 1;
                         return (
                           <Pressable
                             key={w.id}
@@ -1070,13 +1194,14 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                             }}
                             style={({ pressed }) => [
                               styles.dropdownRow,
+                              !isLast && styles.dropdownRowDivider,
                               active && styles.dropdownRowActive,
                               disabled && styles.dropdownRowDisabled,
-                              pressed && !disabled && { backgroundColor: colors.surfaceHigh },
+                              pressed && !disabled && { opacity: 0.6 },
                             ]}
                           >
                             <View style={styles.dropdownRowLeft}>
-                              <Text style={styles.dropdownFlag}>{cur.flag}</Text>
+                              <FlagIcon code={cur.flag} size={24} />
                               <View>
                                 <Text style={[styles.dropdownCode, disabled && { color: colors.textMuted }]}>
                                   {cur.code}
@@ -1088,11 +1213,61 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                               <Text style={[styles.dropdownBalance, disabled && { color: colors.textMuted }]}>
                                 {disabled ? 'No funds' : formatAmount(w.balance, w.currency)}
                               </Text>
-                              {active && !disabled && <Check size={16} color={colors.brand} strokeWidth={2.5} />}
+                              {active && !disabled && <Check size={16} color={colors.textPrimary} strokeWidth={2.5} />}
                             </View>
                           </Pressable>
                         );
                       })}
+                      <View style={{ height: insets.bottom + 8 }} />
+                    </Pressable>
+                  </Pressable>
+                </Modal>
+
+                {/* ══ Receive Currency Dropdown Modal ══ */}
+                <Modal visible={showReceiveDropdown} transparent animationType="slide">
+                  <Pressable style={styles.dropdownBackdrop} onPress={() => setShowReceiveDropdown(false)}>
+                    <Pressable style={styles.dropdownPanel} onPress={() => {}}>
+                      <View style={styles.dropdownHandle} />
+                      <Text style={styles.dropdownTitle}>Receive currency</Text>
+                      {receiveCurrencies.map((code, i) => {
+                        const cur = getCurrency(code);
+                        const active = code === receiveCurrency;
+                        const isPrimary = i === 0;
+                        const isLast = i === receiveCurrencies.length - 1;
+                        return (
+                          <Pressable
+                            key={code}
+                            onPress={() => {
+                              setReceiveCurrency(code);
+                              setShowReceiveDropdown(false);
+                              Haptics.selectionAsync();
+                            }}
+                            style={({ pressed }) => [
+                              styles.dropdownRow,
+                              !isLast && styles.dropdownRowDivider,
+                              active && styles.dropdownRowActive,
+                              pressed && { opacity: 0.6 },
+                            ]}
+                          >
+                            <View style={styles.dropdownRowLeft}>
+                              <FlagIcon code={cur.flag} size={24} />
+                              <View>
+                                <Text style={styles.dropdownCode}>{cur.code}</Text>
+                                <Text style={styles.dropdownName}>{cur.name}</Text>
+                              </View>
+                              {isPrimary && (
+                                <View style={styles.dropdownPrimaryBadge}>
+                                  <Text style={styles.dropdownPrimaryBadgeText}>Default</Text>
+                                </View>
+                              )}
+                            </View>
+                            <View style={styles.dropdownRowRight}>
+                              {active && <Check size={16} color={colors.textPrimary} strokeWidth={2.5} />}
+                            </View>
+                          </Pressable>
+                        );
+                      })}
+                      <View style={{ height: insets.bottom + 8 }} />
                     </Pressable>
                   </Pressable>
                 </Modal>
@@ -1125,7 +1300,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                   </View>
                 ) : (
                   <View style={styles.confirmHero}>
-                    <Text style={styles.confirmHeroFlag}>{selectedContact?.flag}</Text>
+                    {selectedContact && <FlagIcon code={selectedContact.flag} size={48} style={styles.confirmHeroFlag} />}
                     <Text style={styles.confirmHeroLabel}>{selectedContact?.name.split(' ')[0]} receives</Text>
                     <View style={styles.confirmHeroAmountRow}>
                       <Text style={styles.confirmHeroAmount}>{getCurrency(receiveCurrency).symbol}{convertedFormatted}</Text>
@@ -1141,9 +1316,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                 {/* Recipient card */}
                 <View style={styles.card}>
                   <View style={styles.recipientRow}>
-                    <View style={styles.confirmRecipientAvatar}>
-                      <Text style={styles.confirmRecipientFlag}>{selectedContact?.flag}</Text>
-                    </View>
+                    {selectedContact && <Avatar name={selectedContact.name} size="lg" />}
                     <View style={{ flex: 1 }}>
                       <Text style={styles.confirmRecipientName}>{selectedContact?.name}</Text>
                       <Text style={styles.confirmRecipientPhone}>{selectedContact?.phone}</Text>
@@ -1153,7 +1326,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
 
                 {/* Breakdown card */}
                 <View style={styles.card}>
-                  <Row label="From wallet" value={`${sendCurrency.flag}  ${sendCurrency.code}`} />
+                  <Row label="From wallet" value={sendCurrency.code} flagCode={sendCurrency.flag} />
                   <View style={styles.divider} />
                   <Row label="You send" value={formatAmount(sendAmountNum, sendWallet.currency)} />
                   <View style={styles.divider} />
@@ -1190,15 +1363,8 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
               </ScrollView>
 
               {/* Footer */}
-              <View style={styles.confirmFooter}>
+              <View style={[styles.confirmFooter, { paddingBottom: Math.max(insets.bottom, 16) + 14 }]}>
                 <MorphButton phase={phase} onConfirm={handleConfirm} onViewTransfer={handleViewTransfer} onRetry={() => setPhase('idle')} total={total} currency={sendWallet.currency} />
-                <Pressable
-                  onPress={phase === 'success' || phase === 'viewTransfer' || phase === 'failed' || phase === 'retryReady' ? handleCloseToWallets : handleCloseConfirm}
-                  disabled={phase === 'processing'}
-                  style={[styles.closeBtn, phase === 'processing' && styles.closeBtnDisabled]}
-                >
-                  <Text style={styles.closeBtnText}>Close</Text>
-                </Pressable>
               </View>
             </View>
           </Animated.View>
@@ -1226,122 +1392,135 @@ const styles = StyleSheet.create({
 
   // Scroll
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: spacing.xl, paddingTop: spacing.xs },
+  scrollContent: { paddingHorizontal: spacing.xl, paddingTop: 2 },
 
   // Field groups
-  fieldGroup: { marginBottom: spacing.sm },
+  fieldGroup: { marginBottom: 4 },
   fieldLabel: {
     fontSize: typography.xs,
     color: colors.textMuted,
     fontWeight: typography.semibold,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
-    marginBottom: spacing.sm,
+    marginBottom: 4,
   },
   fieldHint: {
     fontSize: typography.xs,
     color: colors.textSecondary,
-    marginTop: spacing.xs,
+    marginTop: 2,
     paddingHorizontal: 2,
   },
 
-  // Recipient
+  // Recipient — compact inline display, not an input
   selectedRecipient: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    gap: spacing.md,
-    minHeight: 56,
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
   },
-  recipientAvatarWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.full,
-    backgroundColor: colors.surfaceHigh,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  recipientAvatarFlag: { fontSize: 18 },
-  recipientInfo: { flex: 1 },
-  recipientName: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.semibold },
-  recipientPhone: { fontSize: typography.sm, color: colors.textSecondary, marginTop: 1 },
-  swapRecipientBtn: { padding: spacing.xs },
-
-  // Amount rows
-  amountRow: {
+  recipientName: { flex: 1, fontSize: typography.sm, color: colors.textPrimary, fontWeight: typography.semibold },
+  changeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+  },
+  changeBtnLabel: {
+    fontSize: typography.xs,
+    fontWeight: typography.semibold,
+    color: colors.textPrimary,
+  },
+
+  // Exchange card
+  exchangeCard: {
     borderRadius: radius.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
-    height: 64,
     overflow: 'hidden',
+    marginBottom: spacing.xs,
   },
-  amountRowActive: { borderColor: colors.brand },
-  amountRowError: { borderColor: colors.failed, backgroundColor: colors.failedSubtle },
+  exchangeSection: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+    backgroundColor: colors.bg,
+    zIndex: 0,
+  },
+  exchangeSectionActive: {},
+  exchangeSectionError: { backgroundColor: colors.failedSubtle },
+  exchangeLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: 4,
+  },
+  exchangeInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 48,
+  },
+  exchangeInput: {
+    flex: 1,
+    paddingLeft: spacing.xs,
+    paddingRight: spacing.md,
+    paddingVertical: 0,
+    fontSize: 26,
+    color: colors.textPrimary,
+    fontWeight: typography.bold,
+    letterSpacing: -0.5,
+  },
+  exchangeBadgeZone: {
+    paddingLeft: spacing.md + 80, // section padding + currencyBtn minWidth = start at divider
+    alignItems: 'center',
+    marginVertical: -13,
+    zIndex: 2,
+  },
+  exchangeBadgeHairline: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 12,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+  },
+  exchangeRateBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.bg,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    height: 26,
+  },
+  exchangeRateBadgeText: {
+    fontSize: typography.xs,
+    color: colors.textSecondary,
+    fontWeight: typography.medium,
+  },
 
   currencyBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
     height: '100%',
-    minWidth: 96,
+    minWidth: 80,
   },
-  currencyBtnLocked: { opacity: 1 },
-  currencyBtnFlag: { fontSize: 20 },
-  currencyBtnCode: { fontSize: typography.sm, color: colors.textPrimary, fontWeight: typography.bold },
+  currencyBtnCode: { fontSize: typography.xs + 1, color: colors.textPrimary, fontWeight: typography.bold },
 
-  amountDivider: { width: 1, height: '55%', backgroundColor: colors.border },
+  amountDivider: { width: StyleSheet.hairlineWidth, height: '60%', backgroundColor: colors.border },
 
-  amountTouchArea: {
-    flex: 1,
-    height: '100%',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.md,
-  },
-  amountText: {
-    fontSize: 30,
-    color: colors.textPrimary,
-    fontWeight: typography.bold,
-    letterSpacing: -1,
-    textAlign: 'right',
-  },
-  amountTextComputed: { color: colors.textSecondary },
-  amountTextError: { color: colors.failed },
-  caretText: {
-    fontSize: 30,
-    color: colors.brand,
-    fontWeight: typography.regular,
-  },
+  amountInputInactive: { color: colors.textSecondary },
+  amountInputError: { color: colors.failed },
 
-  // Rate row
-  rateRow: { alignItems: 'center', marginVertical: spacing.xs },
-  exchangeArrow: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.full,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
+  feeHint: {
+    fontSize: typography.sm,
+    color: colors.textSecondary,
+    paddingTop: spacing.xs,
   },
-  rateChip: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  rateChipText: { fontSize: typography.xs, color: colors.textSecondary, fontWeight: typography.medium },
 
   // Quick amounts
   quickAmounts: {
@@ -1349,12 +1528,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.sm,
     paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.sm,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
   },
   quickChip: {
-    flex: 1,
+    flex: 1,          // fills the Animated.View wrapper
     alignItems: 'center',
-    paddingVertical: spacing.sm,
+    paddingVertical: 9,
     borderRadius: radius.full,
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -1368,7 +1548,7 @@ const styles = StyleSheet.create({
     opacity: 0.35,
   },
   quickChipText: {
-    fontSize: typography.sm,
+    fontSize: typography.xs + 1,
     color: colors.textSecondary,
     fontWeight: typography.semibold,
   },
@@ -1379,36 +1559,15 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
 
-  // Numpad
-  numpad: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: spacing.xl,
-  },
-  key: {
-    width: '33.333%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.sm,
-  },
-  keyText: {
-    fontSize: typography.xxl,
-    color: colors.textPrimary,
-    fontWeight: typography.medium,
-  },
-
   // Footer CTA
   footer: {
     paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xxxl,
-    paddingTop: spacing.sm,
+    paddingTop: spacing.xs,
   },
   reviewBtn: {
-    paddingVertical: spacing.lg,
+    paddingVertical: 13,
     alignItems: 'center',
   },
-  reviewBtnText: { fontSize: typography.md, color: '#441306', fontWeight: typography.bold },
-
   // ── Contact picker (step 1) ──
   searchWrap: {
     flexDirection: 'row',
@@ -1441,18 +1600,6 @@ const styles = StyleSheet.create({
   // Recent circles
   recentCirclesRow: { gap: spacing.lg, paddingBottom: spacing.sm, paddingHorizontal: spacing.xl },
   recentCircleWrap: { alignItems: 'center', width: 64 },
-  recentCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: radius.full,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.xs,
-  },
-  recentCircleInitial: { fontSize: typography.lg, color: colors.textSecondary, fontWeight: typography.semibold },
   recentCircleName: {
     fontSize: typography.xs,
     color: colors.textSecondary,
@@ -1468,17 +1615,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     gap: spacing.md,
   },
-  contactAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.full,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  contactAvatarInitial: { fontSize: typography.lg, color: colors.textSecondary, fontWeight: typography.semibold },
   phoneAvatar: { backgroundColor: colors.brandSubtle, borderColor: colors.brandLight },
   contactInfo: { flex: 1 },
   contactName: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.medium },
@@ -1499,50 +1635,64 @@ const styles = StyleSheet.create({
   // ── Wallet dropdown modal ──
   dropdownBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
   },
   dropdownPanel: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: colors.bg,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
     overflow: 'hidden',
   },
+  dropdownHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: 'center',
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
   dropdownTitle: {
-    fontSize: typography.xs,
-    color: colors.textMuted,
-    fontWeight: typography.semibold,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSubtle,
+    fontSize: typography.sm,
+    color: colors.textSecondary,
+    fontWeight: typography.medium,
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.sm,
+    paddingTop: spacing.xs,
   },
   dropdownRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSubtle,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: 15,
   },
-  dropdownRowActive: { backgroundColor: colors.brandSubtle },
-  dropdownRowDisabled: { opacity: 0.45 },
+  dropdownRowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  dropdownRowActive: { backgroundColor: colors.surface },
+  dropdownRowDisabled: { opacity: 0.4 },
   dropdownRowLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  dropdownFlag: { fontSize: 24 },
+  dropdownFlag: {},
   dropdownCode: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.semibold },
   dropdownName: { fontSize: typography.xs, color: colors.textSecondary, marginTop: 2 },
   dropdownRowRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  dropdownBalance: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.medium },
+  dropdownBalance: { fontSize: typography.sm, color: colors.textSecondary, fontWeight: typography.regular },
+  dropdownPrimaryBadge: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    marginLeft: spacing.xs,
+  },
+  dropdownPrimaryBadgeText: { fontSize: typography.xs - 1, color: colors.textMuted, fontWeight: typography.medium },
 
   // ── Confirm step ──
   confirmScroll: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xl },
   confirmHero: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.xs },
-  confirmHeroFlag: { fontSize: 48, marginBottom: spacing.xs },
+  confirmHeroFlag: { marginBottom: spacing.xs },
   confirmHeroLabel: { fontSize: typography.sm, color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 1, fontWeight: typography.semibold },
   confirmHeroAmountRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, marginTop: spacing.xs },
   confirmHeroAmount: { fontSize: typography.hero, color: colors.textPrimary, fontWeight: typography.bold, letterSpacing: -2 },
@@ -1551,8 +1701,6 @@ const styles = StyleSheet.create({
   etaText: { fontSize: typography.xs, color: colors.success, fontWeight: typography.semibold },
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden', marginBottom: spacing.md },
   recipientRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg },
-  confirmRecipientAvatar: { width: 48, height: 48, borderRadius: radius.full, backgroundColor: colors.surfaceHigh, alignItems: 'center', justifyContent: 'center' },
-  confirmRecipientFlag: { fontSize: 24 },
   confirmRecipientName: { fontSize: typography.md, color: colors.textPrimary, fontWeight: typography.semibold },
   confirmRecipientPhone: { fontSize: typography.sm, color: colors.textSecondary, marginTop: 2 },
   divider: { height: 1, backgroundColor: colors.borderSubtle },
@@ -1566,10 +1714,7 @@ const styles = StyleSheet.create({
   editBtnText: { fontSize: typography.sm, color: colors.textSecondary },
   protoWrap: { marginTop: spacing.xxl, paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.borderSubtle, gap: spacing.sm },
   protoTitle: { fontSize: typography.xs, color: colors.textMuted, fontWeight: typography.semibold, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: spacing.xs },
-  confirmFooter: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xl, paddingTop: spacing.sm, gap: spacing.xs },
-  closeBtn: { alignSelf: 'center', paddingVertical: spacing.sm, paddingHorizontal: spacing.xl },
-  closeBtnDisabled: { opacity: 0.35 },
-  closeBtnText: { fontSize: typography.base, color: colors.textSecondary, fontWeight: typography.medium },
+  confirmFooter: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm },
   failureBanner: {
     alignItems: 'center',
     paddingVertical: spacing.xl,

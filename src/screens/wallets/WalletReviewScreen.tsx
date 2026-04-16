@@ -8,6 +8,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ChevronLeft } from 'lucide-react-native';
 import { colors, typography, spacing, radius } from '../../theme';
 import PrimaryButton from '../../components/PrimaryButton';
+import FlagIcon from '../../components/FlagIcon';
 import { getCurrency } from '../../data/currencies';
 import { useWalletStore } from '../../stores/useWalletStore';
 import type { RootStackParamList } from '../../navigation/types';
@@ -48,7 +49,7 @@ export default function WalletReviewScreen({ route }: RootStackProps<'WalletRevi
       <View style={styles.content}>
         {/* Currency display */}
         <View style={styles.currencyCard}>
-          <Text style={styles.flag}>{currency.flag}</Text>
+          <FlagIcon code={currency.flag} size={56} />
           <Text style={styles.currencyName}>{currency.name}</Text>
           <Text style={styles.currencyCode}>{currency.code}</Text>
         </View>
@@ -59,7 +60,7 @@ export default function WalletReviewScreen({ route }: RootStackProps<'WalletRevi
           <View style={styles.divider} />
           <DetailRow label="Wallet creation fee" value="Free" valueColor={colors.success} />
           <View style={styles.divider} />
-          <DetailRow label="Cards" value="Up to 3 per wallet" />
+          <DetailRow label="Cards" value="Virtual &amp; physical" />
         </View>
 
         <Text style={styles.note}>
@@ -124,7 +125,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
     gap: spacing.sm,
   },
-  flag: { fontSize: 56 },
+  flag: {},
   currencyName: { fontSize: typography.xl, color: colors.textPrimary, fontWeight: typography.bold },
   currencyCode: { fontSize: typography.base, color: colors.textSecondary },
 

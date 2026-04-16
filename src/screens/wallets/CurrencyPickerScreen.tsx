@@ -15,6 +15,7 @@ import { ChevronLeft, Search } from 'lucide-react-native';
 
 import { colors, typography, spacing, radius } from '../../theme';
 import { CURRENCIES } from '../../data/currencies';
+import FlagIcon from '../../components/FlagIcon';
 import { useWalletStore } from '../../stores/useWalletStore';
 import type { RootStackParamList } from '../../navigation/types';
 
@@ -86,7 +87,7 @@ export default function CurrencyPickerScreen() {
                 owned && styles.rowDisabled,
               ]}
             >
-              <Text style={styles.rowFlag}>{item.flag}</Text>
+              <FlagIcon code={item.flag} size={24} style={styles.rowFlag} />
               <View style={styles.rowText}>
                 <Text style={[styles.rowName, owned && styles.textDisabled]}>
                   {item.name}
@@ -158,7 +159,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
   },
   rowDisabled: { opacity: 0.4 },
-  rowFlag: { fontSize: 28, width: 36, textAlign: 'center' },
+  rowFlag: { width: 36, alignSelf: 'center' },
   rowText: { flex: 1 },
   rowName: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.medium },
   rowCode: { fontSize: typography.sm, color: colors.textSecondary, marginTop: 2 },

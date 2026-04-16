@@ -6,18 +6,18 @@ export type Currency = {
 };
 
 export const CURRENCIES: Currency[] = [
-  { code: 'USD', name: 'US Dollar',           flag: '🇺🇸', symbol: '$'    },
-  { code: 'MXN', name: 'Mexican Peso',        flag: '🇲🇽', symbol: '$'    },
-  { code: 'PHP', name: 'Philippine Peso',     flag: '🇵🇭', symbol: '₱'    },
-  { code: 'INR', name: 'Indian Rupee',        flag: '🇮🇳', symbol: '₹'    },
-  { code: 'NGN', name: 'Nigerian Naira',      flag: '🇳🇬', symbol: '₦'    },
-  { code: 'GBP', name: 'British Pound',       flag: '🇬🇧', symbol: '£'    },
-  { code: 'EUR', name: 'Euro',                flag: '🇪🇺', symbol: '€'    },
-  { code: 'GTQ', name: 'Guatemalan Quetzal',  flag: '🇬🇹', symbol: 'Q'    },
-  { code: 'HNL', name: 'Honduran Lempira',    flag: '🇭🇳', symbol: 'L'    },
-  { code: 'DOP', name: 'Dominican Peso',      flag: '🇩🇴', symbol: 'RD$'  },
-  { code: 'COP', name: 'Colombian Peso',      flag: '🇨🇴', symbol: '$'    },
-  { code: 'MAD', name: 'Moroccan Dirham',     flag: '🇲🇦', symbol: 'MAD ' },
+  { code: 'USD', name: 'US Dollar',           flag: 'US', symbol: '$'    },
+  { code: 'MXN', name: 'Mexican Peso',        flag: 'MX', symbol: '$'    },
+  { code: 'PHP', name: 'Philippine Peso',     flag: 'PH', symbol: '₱'    },
+  { code: 'INR', name: 'Indian Rupee',        flag: 'IN', symbol: '₹'    },
+  { code: 'NGN', name: 'Nigerian Naira',      flag: 'NG', symbol: '₦'    },
+  { code: 'GBP', name: 'British Pound',       flag: 'GB', symbol: '£'    },
+  { code: 'EUR', name: 'Euro',                flag: 'EU', symbol: '€'    },
+  { code: 'GTQ', name: 'Guatemalan Quetzal',  flag: 'GT', symbol: 'Q'    },
+  { code: 'HNL', name: 'Honduran Lempira',    flag: 'HN', symbol: 'L'    },
+  { code: 'DOP', name: 'Dominican Peso',      flag: 'DO', symbol: 'RD$'  },
+  { code: 'COP', name: 'Colombian Peso',      flag: 'CO', symbol: '$'    },
+  { code: 'MAD', name: 'Moroccan Dirham',     flag: 'MA', symbol: 'MAD ' },
 ];
 
 export const getCurrency = (code: string) =>

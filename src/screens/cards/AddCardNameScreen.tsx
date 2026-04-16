@@ -45,7 +45,7 @@ export default function AddCardNameScreen({ route }: RootStackProps<'AddCardName
   }, []);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
           <ChevronLeft size={24} color={colors.textPrimary} strokeWidth={2} />

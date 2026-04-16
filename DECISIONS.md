@@ -1195,3 +1195,149 @@ All four accept a `label` prop that renders text internally with correct weight,
 **Why:** No product justification for the limit. A user might hold a travel card, everyday card, and per-family-member cards in a single wallet — 3 is too low without a business rule behind it. If an issuer constraint exists, it belongs as a server-side rejection, not a client-side gate.
 
 **Trade-off:** The stack visually shows only the first 3 cards. Cards beyond that exist in the store and are accessible via the card list, but aren't visible in the wallet home stack. Acceptable for now.
+
+---
+
+## Snapshot 17 — 2026-04-15
+*Covers: Replace flag emoji with SVG flag icons*
+
+### 107. Flag icons via `country-flag-icons` + `SvgXml` instead of emoji
+
+**Decision:** All flag emoji strings (e.g. `'🇺🇸'`) are replaced with ISO 3166-1 alpha-2 country codes (e.g. `'US'`). A `FlagIcon` component renders them using `SvgXml` from the already-installed `react-native-svg`, sourcing SVG strings from `country-flag-icons/string/3x2`. The `flag` field on `Currency` and `Contact` now holds the ISO code. `FlagIcon` accepts `code` and `size` (height in dp; width auto-derived at 3:2 ratio).
+
+**Why not emoji:** Flag emoji render inconsistently across Android versions and don't render at all on some older devices. On Android 13 and below, many OEM skins strip or blank flag emoji. `country-flag-icons` SVGs are pixel-identical on every platform.
+
+**Why `SvgXml` over image assets or CDN:** `react-native-svg` was already a dependency. `country-flag-icons/string/3x2` exports plain SVG XML strings — no bundler transform needed, fully offline, no network dependency. Importing PNG assets per flag would add ~400 KB of binary assets and require a static require map. CDN images add latency and don't work offline, which is unacceptable for a fintech app.
+
+**Why `string/3x2` over `react/3x2`:** The `react/3x2` exports use web SVG elements (`<svg>`, `<path>`) which are not valid React Native components. `string/3x2` returns raw SVG XML that `SvgXml` renders correctly via the native SVG bridge.
+
+**`FlagIcon` sizing:** `size` prop = height in dp. Width = `Math.round(size * 1.5)` to maintain the 3:2 aspect ratio. A `borderRadius: 2` clip gives flags with straight edges (e.g. NG) a subtle rounded rect.
+
+**String-concatenated flag cases** (filter chips, row values): components updated with an optional `flagCode` prop that renders `FlagIcon` inline before the text value rather than embedding the flag in the string. Affected: `FilterChip` (UnifiedActivityScreen), `Row` (SendMoneyScreen, ConfirmationScreen), `DetailRow` (TransactionDetailScreen). `CardDetailScreen`'s `InfoRow` uses its existing `right` prop. `WalletCardListScreen` header restructured from a single `Text` to a `View` row.
+
+### 108. `Contact.flag` and `Currency.flag` hold ISO country codes, not emoji
+
+**Decision:** The `flag` field is documented as an ISO 3166-1 alpha-2 code (`'US'`, `'MX'`, `'EU'`, etc.), not an emoji or display string. `detectFromPhone` in `SendMoneyScreen` returns ISO codes. `PRIMARY_CURRENCY_BY_ISO` and `RECEIVE_CURRENCIES_BY_ISO` are keyed by ISO code. The old `flagToISO()` emoji-to-code converter is deleted.
+
+**Why:** Storing the display representation in the data model couples rendering to data. ISO codes are stable identifiers; the rendering choice (emoji vs. SVG vs. text abbreviation) can change independently. The `FlagIcon` component is the single place that maps code → visual.
+
+---
+
+## Snapshot 3 — 2026-04-16
+
+### 109. `Avatar` component with `AvatarSize` variants
+
+**Decision:** Extracted a reusable `Avatar` component (`src/components/Avatar.tsx`) with size variants `sm | md | lg | xl` driven by a `SIZE` record. Renders initials via `getInitials()` from `utils/strings`. Replaces four separate inline avatar implementations in `SendMoneyScreen` and `RecentCircle`.
+
+**Why:** Single source of truth for avatar styling. Diameter, font size, and border all scale consistently from one record. Avoids drift between call sites.
+
+### 110. `SecondaryButton` used for "Change" recipient action in send flow
+
+**Decision:** The "Change" recipient button in `SendMoneyScreen` uses `SecondaryButton` with children (icon + label) rather than a raw `Pressable`. Pattern matches `+Wallet` and `+Add Card` actions elsewhere.
+
+**Why:** Consistent button system — every secondary/tertiary action uses the same component. Avoids ad-hoc pressable styling that drifts over time.
+
+### 111. Exchange card — unified single card with floating rate badge
+
+**Decision:** "You send" and "They receive" are two sections of a single `Animated.View` card with `overflow: 'hidden'`. A floating `exchangeBadgeZone` with `marginVertical: -13` and `zIndex: 2` straddles the hairline divider. The rate pill is centered over the input area (not the full card width) via `paddingLeft: spacing.md + 80` so `alignItems: 'center'` references the right-side column only.
+
+**Why:** One card communicates that send/receive are two sides of the same transaction rather than two independent fields. The floating badge makes the exchange rate feel like the bridge between the two amounts.
+
+### 112. Receive field dark-text and zero-placeholder fixes
+
+**Decision:** Receive `TextInput` value is forced to `''` when `receiveDisplayText` is `'0'` or `'0.00'`. Inactive style applied when `activeField !== 'receive' || parseFloat(receiveRaw) === 0` — ensures placeholder grey is shown when the field is active but empty.
+
+**Why:** Without the `|| parseFloat(receiveRaw) === 0` guard, a focused-but-empty receive field would render dark text on the invisible `0` value, looking like a filled field.
+
+### 113. Always-fresh refs pattern to prevent stale closures
+
+**Decision:** `sendRawRef.current = sendRaw` and `receiveRawRef.current = receiveRaw` are assigned on every render before effects run. Focus handlers read from refs, not the closed-over state variable.
+
+**Why:** `useCallback` with a deps array captures stale state. The always-fresh ref guarantees handlers read the current value without being added to every callback's dep array (which would cause excessive re-creation).
+
+### 114. `receiveUserEditedRef` — distinguishes user-typed vs auto-computed receive values
+
+**Decision:** `receiveUserEditedRef` is set `true` on any user keystroke or quick-chip selection in the receive field, and reset `false` whenever the receive value is auto-computed from the send field. `handleSendFocus` only back-computes `sendRaw` from `receiveRaw` if the ref is `true`.
+
+**Why:** Without this guard, tabbing back to the send field would replace whatever the user typed with a reverse-computed value, even when they never edited the receive field. Quick-chip selection now also sets the ref so switching back from receive correctly updates the send amount.
+
+### 115. Decimal formatting: `toFixed(2)` on blur only, never on field switch
+
+**Decision:** `handleSendBlur` / `handleReceiveBlur` call `.toFixed(2)` on the raw string when focus is lost. Focus handlers do NOT add decimals. `sendDisplayText` uses `sendAmountNum.toFixed(2)` (not `String(parseFloat(...))`) to preserve trailing zeros in the inactive display.
+
+**Why:** Adding decimals on field switch caused "26" → "26.00" unexpectedly mid-interaction. The user sees clean integers while typing and formatted decimals only after leaving a field.
+
+### 116. Auto-focus send field on step entry via `useEffect`, not Reanimated callback
+
+**Decision:** `useEffect` watching `step === 'amount'` fires a 300ms `setTimeout(() => sendInputRef.current?.focus())`. The earlier approach of calling `runOnJS` inside a `withTiming` animation completion was removed.
+
+**Why:** Reanimated's Babel plugin serializes worklet closures. Inline arrow functions that capture React refs (like `sendInputRef`) cannot be serialized and crash the app. A `useEffect` runs on the JS thread after the render is committed — safe, no worklet involved.
+
+### 117. `Keyboard.dismiss()` before navigation transitions
+
+**Decision:** `handleReview` calls `Keyboard.dismiss()` before `openConfirm()`. The confirmation dismiss path also calls `Keyboard.dismiss()`.
+
+**Why:** Without explicit dismiss, the keyboard stays up as the modal transitions to the confirm step, then abruptly drops — jarring. Dismissing first makes the transition feel intentional.
+
+### 118. Section Pressable for full tap area on exchange card inputs
+
+**Decision:** Each exchange section (`View`) was converted to a `Pressable` whose `onPress` calls `.focus()` on the relevant `TextInput` and immediately follows with `setTimeout(() => setNativeProps({ selection: { start: 999, end: 999 } }), 0)`.
+
+**Why:** TextInput tap area is only the input element itself. Tapping the label row, padding, or gap near the rate badge did nothing. Wrapping the whole section makes the card feel like a contiguous tap target. The `setNativeProps` in `onPress` re-forces caret to end because the section Pressable fires *after* the TextInput's own touch handler and can reset the caret position.
+
+### 119. Horizontal divider and badge zone absorb touches via `onStartShouldSetResponder`
+
+**Decision:** The vertical `amountDivider` between the currency dropdown and the text input, and the `exchangeBadgeZone` (the rate pill row), both set `onStartShouldSetResponder={() => true}`.
+
+**Why:** These views sit inside the section Pressable. Without consuming the touch themselves, taps on the divider or rate pill would bubble up and trigger the section's focus handler — visually confusing because nothing editable was tapped.
+
+### 120. `DrumChip` slot-machine animation for quick amount chips
+
+**Decision:** The quick amount chip row uses a `DrumChip` function component instead of inline `Pressable`. Each chip holds a single `flip` shared value (0 = rest, 0→1 = exit upward, −1→0 = enter from below) and an `activeProgress` shared value (0→1) for background/border/text colour via `interpolateColor`. Label swap deferred via `displayLabel` state + `runOnJS(setDisplayLabel)(nextLabel)` fired from the `withTiming` completion callback when text is invisible.
+
+**Why separate flip value:** Two separate shared values (`translateY` + `textOpacity`) encoded one semantic concept (flip phase). A single `flip` value with `translateY = −flip × 10` and `opacity = 1 − |flip|` reduces shared value count from 3 to 2 and the animation setup from two `withTiming` calls to one.
+
+**Why defer label swap:** React re-renders `DrumChip` with the new `label` prop synchronously before the animation runs. Without deferral, the new amount appears during the exit phase (wrong direction). `displayLabel` state is only updated inside the `withTiming` completion callback when `flip === 1` (text invisible), so the old label exits and the new label enters.
+
+**Why `prevAnimKey` ref:** Distinguishes field-switch (flip + delayed colour change) from direct chip tap (immediate colour change, no flip) within a single `useEffect([animKey, isActive, label])`. Both `animKey` and `isActive` can change simultaneously on a field switch; merging into one effect prevents two competing animations.
+
+### 121. Native iOS keyboard key layout is outside app control
+
+**Decision:** No code change made to affect keyboard key padding/positioning. The iOS decimal-pad keyboard on iOS 16+ shows letters under digits and positions keys flush to screen edges — this is Apple's native layout, not app behaviour.
+
+**Why:** `keyboardType`, `textAlign`, `returnKeyType`, and `KeyboardAvoidingView` props do not affect where iOS draws keyboard keys within its panel. Adjusting chip row padding to visually match the keyboard would be cosmetic only and was not pursued.
+
+### 122. Utility modules: `strings.ts`, `color.ts`, `cardCategories.ts`
+
+**Decision:** Three small utility modules extracted to `src/utils/`:
+- `strings.ts` — `getInitials(name)`: returns up to two initials (first + last word). Used by `Avatar`.
+- `color.ts` — `alpha(hex, opacity)`: converts a hex colour + opacity float to an `rgba()` string. Used by `BottomSheet` overlay.
+- `cardCategories.ts` — `CATEGORY_META`: a `Record<CardCategory, { label, Icon, iconColor, bgColor }>` mapping every spending category to a Lucide icon and colour pair. Used by `CardTransactionRow` and `TransactionDetailScreen`.
+
+**Why separate files:** Each utility has a single, clearly scoped responsibility. Keeping them out of component files prevents component files from becoming utility dumps and makes the helpers independently testable and reusable.
+
+### 123. `CardTransactionRow` component — category icon + status chip
+
+**Decision:** Card-specific transaction rows (`src/components/CardTransactionRow.tsx`) use a coloured square icon badge (from `CATEGORY_META`) instead of the generic arrow icon used by `TransactionRow`. Failed transactions show a `StatusChip` alongside the date. Merchant name, date/time, and amount all stay in the same layout slots as `TransactionRow`.
+
+**Why separate component:** Card transactions have a category (groceries, fuel, streaming, etc.) that warrants a distinct visual treatment. Merging this into `TransactionRow` would add a conditional branch; a dedicated component keeps both clean.
+
+### 124. `ViewPinSheet` — auto-hiding PIN reveal with countdown
+
+**Decision:** `ViewPinSheet` renders the card PIN as individual digit boxes inside a `BottomSheet`. An interval-based countdown auto-closes the sheet after 15 seconds. The timer resets each time `visible` goes `true`.
+
+**Why 15s auto-hide:** Long enough to be useful (user can read and memorise), short enough to limit exposure if the user forgets to close it. The countdown text makes the auto-close predictable rather than surprising.
+
+### 125. `ConfirmSheet` additions: `secondary` flag and `hideCancelButton` prop
+
+**Decision:** `ConfirmSheet` gains two new optional props:
+- `secondary?: boolean` — renders the confirm action as a `SecondaryButton` instead of `PrimaryButton` (for neutral confirmations that aren't primary CTAs).
+- `hideCancelButton?: boolean` — suppresses the flat cancel button for single-action informational sheets.
+
+**Why:** Some confirmation flows (e.g. "Set as primary") have a non-destructive, non-primary confirm action. Using `PrimaryButton` overstates the urgency; `SecondaryButton` matches the visual weight. Hiding the cancel button is needed for sheets where the only action is "OK / dismiss."
+
+### 126. `BottomSheet` pan gesture wrapped in `useMemo`
+
+**Decision:** The `Gesture.Pan()` definition inside `BottomSheet` is wrapped in `useMemo` with `[onClose]` as the dependency.
+
+**Why:** `Gesture.Pan()` creates a new gesture object on every render. Without memoisation, the `GestureDetector` tears down and recreates the gesture recogniser on every parent re-render, causing dropped swipes and flicker. `useMemo` ensures the gesture object is stable as long as `onClose` doesn't change.

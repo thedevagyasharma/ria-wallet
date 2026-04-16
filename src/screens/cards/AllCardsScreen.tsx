@@ -10,6 +10,7 @@ import { useCardStore } from '../../stores/useCardStore';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { getCurrency } from '../../data/currencies';
 import CardStackPreview from '../../components/CardStackPreview';
+import FlagIcon from '../../components/FlagIcon';
 import type { RootStackParamList } from '../../navigation/types';
 import { useTabScrollReset } from '../../navigation/TabScrollContext';
 
@@ -70,7 +71,7 @@ export default function AllCardsScreen() {
                 style={({ pressed }) => [styles.walletHeader, pressed && { opacity: 0.7 }]}
               >
                 <View style={styles.walletHeaderLeft}>
-                  <Text style={styles.walletFlag}>{currency.flag}</Text>
+                  <FlagIcon code={currency.flag} size={22} />
                   <View>
                     <Text style={styles.walletCurrency}>{currency.code}</Text>
                     <Text style={styles.walletName}>{currency.name}</Text>
@@ -132,7 +133,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  walletFlag: { fontSize: 22 },
+  walletFlag: {},
   walletCurrency: {
     fontSize: typography.base,
     color: colors.textPrimary,

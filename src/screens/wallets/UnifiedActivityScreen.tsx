@@ -19,6 +19,8 @@ import { colors, typography, spacing, radius } from '../../theme';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { getCurrency } from '../../data/currencies';
 import TransactionRow from '../../components/TransactionRow';
+import CardTransactionRow from '../../components/CardTransactionRow';
+import FlagIcon from '../../components/FlagIcon';
 import type { Transaction } from '../../stores/types';
 import { useTabScrollReset } from '../../navigation/TabScrollContext';
 import type { RootStackParamList } from '../../navigation/types';
@@ -31,12 +33,6 @@ const WALLET_ACCENTS: Record<string, string> = {
   HNL: '#0369a1', DOP: '#dc2626', COP: '#ca8a04', MAD: '#ea580c',
 };
 function walletAccent(c: string) { return WALLET_ACCENTS[c] ?? colors.brand; }
-function alpha(hex: string, o: number) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${o})`;
-}
 
 function groupByMonth(txs: Transaction[]): { title: string; data: Transaction[] }[] {
   const map = new Map<string, Transaction[]>();
@@ -52,13 +48,17 @@ function groupByMonth(txs: Transaction[]): { title: string; data: Transaction[] 
 
 function FilterChip({
   label,
+  flagCode,
   active,
   activeColor,
+  activeTextColor = '#fff',
   onPress,
 }: {
   label: string;
+  flagCode?: string;
   active: boolean;
   activeColor: string;
+  activeTextColor?: string;
   onPress: () => void;
 }) {
   return (
@@ -72,7 +72,8 @@ function FilterChip({
         pressed && { opacity: 0.7 },
       ]}
     >
-      <Text style={[styles.chipLabel, { color: active ? '#fff' : colors.textSecondary }]}>
+      {flagCode && <FlagIcon code={flagCode} size={14} />}
+      <Text style={[styles.chipLabel, { color: active ? activeTextColor : colors.textSecondary }]}>
         {label}
       </Text>
     </Pressable>
@@ -134,16 +135,20 @@ export default function UnifiedActivityScreen() {
           label="All"
           active={selectedWalletId === null}
           activeColor={colors.brand}
+          activeTextColor="#441306"
           onPress={() => handleChipPress(null)}
         />
         {wallets.map((wallet) => {
           const currency = getCurrency(wallet.currency);
+          const label = wallet.nickname ?? wallet.currency;
+          const chipColor = wallet.accentColor ?? walletAccent(wallet.currency);
           return (
             <FilterChip
               key={wallet.id}
-              label={`${currency.flag} ${wallet.currency}`}
+              label={label}
+              flagCode={currency.flag}
               active={selectedWalletId === wallet.id}
-              activeColor={walletAccent(wallet.currency)}
+              activeColor={chipColor}
               onPress={() => handleChipPress(wallet.id)}
             />
           );
@@ -177,12 +182,25 @@ export default function UnifiedActivityScreen() {
           style={styles.list}
           sections={sections}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <TransactionRow
-              tx={item}
-              onPress={() => navigation.navigate('TransactionDetail', { txId: item.id })}
-            />
-          )}
+          renderItem={({ item }) => {
+            if (item.cardId) {
+              return (
+                <CardTransactionRow
+                  tx={item}
+                  onPress={() => navigation.navigate('TransactionDetail', { txId: item.id })}
+                />
+              );
+            }
+            const wallet = wallets.find((w) => w.id === item.walletId);
+            const accent = wallet?.accentColor ?? walletAccent(item.currency);
+            return (
+              <TransactionRow
+                tx={item}
+                accentColor={accent}
+                onPress={() => navigation.navigate('TransactionDetail', { txId: item.id })}
+              />
+            );
+          }}
           renderSectionHeader={({ section }) => (
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>{section.title}</Text>
@@ -226,11 +244,13 @@ const styles = StyleSheet.create({
   },
   chip: {
     height: 34,
+    flexDirection: 'row',
     borderWidth: 1,
     borderRadius: radius.full,
     paddingHorizontal: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
   },
   chipLabel: {
     fontSize: typography.sm,

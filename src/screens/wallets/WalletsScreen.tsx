@@ -50,6 +50,7 @@ import SecondaryButton from '../../components/SecondaryButton';
 import TransactionRow from '../../components/TransactionRow';
 import FlatButton from '../../components/FlatButton';
 import StackCardFace, { STACK_CARD_H, STACK_V_OFFSET } from '../../components/StackCardFace';
+import FlagIcon from '../../components/FlagIcon';
 import type { RootStackParamList } from '../../navigation/types';
 import { useTabScrollReset } from '../../navigation/TabScrollContext';
 import type { Transaction, Wallet, Card } from '../../stores/types';
@@ -229,7 +230,7 @@ function WalletItem({ wallet }: { wallet: Wallet }) {
       )}
 
       <View style={styles.currencyRow}>
-        <Text style={styles.itemFlag}>{currency.flag}</Text>
+        <FlagIcon code={currency.flag} size={14} />
         <Text style={styles.itemCode}>{wallet.nickname ?? currency.code}</Text>
       </View>
 
@@ -291,9 +292,16 @@ function ActionBtn({
   icon, label, onPress, circleStyle,
 }: { icon: React.ReactNode; label: string; onPress: () => void; circleStyle: object }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.actionBtn, pressed && { opacity: 0.5 }]}>
-      <Animated.View style={[styles.actionCircle, circleStyle]}>{icon}</Animated.View>
-      <Text style={styles.actionLabel}>{label}</Text>
+    <Pressable onPress={onPress} style={styles.actionBtn}>
+      {({ pressed }) => (
+        <>
+          <Animated.View style={[styles.actionCircle, circleStyle]}>
+            {pressed && <View style={styles.actionCircleOverlay} />}
+            {icon}
+          </Animated.View>
+          <Text style={styles.actionLabel}>{label}</Text>
+        </>
+      )}
     </Pressable>
   );
 }
@@ -770,7 +778,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 7,
   },
-  itemFlag: { fontSize: 20 },
+  itemFlag: {},
   itemCode: {
     fontSize: typography.base,
     color: colors.textSecondary,
@@ -859,6 +867,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  actionCircleOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    borderRadius: radius.full,
   },
   actionLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: typography.medium },
 

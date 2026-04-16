@@ -53,6 +53,8 @@ export default function SecondaryButton({ onPress, style, disabled, shape = 'pil
 
 const styles = StyleSheet.create({
   base: {
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.surface,
     borderRadius: 999,
     borderWidth: 1,

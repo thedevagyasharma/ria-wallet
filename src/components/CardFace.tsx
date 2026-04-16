@@ -9,7 +9,7 @@ import Animated, {
   interpolate,
   Easing,
 } from 'react-native-reanimated';
-import { Copy, Check } from 'lucide-react-native';
+import { Copy, Check, Clock, Snowflake } from 'lucide-react-native';
 import { colors, typography, spacing, radius } from '../theme';
 import CardOverlay from './CardOverlay';
 import type { Card, CardType } from '../stores/types';
@@ -42,6 +42,7 @@ function isLightColor(hex: string): boolean {
   const b = parseInt(hex.slice(5, 7), 16);
   return (r * 299 + g * 587 + b * 114) / 1000 > 128;
 }
+
 
 function cardTextColors(light: boolean) {
   return {
@@ -303,31 +304,38 @@ export function CardFront({
   copiedField?: string | null;
 }) {
   const isFrozen = card.frozen;
+  const isExpired = card.expired === true;
   const interactive = !!onCopyNumber;
   // Metallic gradient peaks at near-white, so always use dark text on metal cards
   const light = card.finish === 'metallic' ? false : isLightColor(card.color);
+  const inverted = card.badgeTheme === 'inverted';
   const tc = cardTextColors(light);
 
   return (
     <CardSurface card={card}>
-      {isFrozen && <View style={styles.frozenOverlay} />}
+      {isFrozen && !isExpired && <View style={styles.frozenOverlay} />}
       {card.branded && <RiaLogoWatermark />}
 
-      {/* ── Top: name + type badge + frozen badge ── */}
+      {/* ── Top: name + type badge + state badge ── */}
       <View style={styles.topRow}>
         <Text style={[styles.cardName, { color: tc.secondary }]} numberOfLines={1}>{card.name}</Text>
         <View style={styles.topBadges}>
-          <View style={[styles.typeBadge, { borderColor: light ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.22)' }]}>
-            <Text style={[styles.typeText, { color: light ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.60)' }]}>
+          <View style={[styles.typeBadge, { borderColor: light ? 'rgba(0,0,0,0.40)' : 'rgba(255,255,255,0.38)' }]}>
+            <Text style={[styles.typeText, { color: light ? 'rgba(0,0,0,0.72)' : 'rgba(255,255,255,0.65)' }]}>
               {TYPE_LABELS[card.type]}
             </Text>
           </View>
-          {isFrozen && (
-            <View style={styles.frozenBadge}>
-              <Text style={styles.frozenIcon}>❄️</Text>
-              <Text style={styles.frozenText}>Frozen</Text>
+          {isExpired ? (
+            <View style={styles.expiredBadge}>
+              <Clock size={9} color="#fecaca" strokeWidth={2.5} />
+              <Text style={styles.expiredText}>Expired</Text>
             </View>
-          )}
+          ) : isFrozen ? (
+            <View style={[styles.frozenBadge, inverted && styles.frozenBadgeInverted]}>
+              <Snowflake size={9} color={inverted ? '#1e3a8a' : '#bfdbfe'} strokeWidth={2.5} />
+              <Text style={[styles.frozenText, inverted && styles.frozenTextInverted]}>Frozen</Text>
+            </View>
+          ) : null}
         </View>
       </View>
 
@@ -427,21 +435,25 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 
-  // ── Top badges row (type + frozen) ──
+  // ── Top badges row (type + state) ──
   topBadges: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     flexShrink: 1,
   },
+  // Type badge — outline only, always white so it reads on any card hue
   typeBadge: {
-    borderWidth: 1,
     borderRadius: radius.full,
     paddingHorizontal: 7,
-    paddingVertical: 2,
+    height: 20,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.38)',
   },
   typeText: {
     fontSize: 9,
+    color: 'rgba(255,255,255,0.65)',
     fontWeight: typography.semibold,
     letterSpacing: 0.6,
     textTransform: 'uppercase',
@@ -452,17 +464,32 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(147,197,253,0.07)',
   },
+
+  // State badges — layout only; colors applied inline based on card lightness
   frozenBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(147,197,253,0.15)',
     borderRadius: radius.full,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
+    height: 20,
+    backgroundColor: 'rgba(30,64,175,0.88)',
   },
-  frozenIcon: { fontSize: 11 },
-  frozenText: { fontSize: 10, color: '#93c5fd', fontWeight: typography.semibold },
+  frozenText: { fontSize: 10, color: '#bfdbfe', fontWeight: typography.semibold },
+  frozenBadgeInverted: { backgroundColor: 'rgba(255,255,255,0.88)' },
+  frozenTextInverted: { color: '#1e3a8a' },
+  // Expired always uses a dark opaque red — light/dark split skipped because
+  // semi-transparent red disappears on warm card hues (orange, amber, etc.)
+  expiredBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    height: 20,
+    backgroundColor: 'rgba(153,27,27,0.88)',
+  },
+  expiredText: { fontSize: 10, color: '#fecaca', fontWeight: typography.semibold },
 
   // ── Top row ──
   topRow: {

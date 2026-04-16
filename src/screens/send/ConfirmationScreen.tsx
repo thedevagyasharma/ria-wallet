@@ -29,6 +29,7 @@ import { useWalletStore } from '../../stores/useWalletStore';
 import { getCurrency, formatAmount } from '../../data/currencies';
 import { MOCK_CONTACTS } from '../../data/mockData';
 import { getRate, getFee, getETA } from '../../data/exchangeRates';
+import FlagIcon from '../../components/FlagIcon';
 import type { RootStackProps, RootStackParamList } from '../../navigation/types';
 import type { Transaction } from '../../stores/types';
 
@@ -79,11 +80,18 @@ const segStyles = StyleSheet.create({
 
 // ─── Confirmation breakdown row ───────────────────────────────────────────────
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value, flagCode }: { label: string; value: string; flagCode?: string }) {
   return (
     <View style={rowStyles.row}>
       <Text style={rowStyles.label}>{label}</Text>
-      <Text style={rowStyles.value}>{value}</Text>
+      {flagCode ? (
+        <View style={rowStyles.valueWithFlag}>
+          <FlagIcon code={flagCode} size={14} />
+          <Text style={rowStyles.value}>{value}</Text>
+        </View>
+      ) : (
+        <Text style={rowStyles.value}>{value}</Text>
+      )}
     </View>
   );
 }
@@ -92,6 +100,7 @@ const rowStyles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   label: { fontSize: typography.base, color: colors.textSecondary },
   value: { fontSize: typography.base, color: colors.textPrimary },
+  valueWithFlag: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 });
 
 // ─── Morphing button ──────────────────────────────────────────────────────────
@@ -463,7 +472,7 @@ export default function ConfirmationScreen({ route }: RootStackProps<'Confirmati
           >
             {/* Hero */}
             <View style={styles.hero}>
-              <Text style={styles.heroFlag}>{contact.flag}</Text>
+              <FlagIcon code={contact.flag} size={48} style={styles.heroFlag} />
               <Text style={styles.heroLabel}>{firstName} receives</Text>
               <View style={styles.heroAmountRow}>
                 <Text style={styles.heroAmount}>
@@ -481,7 +490,7 @@ export default function ConfirmationScreen({ route }: RootStackProps<'Confirmati
             <View style={styles.card}>
               <View style={styles.recipientRow}>
                 <View style={styles.recipientAvatar}>
-                  <Text style={styles.recipientFlag}>{contact.flag}</Text>
+                  <FlagIcon code={contact.flag} size={24} />
                 </View>
                 <View style={styles.recipientDetails}>
                   <Text style={styles.recipientName}>{contact.name}</Text>
@@ -492,7 +501,7 @@ export default function ConfirmationScreen({ route }: RootStackProps<'Confirmati
 
             {/* Breakdown */}
             <View style={styles.card}>
-              <Row label="From wallet" value={`${currency.flag}  ${currency.code}`} />
+              <Row label="From wallet" value={currency.code} flagCode={currency.flag} />
               <View style={styles.divider} />
               <Row label="You send"     value={formatAmount(amount, wallet.currency)} />
               <View style={styles.divider} />
@@ -588,7 +597,7 @@ const styles = StyleSheet.create({
   scroll: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xl },
 
   hero: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.xs },
-  heroFlag: { fontSize: 48, marginBottom: spacing.xs },
+  heroFlag: { marginBottom: spacing.xs },
   heroLabel: { fontSize: typography.sm, color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 1, fontWeight: typography.semibold },
   heroAmountRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, marginTop: spacing.xs },
   heroAmount: { fontSize: typography.hero, color: colors.textPrimary, fontWeight: typography.bold, letterSpacing: -2 },
@@ -599,7 +608,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden', marginBottom: spacing.md },
   recipientRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg },
   recipientAvatar: { width: 48, height: 48, borderRadius: radius.full, backgroundColor: colors.surfaceHigh, alignItems: 'center', justifyContent: 'center' },
-  recipientFlag: { fontSize: 24 },
+  recipientFlag: {},
   recipientDetails: { flex: 1 },
   recipientName: { fontSize: typography.md, color: colors.textPrimary, fontWeight: typography.semibold },
   recipientPhone: { fontSize: typography.sm, color: colors.textSecondary, marginTop: 2 },

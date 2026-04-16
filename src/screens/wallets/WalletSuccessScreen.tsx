@@ -17,6 +17,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { colors, typography, spacing, radius } from '../../theme';
 import { getCurrency } from '../../data/currencies';
+import FlagIcon from '../../components/FlagIcon';
 import type { RootStackParamList, RootStackProps } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -59,7 +60,7 @@ export default function WalletSuccessScreen({ route }: RootStackProps<'WalletSuc
       />
       <View style={styles.content}>
         <Animated.View style={[styles.circle, circleStyle]}>
-          <Text style={styles.flag}>{currency.flag}</Text>
+          <FlagIcon code={currency.flag} size={56} />
         </Animated.View>
 
         <Text style={styles.title}>Wallet created!</Text>
@@ -98,7 +99,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: spacing.md,
   },
-  flag: { fontSize: 56 },
+  flag: {},
   title: {
     fontSize: typography.xxl,
     color: colors.textPrimary,

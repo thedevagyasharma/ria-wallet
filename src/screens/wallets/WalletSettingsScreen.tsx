@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -20,9 +20,11 @@ import {
 } from 'lucide-react-native';
 
 import { colors, typography, spacing, radius } from '../../theme';
+import { alpha } from '../../utils/color';
 import { useWalletStore } from '../../stores/useWalletStore';
 import SetPrimarySheet from '../../components/SetPrimarySheet';
 import { getCurrency, formatAmount } from '../../data/currencies';
+import FlagIcon from '../../components/FlagIcon';
 import type { RootStackParamList, RootStackProps } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -49,13 +51,6 @@ function defaultAccent(currency: string) {
   return WALLET_ACCENTS_DEFAULT[currency] ?? colors.brand;
 }
 
-function alpha(hex: string, o: number) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${o})`;
-}
-
 // ─── Section label ────────────────────────────────────────────────────────────
 
 function SectionLabel({ label }: { label: string }) {
@@ -74,8 +69,8 @@ export default function WalletSettingsScreen() {
 
   const [showPrimarySheet, setShowPrimarySheet] = useState(false);
 
-  const currency  = getCurrency(wallet.currency);
-  const accent    = wallet.accentColor ?? defaultAccent(wallet.currency);
+  const currency    = getCurrency(wallet.currency);
+  const accent      = useMemo(() => wallet.accentColor ?? defaultAccent(wallet.currency), [wallet.accentColor, wallet.currency]);
   const walletLabel = wallet.nickname ?? currency.code;
 
   function handleRename() {
@@ -114,7 +109,7 @@ export default function WalletSettingsScreen() {
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <View style={styles.header}>
         <View style={[styles.walletIcon, { backgroundColor: alpha(accent, 0.12) }]}>
-          <Text style={styles.walletFlag}>{currency.flag}</Text>
+          <FlagIcon code={currency.flag} size={22} />
         </View>
         <View style={styles.headerText}>
           <Text style={styles.headerTitle}>{walletLabel}</Text>
@@ -253,7 +248,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  walletFlag: { fontSize: 22 },
+  walletFlag: {},
   headerText: { flex: 1 },
   headerTitle: {
     fontSize: typography.md,

@@ -207,9 +207,7 @@ export function SendSuccessContent({
           </Pressable>
         </View>
 
-        <SecondaryButton onPress={handleBack} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>Back to wallets</Text>
-        </SecondaryButton>
+        <SecondaryButton onPress={handleBack} label="Back to wallets" style={styles.backBtn} />
       </View>
     </Animated.View>
   );
@@ -388,10 +386,5 @@ const styles = StyleSheet.create({
   backBtn: {
     paddingVertical: spacing.md,
     alignItems: 'center',
-  },
-  backBtnText: {
-    fontSize: typography.base,
-    color: colors.textSecondary,
-    fontWeight: typography.medium,
   },
 });

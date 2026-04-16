@@ -15,6 +15,7 @@ import SecondaryButton from '../../components/SecondaryButton';
 import { colors, typography, spacing, radius } from '../../theme';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { getCurrency, formatAmount } from '../../data/currencies';
+import FlagIcon from '../../components/FlagIcon';
 import type { RootStackProps, RootStackParamList } from '../../navigation/types';
 import type { TransactionStatus } from '../../stores/types';
 import { StepRow } from '../../components/TransferSteps';
@@ -64,18 +65,27 @@ function statusConfig(status: TransactionStatus) {
 // ─── Detail row ───────────────────────────────────────────────────────────────
 
 function DetailRow({
-  label, value, mono, valueColor,
-}: { label: string; value: string; mono?: boolean; valueColor?: string }) {
+  label, value, flagCode, mono, valueColor,
+}: { label: string; value: string; flagCode?: string; mono?: boolean; valueColor?: string }) {
   return (
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={[
-        styles.detailValue,
-        mono        && styles.detailValueMono,
-        valueColor  ? { color: valueColor } : undefined,
-      ]}>
-        {value}
-      </Text>
+      {flagCode ? (
+        <View style={styles.detailValueWithFlag}>
+          <FlagIcon code={flagCode} size={14} />
+          <Text style={[styles.detailValue, valueColor ? { color: valueColor } : undefined]}>
+            {value}
+          </Text>
+        </View>
+      ) : (
+        <Text style={[
+          styles.detailValue,
+          mono        && styles.detailValueMono,
+          valueColor  ? { color: valueColor } : undefined,
+        ]}>
+          {value}
+        </Text>
+      )}
     </View>
   );
 }
@@ -176,7 +186,8 @@ export default function TransactionDetailScreen({ route }: RootStackProps<'Trans
           <View style={styles.rowDivider} />
           <DetailRow
             label="Wallet"
-            value={`${currency.flag} ${tx.currency}${wallet?.nickname ? ` · ${wallet.nickname}` : ''}`}
+            value={`${tx.currency}${wallet?.nickname ? ` · ${wallet.nickname}` : ''}`}
+            flagCode={currency.flag}
           />
           {tx.note && tx.status !== 'failed' && (
             <>
@@ -298,6 +309,7 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
     color: colors.textSecondary, fontWeight: typography.regular,
   },
+  detailValueWithFlag: { flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'flex-end', flex: 1 },
 
   // ── Steps ──
   stepsWrap: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md },

@@ -24,9 +24,6 @@ import {
   Snowflake,
   Unlock,
   Trash2,
-  Shield,
-  Eye,
-  EyeOff,
   CreditCard,
   Globe,
   Wallet as WalletIcon,
@@ -49,7 +46,9 @@ import { colors, typography, spacing, radius } from '../../theme';
 import { useCardStore } from '../../stores/useCardStore';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { getCurrency } from '../../data/currencies';
+import FlagIcon from '../../components/FlagIcon';
 import { CardFront, CARD_WIDTH, CARD_HEIGHT, VisaLogo, MastercardLogo } from '../../components/CardFace';
+import ViewPinSheet from '../../components/ViewPinSheet';
 import type { RootStackProps } from '../../navigation/types';
 import type { Card, CardType } from '../../stores/types';
 
@@ -81,50 +80,6 @@ function ActionBtn({
 }
 
 // ─── View PIN sheet ────────────────────────────────────────────────────────────
-
-function ViewPinSheet({
-  visible,
-  pin,
-  onClose,
-}: {
-  visible: boolean;
-  pin: string;
-  onClose: () => void;
-}) {
-  const [secondsLeft, setSecondsLeft] = useState(15);
-
-  useEffect(() => {
-    if (!visible) { setSecondsLeft(15); return; }
-    const interval = setInterval(() => {
-      setSecondsLeft((s) => {
-        if (s <= 1) { clearInterval(interval); onClose(); return 0; }
-        return s - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [visible]);
-
-  return (
-    <BottomSheet visible={visible} onClose={onClose}>
-      <View style={[styles.sheetIconWrap, styles.sheetIconBrand]}>
-        <Shield size={26} color={colors.brand} strokeWidth={1.8} />
-      </View>
-      <Text style={styles.sheetTitle}>Your PIN</Text>
-      <Text style={styles.sheetBody}>
-        Make sure no one can see your screen. Never share your PIN with anyone.
-      </Text>
-      <View style={styles.pinRow}>
-        {pin.split('').map((digit, i) => (
-          <View key={i} style={styles.pinBox}>
-            <Text style={styles.pinDigit}>{digit}</Text>
-          </View>
-        ))}
-      </View>
-      <Text style={styles.pinTimer}>Auto-hides in {secondsLeft}s</Text>
-      <FlatButton onPress={onClose} label="Close" style={styles.sheetCancelBtn} />
-    </BottomSheet>
-  );
-}
 
 // ─── Change PIN sheet ──────────────────────────────────────────────────────────
 
@@ -393,6 +348,46 @@ function SettingsRow({
   );
 }
 
+// ─── Prototype seg control ────────────────────────────────────────────────────
+
+function CardSegControl<T extends string>({
+  label, options, value, onChange,
+}: {
+  label: string;
+  options: { label: string; value: T }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <View style={segStyles.row}>
+      <Text style={segStyles.label}>{label}</Text>
+      <View style={segStyles.track}>
+        {options.map((opt) => (
+          <Pressable
+            key={opt.value}
+            onPress={() => { Haptics.selectionAsync(); onChange(opt.value); }}
+            style={[segStyles.seg, value === opt.value && segStyles.segActive]}
+          >
+            <Text style={[segStyles.segText, value === opt.value && segStyles.segTextActive]}>
+              {opt.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const segStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.xs },
+  label: { fontSize: typography.sm, color: colors.textSecondary, fontWeight: typography.medium },
+  track: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
+  seg: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 2 },
+  segActive: { backgroundColor: colors.textPrimary },
+  segText: { fontSize: typography.xs, color: colors.textSecondary, fontWeight: typography.semibold },
+  segTextActive: { color: colors.bg },
+});
+
 // ─── Main screen ───────────────────────────────────────────────────────────────
 
 export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>) {
@@ -401,19 +396,17 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
   const {
     cards, toggleFreeze, removeCard,
     changePin, setOnlineTransactions, setSpendingLimit,
+    setExpired, setFreezeSimulateError,
   } = useCardStore();
   const { wallets } = useWalletStore();
 
   const [showRemove, setShowRemove] = useState(false);
   const [showFreezeConfirm, setShowFreezeConfirm] = useState(false);
-  const [showPin, setShowPin] = useState(false);
+  const [showFreezeError, setShowFreezeError] = useState(false);
   const [showChangePin, setShowChangePin] = useState(false);
   const [editingLimit, setEditingLimit] = useState<LimitPeriod | null>(null);
   const [showLostStolen, setShowLostStolen] = useState(false);
   const [freezeProcessing, setFreezeProcessing] = useState(false);
-  const [numberRevealed, setNumberRevealed] = useState(false);
-  const [cvvRevealed, setCvvRevealed] = useState(false);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const card = cards.find((c) => c.id === cardId);
   const wallet = wallets.find((w) => w.id === card?.walletId);
@@ -450,27 +443,16 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
     }
 
     setTimeout(() => {
-      toggleFreeze(card.id);
       setFreezeProcessing(false);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (card.freezeSimulateError) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        setShowFreezeError(true);
+      } else {
+        toggleFreeze(card.id);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
     }, 1800);
   }, [card, toggleFreeze, frostOpacity, frostScale]);
-
-  const handleToggleRevealNumber = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setNumberRevealed((prev) => { if (!prev) setCvvRevealed(false); return !prev; });
-  }, []);
-
-  const handleToggleRevealCvv = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setCvvRevealed((prev) => { if (!prev) setNumberRevealed(false); return !prev; });
-  }, []);
-
-  const handleCopy = useCallback((field: string) => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setCopiedField(field);
-    setTimeout(() => setCopiedField(null), 2000);
-  }, []);
 
   const handleRemoveConfirm = useCallback(() => {
     if (!card) return;
@@ -526,6 +508,7 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
   const cardPin = card.pin ?? '1234';
   const onlineEnabled = card.onlineTransactions !== false;
   const spendingLimits = card.spendingLimits ?? {};
+  const isExpired = card.expired === true;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -534,7 +517,7 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
         <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
           <ChevronLeft size={24} color={colors.textPrimary} strokeWidth={2} />
         </Pressable>
-        <Text style={styles.title}>{card.name}</Text>
+        <Text style={styles.title}>Card settings</Text>
         <View style={styles.backBtn} />
       </View>
 
@@ -546,11 +529,6 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
             <CardFront
               card={card}
               currency={currency.code}
-              revealedNumber={numberRevealed}
-              revealedCvv={cvvRevealed}
-              onCopyNumber={() => handleCopy('number')}
-              onCopyCvv={() => handleCopy('cvv')}
-              copiedField={copiedField}
             />
             <Animated.View style={[styles.frostOverlay, frostStyle]} pointerEvents="none" />
           </View>
@@ -561,53 +539,23 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
           )}
         </View>
 
-        {/* Reveal controls */}
-        <View style={styles.revealRow}>
-          <SecondaryButton onPress={handleToggleRevealNumber} style={styles.revealBtn}>
-            {numberRevealed
-              ? <EyeOff size={16} color={colors.textSecondary} strokeWidth={1.8} />
-              : <Eye    size={16} color={colors.textSecondary} strokeWidth={1.8} />
-            }
-            <Text style={styles.revealBtnText}>
-              {numberRevealed ? 'Hide number' : 'Show number'}
-            </Text>
-          </SecondaryButton>
-          <SecondaryButton onPress={handleToggleRevealCvv} style={styles.revealBtn}>
-            {cvvRevealed
-              ? <EyeOff size={16} color={colors.textSecondary} strokeWidth={1.8} />
-              : <Eye    size={16} color={colors.textSecondary} strokeWidth={1.8} />
-            }
-            <Text style={styles.revealBtnText}>
-              {cvvRevealed ? 'Hide CVV' : 'Show CVV'}
-            </Text>
-          </SecondaryButton>
-        </View>
-
-        {/* Quick actions — high-frequency, always-visible */}
+        {/* Quick actions */}
         <View style={styles.actionsRow}>
           <ActionBtn
             icon={
               card.frozen
                 ? <Unlock size={22} color={colors.textSecondary} strokeWidth={1.8} />
-                : <Snowflake size={22} color="#93c5fd" strokeWidth={1.8} />
+                : <Snowflake size={22} color={isExpired ? colors.textMuted : '#93c5fd'} strokeWidth={1.8} />
             }
             label={
               freezeProcessing
                 ? (card.frozen ? 'Unfreezing…' : 'Freezing…')
                 : (card.frozen ? 'Unfreeze' : 'Freeze')
             }
-            disabled={freezeProcessing}
+            disabled={freezeProcessing || isExpired}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               setShowFreezeConfirm(true);
-            }}
-          />
-          <ActionBtn
-            icon={<Shield size={22} color={colors.textSecondary} strokeWidth={1.8} />}
-            label="View PIN"
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setShowPin(true);
             }}
           />
         </View>
@@ -676,14 +624,24 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
             <InfoRow
               icon={<WalletIcon size={14} color={colors.textMuted} strokeWidth={1.8} />}
               label="Wallet"
-              value={`${currency.flag}  ${currency.code}`}
+              right={
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <FlagIcon code={currency.flag} size={14} />
+                  <Text style={styles.infoValue}>{currency.code}</Text>
+                </View>
+              }
             />
             <View style={styles.divider} />
             <InfoRow
               icon={<Activity size={14} color={colors.textMuted} strokeWidth={1.8} />}
               label="Status"
               right={
-                card.frozen ? (
+                isExpired ? (
+                  <View style={[styles.statusBadge, styles.statusExpired]}>
+                    <AlertTriangle size={10} color="#d97706" strokeWidth={2.5} />
+                    <Text style={[styles.statusBadgeText, styles.statusExpiredText]}>Expired</Text>
+                  </View>
+                ) : card.frozen ? (
                   <View style={[styles.statusBadge, styles.statusFrozen]}>
                     <Snowflake size={10} color="#3b82f6" strokeWidth={2.5} />
                     <Text style={[styles.statusBadgeText, styles.statusFrozenText]}>Frozen</Text>
@@ -724,9 +682,25 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
           </View>
         </View>
 
+        {/* Prototype controls */}
+        <View style={styles.protoWrap}>
+          <Text style={styles.protoTitle}>⚙  Prototype</Text>
+          <CardSegControl
+            label="Card status"
+            value={isExpired ? 'expired' : 'active'}
+            onChange={(v) => { setExpired(card.id, v === 'expired'); Haptics.selectionAsync(); }}
+            options={[{ label: 'Active', value: 'active' }, { label: 'Expired', value: 'expired' }]}
+          />
+          <CardSegControl
+            label="Freeze action"
+            value={card.freezeSimulateError ? 'fail' : 'success'}
+            onChange={(v) => { setFreezeSimulateError(card.id, v === 'fail'); Haptics.selectionAsync(); }}
+            options={[{ label: 'Success', value: 'success' }, { label: 'Fail', value: 'fail' }]}
+          />
+        </View>
+
       </ScrollView>
 
-      <ViewPinSheet visible={showPin} pin={cardPin} onClose={() => setShowPin(false)} />
       <ChangePinSheet
         visible={showChangePin}
         currentPin={cardPin}
@@ -790,6 +764,20 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
         destructive
         onConfirm={handleRemoveConfirm}
         onCancel={() => setShowRemove(false)}
+      />
+
+      {/* Freeze error — prototype simulation */}
+      <ConfirmSheet
+        visible={showFreezeError}
+        icon={<WifiOff size={26} color={colors.failed} strokeWidth={1.8} />}
+        iconBg={colors.failedSubtle}
+        title={card.frozen ? 'Unfreeze failed' : 'Freeze failed'}
+        body="We couldn't process your request right now. Please check your connection and try again."
+        confirmLabel="Dismiss"
+        secondary
+        hideCancelButton
+        onConfirm={() => setShowFreezeError(false)}
+        onCancel={() => setShowFreezeError(false)}
       />
     </SafeAreaView>
   );
@@ -966,6 +954,15 @@ const styles = StyleSheet.create({
   },
   statusActiveText: { color: '#16a34a' },
   statusFrozenText: { color: '#3b82f6' },
+  statusExpired: {
+    backgroundColor: 'rgba(217,119,6,0.08)',
+    borderColor: 'rgba(217,119,6,0.22)',
+  },
+  statusExpiredText: { color: '#d97706' },
+
+  // ── Prototype section ──
+  protoWrap: { marginTop: spacing.xxl, paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.borderSubtle, gap: spacing.sm, paddingBottom: spacing.xxxl },
+  protoTitle: { fontSize: typography.xs, color: colors.textMuted, fontWeight: typography.semibold, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: spacing.xs },
 
   // ── Settings card ──
   settingsCard: {

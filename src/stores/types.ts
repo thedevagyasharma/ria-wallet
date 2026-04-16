@@ -1,3 +1,18 @@
+export type CardCategory =
+  | 'groceries'
+  | 'fuel'
+  | 'coffee'
+  | 'streaming'
+  | 'music'
+  | 'shopping'
+  | 'food_delivery'
+  | 'delivery'
+  | 'software'
+  | 'dining'
+  | 'travel'
+  | 'transport'
+  | 'other';
+
 export type CardType = 'physical' | 'virtual' | 'single-use';
 export type CardNetwork = 'Visa' | 'Mastercard';
 export type CardFinish = 'plastic' | 'metallic';
@@ -26,6 +41,11 @@ export type Card = {
     weekly?: number;
     monthly?: number;
   };
+  /** Controls pill contrast on the card face. 'inverted' = white pill (for dark/blue cards). */
+  badgeTheme?: 'default' | 'inverted';
+  // Prototype-only flags
+  expired?: boolean;
+  freezeSimulateError?: boolean;
 };
 
 export type Wallet = {
@@ -40,6 +60,7 @@ export type Wallet = {
 export type Transaction = {
   id: string;
   walletId: string;
+  cardId?: string;          // set when the transaction was made via a specific card
   type: TransactionType;
   recipientName: string;
   amount: number;           // negative = outgoing, positive = incoming
@@ -47,6 +68,8 @@ export type Transaction = {
   date: Date;
   status: TransactionStatus;
   note?: string;
+  ref?: string;             // payment reference number (card transactions)
+  category?: CardCategory;  // spending category (card transactions only)
 };
 
 export type Contact = {

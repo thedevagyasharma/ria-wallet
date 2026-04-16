@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Pressable, Modal } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, StyleSheet, Pressable, Modal, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -24,11 +24,13 @@ type Props = {
   swipeToDismiss?: boolean;
 };
 
+const SCREEN_H = Dimensions.get('window').height;
+
 export default function BottomSheet({ visible, onClose, children, gap = 0, fullHeight = false, swipeToDismiss = false }: Props) {
   const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(false);
   const overlayOpacity = useSharedValue(0);
-  const sheetY = useSharedValue(600);
+  const sheetY = useSharedValue(SCREEN_H);
   const dragY = useSharedValue(0);
 
   useEffect(() => {
@@ -40,20 +42,20 @@ export default function BottomSheet({ visible, onClose, children, gap = 0, fullH
     if (visible) {
       dragY.value = 0;
       overlayOpacity.value = 0;
-      sheetY.value = 600;
+      sheetY.value = SCREEN_H;
       overlayOpacity.value = withTiming(1, { duration: 240 });
       sheetY.value = withTiming(0, { duration: 340, easing: Easing.out(Easing.cubic) });
     } else {
       overlayOpacity.value = withTiming(0, { duration: 200 });
       sheetY.value = withTiming(
-        600,
+        SCREEN_H,
         { duration: 260, easing: Easing.in(Easing.quad) },
         (finished) => { if (finished) runOnJS(setMounted)(false); },
       );
     }
   }, [visible, mounted]);
 
-  const panGesture = Gesture.Pan()
+  const panGesture = useMemo(() => Gesture.Pan()
     .onUpdate((e) => {
       dragY.value = Math.max(0, e.translationY);
     })
@@ -61,7 +63,7 @@ export default function BottomSheet({ visible, onClose, children, gap = 0, fullH
       if (dragY.value > 100 || e.velocityY > 600) {
         overlayOpacity.value = withTiming(0, { duration: 200 });
         sheetY.value = withTiming(
-          800,
+          SCREEN_H,
           { duration: 260, easing: Easing.in(Easing.quad) },
           (finished) => {
             if (finished) {
@@ -73,7 +75,7 @@ export default function BottomSheet({ visible, onClose, children, gap = 0, fullH
       } else {
         dragY.value = withSpring(0, { damping: 20, stiffness: 300 });
       }
-    });
+    }), [onClose]);
 
   const overlayStyle = useAnimatedStyle(() => ({ opacity: overlayOpacity.value }));
   const sheetStyle = useAnimatedStyle(() => ({

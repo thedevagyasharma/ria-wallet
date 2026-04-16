@@ -1,59 +1,62 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { ArrowUpRight, ArrowDownLeft } from 'lucide-react-native';
-
 import { colors, typography, spacing, radius } from '../theme';
 import { formatAmount } from '../data/currencies';
+import { CATEGORY_META } from '../utils/cardCategories';
 import StatusChip from './StatusChip';
-import { alpha } from '../utils/color';
 import type { Transaction } from '../stores/types';
 
 const H_PAD = 24;
 
-const date_fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+const datetime = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
 
-export default function TransactionRow({
+export default function CardTransactionRow({
   tx,
-  accentColor = colors.brand,
   onPress,
 }: {
   tx: Transaction;
-  accentColor?: string;
   onPress: () => void;
 }) {
   const isCredit = tx.amount > 0;
-  const isFailed = tx.status === 'failed';
   const formatted = formatAmount(Math.abs(tx.amount), tx.currency);
-  const date = date_fmt.format(tx.date);
-
-  const Icon = isCredit ? ArrowDownLeft : ArrowUpRight;
-  const showChip = tx.status === 'failed' || tx.status === 'pending';
+  const isFailed = tx.status === 'failed';
+  const meta = CATEGORY_META[tx.category ?? 'other'];
+  const { Icon, iconColor, bgColor } = meta;
 
   return (
     <Pressable
       onPress={() => { Haptics.selectionAsync(); onPress(); }}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
     >
-      <View style={[styles.icon, { backgroundColor: alpha(isFailed ? colors.failed : accentColor, 0.12) }]}>
+      {/* Category icon */}
+      <View style={[
+        styles.icon,
+        { backgroundColor: isFailed ? colors.failedSubtle : bgColor },
+      ]}>
         <Icon
           size={18}
-          color={isFailed ? colors.failed : accentColor}
+          color={isFailed ? colors.failed : iconColor}
           strokeWidth={1.8}
         />
       </View>
 
       <View style={styles.middle}>
-        <Text style={[styles.name, isFailed && styles.muted]} numberOfLines={1}>
+        <Text style={[styles.merchant, isFailed && styles.textMuted]} numberOfLines={1}>
           {tx.recipientName}
         </Text>
         <View style={styles.meta}>
-          {showChip && <StatusChip status={tx.status} />}
-          <Text style={styles.metaText}>{date}</Text>
+          {isFailed && <StatusChip status="failed" />}
+          <Text style={styles.metaText}>{datetime.format(tx.date)}</Text>
         </View>
       </View>
 
-      <Text style={[styles.amount, isFailed ? styles.muted : isCredit ? styles.credit : styles.debit]}>
+      <Text style={[styles.amount, isFailed ? styles.textMuted : isCredit ? styles.credit : styles.debit]}>
         {isCredit ? '+' : '−'}{formatted}
       </Text>
     </Pressable>
@@ -81,16 +84,17 @@ const styles = StyleSheet.create({
   },
 
   middle: { flex: 1, minWidth: 0 },
-  name: {
+  merchant: {
     fontSize: typography.base,
     color: colors.textPrimary,
     fontWeight: typography.medium,
     marginBottom: 3,
   },
-  muted: { color: colors.textMuted },
+  textMuted: { color: colors.textMuted },
 
   meta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   metaText: { fontSize: typography.xs, color: colors.textMuted },
+  metaDot: { fontSize: typography.xs, color: colors.textMuted },
 
   amount: { fontSize: typography.base, fontWeight: typography.semibold },
   credit: { color: colors.success },

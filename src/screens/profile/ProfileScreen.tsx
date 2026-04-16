@@ -25,11 +25,13 @@ import {
 } from 'lucide-react-native';
 
 import { colors, typography, spacing, radius } from '../../theme';
+import { alpha } from '../../utils/color';
 import { useWalletStore } from '../../stores/useWalletStore';
 import SetPrimarySheet from '../../components/SetPrimarySheet';
 import { usePrefsStore } from '../../stores/usePrefsStore';
 import { getCurrency, formatAmount } from '../../data/currencies';
 import FlatButton from '../../components/FlatButton';
+import FlagIcon from '../../components/FlagIcon';
 
 const H_PAD = 24;
 
@@ -39,12 +41,6 @@ const WALLET_ACCENTS: Record<string, string> = {
   HNL: '#0369a1', DOP: '#dc2626', COP: '#ca8a04', MAD: '#ea580c',
 };
 function walletAccent(c: string, override?: string) { return override ?? WALLET_ACCENTS[c] ?? colors.brand; }
-function alpha(hex: string, o: number) {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${o})`;
-}
 
 // ─── Section label ────────────────────────────────────────────────────────────
 
@@ -136,7 +132,7 @@ function WalletRow({
       {/* Left: flag + name + balance */}
       <View style={styles.walletRowLeft}>
         <View style={[styles.walletFlagBadge, { backgroundColor: alpha(accent, 0.08) }]}>
-          <Text style={styles.walletFlag}>{currency.flag}</Text>
+          <FlagIcon code={currency.flag} size={18} />
         </View>
         <View>
           <View style={styles.walletNameRow}>
@@ -420,7 +416,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  walletFlag: { fontSize: 18 },
+  walletFlag: {},
   walletNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 },
   walletLabel: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.medium },
   walletBalance: { fontSize: typography.sm, color: colors.textMuted },
