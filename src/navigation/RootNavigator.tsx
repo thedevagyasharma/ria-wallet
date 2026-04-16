@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -11,6 +11,7 @@ import type { RootStackParamList } from './types';
 import { TabScrollContext } from './TabScrollContext';
 import { colors, typography } from '../theme';
 import { useWalletStore } from '../stores/useWalletStore';
+import { useTabStore } from '../stores/useTabStore';
 
 // Wallet screens
 import WalletsScreen from '../screens/wallets/WalletsScreen';
@@ -89,20 +90,29 @@ function SendCTAButton({ onPress }: { onPress?: () => void }) {
 function TabNavigator() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { activeWalletId } = useWalletStore();
+  const { activeTabIdx, setActiveTabIdx } = useTabStore();
   const insets = useSafeAreaInsets();
-  const [activeIdx, setActiveIdx] = useState(0);
   const [resetCounts, setResetCounts] = useState<Record<string, number>>({});
-  const tabX = useSharedValue(0);
+  const tabX = useSharedValue(-activeTabIdx * SCREEN_WIDTH);
+
+  // Keep the slide animation in sync with the store — covers both taps (which
+  // route through goToTab → setActiveTabIdx) and external jumps (e.g.
+  // AddCardReview's Done button calling setActiveTabIdx directly).
+  useEffect(() => {
+    tabX.value = withTiming(-activeTabIdx * SCREEN_WIDTH, {
+      duration: 280,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [activeTabIdx, tabX]);
 
   const goToTab = useCallback((idx: number) => {
-    if (idx === activeIdx) {
+    if (idx === activeTabIdx) {
       const key = TABS[idx].key;
       setResetCounts(prev => ({ ...prev, [key]: (prev[key] ?? 0) + 1 }));
       return;
     }
-    setActiveIdx(idx);
-    tabX.value = withTiming(-idx * SCREEN_WIDTH, { duration: 280, easing: Easing.out(Easing.cubic) });
-  }, [activeIdx, tabX]);
+    setActiveTabIdx(idx);
+  }, [activeTabIdx, setActiveTabIdx]);
 
   const rowStyle = useAnimatedStyle(() => ({
     flex: 1,
@@ -127,11 +137,11 @@ function TabNavigator() {
 
       <View>
         <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
-          <TabItem label="Wallets"  Icon={Wallet2}    active={activeIdx === 0} onPress={() => goToTab(0)} />
-          <TabItem label="Cards"    Icon={CreditCard} active={activeIdx === 1} onPress={() => goToTab(1)} />
+          <TabItem label="Wallets"  Icon={Wallet2}    active={activeTabIdx === 0} onPress={() => goToTab(0)} />
+          <TabItem label="Cards"    Icon={CreditCard} active={activeTabIdx === 1} onPress={() => goToTab(1)} />
           <View style={{ flex: 1 }} />
-          <TabItem label="Activity" Icon={Clock}       active={activeIdx === 2} onPress={() => goToTab(2)} />
-          <TabItem label="Profile"  Icon={UserCircle}  active={activeIdx === 3} onPress={() => goToTab(3)} />
+          <TabItem label="Activity" Icon={Clock}       active={activeTabIdx === 2} onPress={() => goToTab(2)} />
+          <TabItem label="Profile"  Icon={UserCircle}  active={activeTabIdx === 3} onPress={() => goToTab(3)} />
         </View>
         <SendCTAButton onPress={() => navigation.navigate('SendMoney', { walletId: activeWalletId })} />
       </View>

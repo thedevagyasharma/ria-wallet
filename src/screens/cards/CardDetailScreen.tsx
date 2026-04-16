@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   Pressable,
   Switch,
+  LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
@@ -47,7 +48,7 @@ import { useCardStore } from '../../stores/useCardStore';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { getCurrency } from '../../data/currencies';
 import FlagIcon from '../../components/FlagIcon';
-import { CardFront, CARD_WIDTH, CARD_HEIGHT, VisaLogo, MastercardLogo } from '../../components/CardFace';
+import { CardFront, CARD_WIDTH, CARD_HEIGHT } from '../../components/CardFace';
 import ViewPinSheet from '../../components/ViewPinSheet';
 import type { RootStackProps } from '../../navigation/types';
 import type { Card, CardType } from '../../stores/types';
@@ -202,6 +203,7 @@ function ChangePinSheet({
 
 type LimitPeriod = 'daily' | 'weekly' | 'monthly';
 const PERIOD_LABELS: Record<LimitPeriod, string> = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly' };
+const PERIOD_UNITS: Record<LimitPeriod, string> = { daily: '/day', weekly: '/week', monthly: '/month' };
 
 
 function LimitSheet({
@@ -311,40 +313,42 @@ function SettingsRow({
   isLast?: boolean;
 }) {
   return (
-    <Pressable
-      onPress={isToggle ? undefined : onPress}
-      disabled={isToggle}
-      style={({ pressed }) => [
-        styles.settingsRow,
-        !isLast && styles.settingsRowBorder,
-        !isToggle && pressed && { opacity: 0.6 },
-      ]}
-    >
-      <View style={styles.settingsRowLeft}>
-        <View style={styles.settingsRowIcon}>{icon}</View>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.settingsRowLabel, destructive && styles.settingsRowDestructive]}>
-            {label}
-          </Text>
-          {sublabel ? <Text style={styles.settingsRowSublabel}>{sublabel}</Text> : null}
+    <>
+      <Pressable
+        onPress={isToggle ? undefined : onPress}
+        disabled={isToggle}
+        style={({ pressed }) => [
+          styles.settingsRow,
+          !isToggle && pressed && { opacity: 0.6 },
+        ]}
+      >
+        <View style={styles.settingsRowLeft}>
+          <View style={styles.settingsRowIcon}>{icon}</View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.settingsRowLabel, destructive && styles.settingsRowDestructive]}>
+              {label}
+            </Text>
+            {sublabel ? <Text style={styles.settingsRowSublabel}>{sublabel}</Text> : null}
+          </View>
         </View>
-      </View>
-      {isToggle ? (
-        <Switch
-          value={toggleValue}
-          onValueChange={onToggle}
-          trackColor={{ false: colors.border, true: colors.brand }}
-          thumbColor="#fff"
-        />
-      ) : value !== undefined ? (
-        <View style={styles.settingsRowRight}>
-          <Text style={styles.settingsRowValue}>{value}</Text>
+        {isToggle ? (
+          <Switch
+            value={toggleValue}
+            onValueChange={onToggle}
+            trackColor={{ false: colors.border, true: colors.brand }}
+            thumbColor="#fff"
+          />
+        ) : value !== undefined ? (
+          <View style={styles.settingsRowRight}>
+            <Text style={styles.settingsRowValue}>{value}</Text>
+            <ChevronRight size={16} color={colors.textMuted} strokeWidth={2} />
+          </View>
+        ) : !destructive ? (
           <ChevronRight size={16} color={colors.textMuted} strokeWidth={2} />
-        </View>
-      ) : !destructive ? (
-        <ChevronRight size={16} color={colors.textMuted} strokeWidth={2} />
-      ) : null}
-    </Pressable>
+        ) : null}
+      </Pressable>
+      {!isLast && <View style={styles.settingsRowDivider} />}
+    </>
   );
 }
 
@@ -392,7 +396,7 @@ const segStyles = StyleSheet.create({
 
 export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>) {
   const navigation = useNavigation();
-  const { cardId } = route.params;
+  const { cardId, scrollTo } = route.params;
   const {
     cards, toggleFreeze, removeCard,
     changePin, setOnlineTransactions, setSpendingLimit,
@@ -407,6 +411,15 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
   const [editingLimit, setEditingLimit] = useState<LimitPeriod | null>(null);
   const [showLostStolen, setShowLostStolen] = useState(false);
   const [freezeProcessing, setFreezeProcessing] = useState(false);
+
+  // Scroll coordination — deep-link from WalletCardListScreen's "Edit limits"
+  // lands here with scrollTo:'limits'. We measure the Spending section's Y
+  // via onLayout and scroll once both the layout is known and the native push
+  // transition has settled. One-shot: guarded so we don't re-scroll if the
+  // user manually scrolls back up after landing.
+  const scrollRef = useRef<ScrollView>(null);
+  const [limitsY, setLimitsY] = useState<number | null>(null);
+  const hasScrolledToLimits = useRef(false);
 
   const card = cards.find((c) => c.id === cardId);
   const wallet = wallets.find((w) => w.id === card?.walletId);
@@ -489,6 +502,17 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
     Haptics.selectionAsync();
   }, [card, setOnlineTransactions]);
 
+  useEffect(() => {
+    if (scrollTo !== 'limits' || limitsY == null || hasScrolledToLimits.current) return;
+    hasScrolledToLimits.current = true;
+    // Small delay lets the native-stack push transition finish before we
+    // start animating the scroll — prevents a jerky double-motion.
+    const t = setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: Math.max(0, limitsY - spacing.lg), animated: true });
+    }, 280);
+    return () => clearTimeout(t);
+  }, [scrollTo, limitsY]);
+
   const handleLostStolenConfirm = useCallback(() => {
     if (!card) return;
     setShowLostStolen(false);
@@ -521,7 +545,7 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
         <View style={styles.backBtn} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* Card face */}
         <View style={styles.cardArea}>
@@ -563,123 +587,110 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
         {/* Card settings */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Card settings</Text>
-          <View style={styles.settingsCard}>
-            <SettingsRow
-              icon={<KeyRound size={17} color={colors.textSecondary} strokeWidth={1.8} />}
-              label="Change PIN"
-              onPress={() => { Haptics.selectionAsync(); setShowChangePin(true); }}
-            />
-            <SettingsRow
-              icon={
-                onlineEnabled
-                  ? <Globe size={17} color={colors.textSecondary} strokeWidth={1.8} />
-                  : <WifiOff size={17} color={colors.textMuted} strokeWidth={1.8} />
-              }
-              label="Online transactions"
-              sublabel={onlineEnabled ? 'Card can be used online' : 'Blocked for online use'}
-              isToggle
-              toggleValue={onlineEnabled}
-              onToggle={handleOnlineTransactionsToggle}
-              isLast
-            />
-          </View>
+          <SettingsRow
+            icon={<KeyRound size={17} color={colors.textSecondary} strokeWidth={1.8} />}
+            label="Change PIN"
+            onPress={() => { Haptics.selectionAsync(); setShowChangePin(true); }}
+          />
+          <SettingsRow
+            icon={
+              onlineEnabled
+                ? <Globe size={17} color={colors.textSecondary} strokeWidth={1.8} />
+                : <WifiOff size={17} color={colors.textMuted} strokeWidth={1.8} />
+            }
+            label="Online transactions"
+            sublabel={onlineEnabled ? 'Card can be used online' : 'Blocked for online use'}
+            isToggle
+            toggleValue={onlineEnabled}
+            onToggle={handleOnlineTransactionsToggle}
+            isLast
+          />
         </View>
 
         {/* Spending */}
-        <View style={styles.section}>
+        <View
+          style={styles.section}
+          onLayout={(e: LayoutChangeEvent) => setLimitsY(e.nativeEvent.layout.y)}
+        >
           <Text style={styles.sectionTitle}>Spending limits</Text>
-          <View style={styles.settingsCard}>
-            {(['daily', 'weekly', 'monthly'] as LimitPeriod[]).map((p, i) => {
-              const lim = spendingLimits[p];
-              return (
-                <SettingsRow
-                  key={p}
-                  icon={<Gauge size={17} color={colors.textSecondary} strokeWidth={1.8} />}
-                  label={PERIOD_LABELS[p]}
-                  value={lim != null ? `${currency.symbol}${lim.toLocaleString()}` : 'Not set'}
-                  onPress={() => { Haptics.selectionAsync(); setEditingLimit(p); }}
-                  isLast={i === 2}
-                />
-              );
-            })}
-          </View>
+          {(['daily', 'weekly', 'monthly'] as LimitPeriod[]).map((p, i) => {
+            const lim = spendingLimits[p];
+            return (
+              <SettingsRow
+                key={p}
+                icon={<Gauge size={17} color={colors.textSecondary} strokeWidth={1.8} />}
+                label={PERIOD_LABELS[p]}
+                value={lim != null ? `${currency.symbol}${lim.toLocaleString()}${PERIOD_UNITS[p]}` : 'Not set'}
+                onPress={() => { Haptics.selectionAsync(); setEditingLimit(p); }}
+                isLast={i === 2}
+              />
+            );
+          })}
         </View>
 
         {/* Card info */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Card info</Text>
-          <View style={styles.infoCard}>
-            <InfoRow
-              icon={<CreditCard size={14} color={colors.textMuted} strokeWidth={1.8} />}
-              label="Type"
-              value={TYPE_LABELS[card.type]}
-            />
-            <View style={styles.divider} />
-            <InfoRow
-              icon={<Globe size={14} color={colors.textMuted} strokeWidth={1.8} />}
-              label="Network"
-              right={card.network === 'Visa' ? <VisaLogo size="sm" dark /> : <MastercardLogo size="sm" />}
-            />
-            <View style={styles.divider} />
-            <InfoRow
-              icon={<WalletIcon size={14} color={colors.textMuted} strokeWidth={1.8} />}
-              label="Wallet"
-              right={
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <FlagIcon code={currency.flag} size={14} />
-                  <Text style={styles.infoValue}>{currency.code}</Text>
-                </View>
-              }
-            />
-            <View style={styles.divider} />
-            <InfoRow
-              icon={<Activity size={14} color={colors.textMuted} strokeWidth={1.8} />}
-              label="Status"
-              right={
-                isExpired ? (
-                  <View style={[styles.statusBadge, styles.statusExpired]}>
-                    <AlertTriangle size={10} color="#d97706" strokeWidth={2.5} />
-                    <Text style={[styles.statusBadgeText, styles.statusExpiredText]}>Expired</Text>
-                  </View>
-                ) : card.frozen ? (
-                  <View style={[styles.statusBadge, styles.statusFrozen]}>
-                    <Snowflake size={10} color="#3b82f6" strokeWidth={2.5} />
-                    <Text style={[styles.statusBadgeText, styles.statusFrozenText]}>Frozen</Text>
-                  </View>
-                ) : (
+          <InfoRow
+            icon={<CreditCard size={17} color={colors.textSecondary} strokeWidth={1.8} />}
+            label="Type"
+            value={TYPE_LABELS[card.type]}
+          />
+          <View style={styles.infoDivider} />
+          <InfoRow
+            icon={<Globe size={17} color={colors.textSecondary} strokeWidth={1.8} />}
+            label="Network"
+            value={card.network}
+          />
+          <View style={styles.infoDivider} />
+          <InfoRow
+            icon={<WalletIcon size={17} color={colors.textSecondary} strokeWidth={1.8} />}
+            label="Wallet"
+            right={
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <FlagIcon code={currency.flag} size={14} />
+                <Text style={styles.infoValue}>{currency.code}</Text>
+              </View>
+            }
+          />
+          {!isExpired && !card.frozen && (
+            <>
+              <View style={styles.infoDivider} />
+              <InfoRow
+                icon={<Activity size={17} color={colors.textSecondary} strokeWidth={1.8} />}
+                label="Status"
+                right={
                   <View style={[styles.statusBadge, styles.statusActive]}>
                     <Check size={10} color="#16a34a" strokeWidth={2.5} />
                     <Text style={[styles.statusBadgeText, styles.statusActiveText]}>Active</Text>
                   </View>
-                )
-              }
-            />
-          </View>
+                }
+              />
+            </>
+          )}
         </View>
 
         {/* Danger zone */}
         <View style={[styles.section, styles.sectionLast]}>
           <Text style={styles.sectionTitle}>Danger zone</Text>
-          <View style={styles.settingsCard}>
-            <SettingsRow
-              icon={<AlertTriangle size={17} color="#d97706" strokeWidth={1.8} />}
-              label={card.type === 'virtual' || card.type === 'single-use' ? 'Report compromised' : 'Report lost or stolen'}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                setShowLostStolen(true);
-              }}
-            />
-            <SettingsRow
-              icon={<Trash2 size={17} color={colors.failed} strokeWidth={1.8} />}
-              label="Remove card"
-              destructive
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                setShowRemove(true);
-              }}
-              isLast
-            />
-          </View>
+          <SettingsRow
+            icon={<AlertTriangle size={17} color="#d97706" strokeWidth={1.8} />}
+            label={card.type === 'virtual' || card.type === 'single-use' ? 'Report compromised' : 'Report lost or stolen'}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setShowLostStolen(true);
+            }}
+          />
+          <SettingsRow
+            icon={<Trash2 size={17} color={colors.failed} strokeWidth={1.8} />}
+            label="Remove card"
+            destructive
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setShowRemove(true);
+            }}
+            isLast
+          />
         </View>
 
         {/* Prototype controls */}
@@ -797,7 +808,7 @@ function InfoRow({
   return (
     <View style={styles.infoRow}>
       <View style={styles.infoLabelGroup}>
-        {icon}
+        <View style={styles.infoIconWrap}>{icon}</View>
         <Text style={styles.infoLabel}>{label}</Text>
       </View>
       {right ?? <Text style={styles.infoValue}>{value}</Text>}
@@ -824,7 +835,7 @@ const styles = StyleSheet.create({
     fontWeight: typography.semibold,
   },
 
-  scroll: { paddingHorizontal: spacing.xl },
+  scroll: {},
 
   // ── Card wrapper ──
   cardArea: {
@@ -850,17 +861,26 @@ const styles = StyleSheet.create({
   },
 
   // ── Sections ──
-  section: { marginBottom: spacing.xl },
-  sectionLast: { marginBottom: spacing.xxxl },
+  section: {
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.lg,
+    marginBottom: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
+  },
+  sectionLast: {
+    paddingBottom: 0,
+    marginBottom: spacing.xxxl,
+    borderBottomWidth: 0,
+  },
   sectionTitle: {
     fontSize: 11,
     color: colors.textSecondary,
     fontWeight: typography.semibold,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
   },
-  divider: { height: 1, backgroundColor: colors.borderSubtle },
 
   // ── Reveal row ──
   revealRow: {
@@ -887,6 +907,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     marginBottom: spacing.xl,
+    paddingHorizontal: spacing.xl,
   },
   actionBtn: {
     flex: 1,
@@ -902,34 +923,36 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // ── Info card ──
-  infoCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
-  },
+  // ── Info rows (flat) ──
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md + 2,
+    paddingVertical: spacing.lg,
+  },
+  infoDivider: {
+    height: 1,
+    backgroundColor: colors.borderSubtle,
+    marginLeft: 22 + spacing.md,
   },
   infoLabelGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.md,
   },
-  infoLabel: { fontSize: typography.base, color: colors.textSecondary },
+  infoIconWrap: { width: 22, alignItems: 'center' },
+  infoLabel: {
+    fontSize: typography.sm,
+    color: colors.textSecondary,
+    fontWeight: typography.medium,
+  },
   infoValue: {
     fontSize: typography.base,
     color: colors.textPrimary,
-    fontWeight: typography.semibold,
+    fontWeight: typography.medium,
   },
 
-  // ── Status badge ──
+  // ── Status badge (Active only — face shows Frozen/Expired) ──
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -943,45 +966,28 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(22,163,74,0.08)',
     borderColor: 'rgba(22,163,74,0.22)',
   },
-  statusFrozen: {
-    backgroundColor: 'rgba(59,130,246,0.08)',
-    borderColor: 'rgba(59,130,246,0.22)',
-  },
   statusBadgeText: {
     fontSize: typography.xs,
     fontWeight: typography.semibold,
     letterSpacing: 0.3,
   },
   statusActiveText: { color: '#16a34a' },
-  statusFrozenText: { color: '#3b82f6' },
-  statusExpired: {
-    backgroundColor: 'rgba(217,119,6,0.08)',
-    borderColor: 'rgba(217,119,6,0.22)',
-  },
-  statusExpiredText: { color: '#d97706' },
 
   // ── Prototype section ──
-  protoWrap: { marginTop: spacing.xxl, paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.borderSubtle, gap: spacing.sm, paddingBottom: spacing.xxxl },
-  protoTitle: { fontSize: typography.xs, color: colors.textMuted, fontWeight: typography.semibold, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: spacing.xs },
+  protoWrap: { marginTop: spacing.xxl, paddingTop: spacing.lg, paddingHorizontal: spacing.xl, borderTopWidth: 1, borderTopColor: colors.borderSubtle, gap: spacing.sm, paddingBottom: spacing.xxxl },
+  protoTitle: { fontSize: typography.xs, color: colors.textSecondary, fontWeight: typography.semibold, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: spacing.xs },
 
-  // ── Settings card ──
-  settingsCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
-  },
+  // ── Settings rows (flat) ──
   settingsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 14,
+    paddingVertical: spacing.lg,
   },
-  settingsRowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSubtle,
+  settingsRowDivider: {
+    height: 1,
+    backgroundColor: colors.borderSubtle,
+    marginLeft: 22 + spacing.md,
   },
   settingsRowLeft: {
     flexDirection: 'row',

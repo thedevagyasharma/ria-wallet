@@ -5,9 +5,6 @@ import Svg, {
   Defs,
   LinearGradient as SvgLinearGradient,
   Stop,
-  Filter,
-  FeTurbulence,
-  FeColorMatrix,
   Rect,
 } from 'react-native-svg';
 
@@ -20,10 +17,9 @@ type Props = {
 };
 
 export default function CardOverlay({ id, width, height, borderRadius, strokeWidth = 2 }: Props) {
-  const edgeId  = `edge-${id}`;
-  const noiseId = `noise-${id}`;
-  const inset   = strokeWidth / 2;
-  const rx      = borderRadius - inset;
+  const edgeId = `edge-${id}`;
+  const inset  = strokeWidth / 2;
+  const rx     = borderRadius - inset;
 
   return (
     <>
@@ -36,7 +32,7 @@ export default function CardOverlay({ id, width, height, borderRadius, strokeWid
         pointerEvents="none"
       />
 
-      {/* Noise + highlight/shadow */}
+      {/* Edge highlight ring */}
       <Svg
         width={width}
         height={height}
@@ -54,13 +50,7 @@ export default function CardOverlay({ id, width, height, borderRadius, strokeWid
             <Stop offset="0.65" stopColor="#000000" stopOpacity="0" />
             <Stop offset="1"    stopColor="#000000" stopOpacity="0.15" />
           </SvgLinearGradient>
-          <Filter id={noiseId} x="0%" y="0%" width="100%" height="100%">
-            <FeTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
-            <FeColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.10 0" />
-          </Filter>
         </Defs>
-
-        <Rect x={0} y={0} width={width} height={height} fill="white" filter={`url(#${noiseId})`} />
 
         <Rect
           x={inset} y={inset}

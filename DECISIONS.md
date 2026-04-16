@@ -1341,3 +1341,204 @@ All four accept a `label` prop that renders text internally with correct weight,
 **Decision:** The `Gesture.Pan()` definition inside `BottomSheet` is wrapped in `useMemo` with `[onClose]` as the dependency.
 
 **Why:** `Gesture.Pan()` creates a new gesture object on every render. Without memoisation, the `GestureDetector` tears down and recreates the gesture recogniser on every parent re-render, causing dropped swipes and flicker. `useMemo` ensures the gesture object is stable as long as `onClose` doesn't change.
+
+### 127. Send-money error state: top row stable, bottom feeHint diagnostic
+
+**Decision:** The "You send" label row is a *pure reference* — label and balance hint stay gray in all states, never turn red. Error diagnosis lives in the `feeHint` line below the card: when `!hasFunds`, the hint turns red and appends `· over by ${total − balance}` onto the existing `Fee · Total` string.
+
+**Why:** Earlier iterations turned the label red, the hint red (swapping "Balance: X" for "Max X after fee"), the section background red, *and* the card border red — a disconnect emerged because "Balance" and "Max" felt like different concepts. Splitting responsibilities cleanly (top = "what you have," bottom = "what this transfer costs") eliminates the vocabulary swap. Amount input still turns red and the shake still fires — those are intrinsic to the wrong value itself, not the reference row.
+
+### 128. Shake animation scoped to the amount `TextInput`, not the whole card
+
+**Decision:** The `amountStyle` (shake translateX) is applied to an `Animated.View` wrapping just the send `TextInput`, not the `exchangeCard`. The card is a plain `View`.
+
+**Why:** Shaking the entire exchange card felt heavy and visually overstated the error. Wrapping the input alone keeps the motion localised to "the number that's wrong." The wrapper uses `{ flex: 1, alignSelf: 'stretch' }` so the TextInput's `flex: 1` behaves the same inside the row.
+
+### 129. Shake + error haptic fires on type, not just on Next press
+
+**Decision:** A `useEffect` watching `[hasFunds, sendAmountNum]` with a `prevHasFundsRef` fires `shake()` and `Haptics.notificationAsync(Error)` the moment `hasFunds` transitions from `true` → `false` while `sendAmountNum > 0`. The existing `handleReview` shake is preserved for the Next-button case.
+
+**Why:** Before, users could exceed their balance and receive no feedback until they hit Next. Firing on the transition (not on every keystroke) gives immediate feedback without spamming — one shake per time the user crosses the insufficient threshold.
+
+### 130. Half-cent tolerance in `hasFunds` to absorb FX round-trip rounding
+
+**Decision:** `hasFunds` is computed as `total <= sendWallet.balance + 0.005` rather than strict `<=`.
+
+**Why:** When the user switches between send/receive fields, `handleSendFocus` / `handleReceiveFocus` recompute the other side via `(sendRaw * rate).toFixed(2)` or `(receiveRaw / rate).toFixed(2)`. `.toFixed()` rounds, which can nudge `sendAmountNum` above `maxSendable` by fractions of a cent, producing "over by $0.00" messages. The 0.005 tolerance absorbs anything that would display as $0.00 anyway (because `formatAmount` rounds to cents). Real insufficient-funds cases always exceed by full cents.
+
+### 131. Max chip always anchors on send side
+
+**Decision:** Tapping Max *always* sets `sendRaw = Math.floor(maxSendable * 100) / 100` and `receiveRaw = Math.floor(maxSendable * rate * 100) / 100` regardless of which field was active. `receiveUserEditedRef.current = false` is also set so subsequent focus changes don't recompute. The `activeField` is *not* changed, so focus stays where the user tapped.
+
+**Why:** Previously, Max tapped on the receive side anchored on receive and produced a `sendAmountNum` ≈ 1¢ below Max tapped on send — because the round-trip through `rate` lost precision. Anchoring on send side always makes the debit numerically identical to `maxSendable`. Flooring both values (not rounding) guarantees `sendAmountNum ≤ maxSendable` even when active field is receive, so the 0.005 `hasFunds` tolerance isn't stressed. `Max`'s `isActive` check uses `sendAmountNum` (the derived source of truth), not `sendRaw`, so tapping a different preset later correctly deselects Max.
+
+### 132. FX penny-diff convention: operator absorbs sub-cent discrepancy
+
+**Decision:** No UI is added to disclose or reconcile sub-cent discrepancies between `sendAmount × rate` and `receiveAmount`. The debit equals `sendAmountNum` exactly; the recipient receives the displayed `receiveDisplayText` exactly. Any mathematical residue is implicitly covered by the spread baked into the quoted rate.
+
+**Why:** This matches industry standard (Wise, Remitly, Ria, MoneyGram). Rates like 17.3456789 can't produce clean cent-pairs in both currencies; the operator's FX P&L absorbs the penny. Surfacing this to the user would be noise — no one cares about reconciling 0.3¢.
+
+### 133. Empty-string state model for `sendRaw` / `receiveRaw`
+
+**Decision:** `sendRaw` and `receiveRaw` use `''` as the "no value entered" state, not `'0'`. `sanitizeAmount` returns `''` for empty input (formerly `'0'`). `sendDisplayText` / `receiveDisplayText` fall back to `''`. The `TextInput` `value` prop is the raw display string directly — no `=== '0' ? ''` mapping. Focus handlers reset to `''` when no valid amount exists.
+
+**Why:** The old `'0'`-as-empty sentinel required mapping `'0' → ''` in the `value` prop so the placeholder would show. That mapping caused a visible flash when the user actually typed `0`: native showed the typed `'0'` briefly, then React rendered `value=''`, and the character appeared to "go back to gray." Using `''` for empty removes the mapping — typed `'0'` stays as `'0'`, rendered as-is.
+
+### 134. Dynamic `maxLength` blocks illegal keystrokes at the native layer
+
+**Decision:** A `maxLengthFor(raw: string)` helper computes a per-keystroke `maxLength`:
+- No decimal point: `11` (8 int + `.` + 2 dec) if int digits < 8, otherwise `raw.length + 3`.
+- Has decimal point: `raw.length` if already 2 decimals, otherwise `raw.length + (2 − decLen)`.
+
+Both `TextInput`s pass `maxLength={maxLengthFor(sendRaw)}` / `maxLength={maxLengthFor(receiveRaw)}`.
+
+**Why:** Before, typing a 3rd decimal caused the native input to briefly show the rejected char before `sanitizeAmount` truncated it — because React bailed out of re-rendering (state same as previous sanitize result) and `setNativeProps` ran too late. Blocking at `maxLength` prevents the native input from accepting the char at all, so there's no flash. Safe because the existing "cursor always at end" behaviour means users only append chars.
+
+### 135. Accept the 1-frame native-paint flash for in-place sanitization rejections
+
+**Decision:** `handleSendChange` / `handleReceiveChange` call `setNativeProps({ text, selection })` unconditionally when `sanitized !== text`, before `setState`. No further native-layer work is done to eliminate the brief iOS `UITextField` render of rejected chars (e.g., lone `'0'` typed into an empty field that gets stripped by leading-zero logic).
+
+**Why:** iOS's `UITextField` paints typed characters before the JS bridge fires `onChangeText` — an inherent ~16ms window that can't be closed from JS. Eliminating the flash entirely would require a native TextInput module or a custom keypad view — disproportionate effort for a single-frame paint. `setNativeProps({ text, selection })` clears the character as fast as JS allows; the residual flash is accepted as standard RN behaviour.
+
+### 136. Unified header hierarchy — four tiers
+
+**Decision:** All page and section headers conform to one of four tiers:
+
+- **Tier 1 — Tab-root index titles (`xxl` / bold):** Left-aligned at `paddingHorizontal: 24, paddingTop: 16, paddingBottom: 12`. Used on `AllCardsScreen` ("Cards") and `UnifiedActivityScreen` tab-mode ("Activity").
+- **Tier 1b — Tab-root branded headers (primary text `xl` / bold):** Used on `WalletsScreen` (greeting-name pattern with an 11px eyebrow above) and `ProfileScreen` (avatar above, user-name below). The primary text is one step down from Tier 1 because the surrounding element — eyebrow or avatar — carries additional weight.
+- **Tier 2 — Sub-screen nav titles (`md` / semibold):** Centered between a `ChevronLeft` back button and a 36px right spacer/action. Used on every pushed stack screen (`WalletCardListScreen`, `CardDetailScreen`, `TransactionDetailScreen`, `CurrencyPickerScreen`, `WalletReviewScreen`, the `AddCard*` flow, `SendMoneyScreen`, scoped `UnifiedActivityScreen`). `WalletSettingsScreen` is the one intentional exception — it's a modal with a compound icon + title + subtitle + X-close header, so it uses `md` / bold.
+- **Tier 3 — Section eyebrow labels (`11px` / semibold / `textSecondary` / uppercase / `letterSpacing: 0.8`):** Every uppercase section or card-title label uses this single specification. `textSecondary` (zinc-500) was chosen over `textMuted` (zinc-400) — the lighter zinc-400 reads too faded against the white background at 11px. Applies across `WalletsScreen` (greeting eyebrow, Cards, Activity section labels), `ProfileScreen`, `WalletSettingsScreen`, `UnifiedActivityScreen` (month groups + filter sheet), `WalletCardListScreen`, `AddCardColorScreen`, `CardDetailScreen`, `TransactionDetailScreen` card titles, `SendSuccessScreen` card titles, and the `fieldLabel` / `protoTitle` labels across send flow.
+
+**Why:** Before this pass, Cards used `xxl` bold but Activity used `md` bold (the same size as a sub-screen back-header), Wallets' greeting name was `md` while Profile's user name was `lg`, TransactionDetail's nav title was `base` (15) instead of `md` (17), and section eyebrows drifted across three different sizes (10 / 11 / `typography.xs`) and two letter-spacing values (0.8 / 1.1) and two colors (`textMuted` / `textSecondary`). The new hierarchy gives each role one canonical spec: the global-nav root reads at a glance, sub-screens feel consistent when pushed, and every eyebrow matches every other eyebrow.
+
+### 137. Newest-first card ordering
+
+**Decision:** `useCardStore.addCard` prepends (`[card, ...state.cards]`) so newly-added cards sit at index 0 in the shared `cards` array. All downstream views render in the same order: Wallets stack preview → newest on top, `AllCardsScreen` wallet-group preview → newest on top, `WalletCardListScreen` horizontal carousel → newest is the first page you see.
+
+**Why:** The default fintech convention (Revolut, Wise, Monzo, N26) and the physical-wallet metaphor both put a newly-added card front-of-stack. Apple Wallet does the opposite (new cards go to the back), but Apple Wallet has a separate "default card" concept for Apple Pay that justifies that ordering — this app has no such abstraction, so the Apple convention doesn't carry. Prepending is also the one consistent rule that works across a stack preview AND a horizontal carousel: both surfaces show index 0 first, so "newest first" means one thing everywhere, and the "just-added" entrance animation targets index 0 on every screen without special-casing.
+
+### 138. AddCardReview polish — entrance animation, Apple Wallet badge, and CTAs
+
+**Decision:** The add-card success screen (`AddCardReviewScreen`) is restructured along three axes:
+
+1. **Entrance animation:** Replaced the spring-bounce (`withSpring(1)` on scale) with a timing settle that matches `WalletCardListScreen`'s card-intro — `introProgress` from 1 → 0 over `withDelay(160, withTiming(0, { duration: 420, easing: Easing.out(Easing.cubic) }))`, with the card animating translateY 28 → 0 + scale 1.08 → 1, and the text + Apple Wallet badge sliding the same 28px so they arrive together.
+2. **CTAs:** "Done" is replaced by a two-button footer — `PrimaryButton` labelled "View card details" that resets nav to `Main → WalletCardList → CardDetail` (so back from details lands naturally on the wallet's card list), plus a secondary `FlatButton` labelled "Done" that jumps to the Wallets tab and pops to the tabs root.
+3. **Apple Wallet badge placement:** Sits inside `textWrap` directly under the "is ready to use" line (with `marginTop: spacing.xl`), so it moves with the card+text group during entrance. It is NOT a third footer button.
+
+**Why:** The spring bounce read as amateurish compared to the rest of the app's motion language — the card already uses a smooth settle on `WalletCardListScreen`, so success should feel like the same motion continuing. The CTA split reflects the two real user intents after seeing "Card added!": (a) inspect the card in full detail, or (b) get back to the wallet. A single generic "Done" button forced the user to navigate manually to see the new card. Placing the Apple Wallet badge with the text (not in the footer) keeps the footer reserved for app-level actions and lets the badge inherit the entrance slide.
+
+### 139. Official Apple Wallet badge via `react-native-svg-transformer`
+
+**Decision:** Added `react-native-svg-transformer` as a dev dep, a `metro.config.js` that registers it, and a root `declarations.d.ts` that types `*.svg` imports. Apple's official badge (`assets/US-UK_Add_to_Apple_Wallet_RGB_101421.svg`) is imported as a React component and rendered via `<AppleWalletBadge width={…} height={48} />`. Android falls back to `assets/enUS_add_to_google_wallet_add-wallet-badge.png` rendered through `<Image>`. Widths derive from each asset's native aspect ratio — 110.739:35.016 for Apple, 199:55 for Google — with a shared 48pt height. The badge artwork is rendered unmodified, per Apple's guidelines.
+
+**Why:** In Expo Go the native `PKAddPassButton` isn't available (requires a custom dev client + PassKit native module), so the official brand artwork is the closest we can get to the real thing. A hand-rebuilt recreation (custom "Add to / Apple Wallet" stacked text with an SVG Apple logo) drifted noticeably from the real badge and violates Apple's "do not alter the artwork" rule. SVG-as-component via the Metro transformer is the standard Expo way to consume vector assets — imported SVG renders crisp at any scale, handles embedded `<style>` + CSS classes (which raw `SvgXml` does not), and keeps the asset as an editable file rather than a blob of XML pasted into source.
+
+### 140. Programmatic tab switching via `useTabStore`
+
+**Decision:** The custom 4-tab navigator in `RootNavigator` previously kept `activeIdx` in local component state. Lifted that into a zustand store at `src/stores/useTabStore.ts` (`activeTabIdx` + `setActiveTabIdx`). `TabNavigator` reads from the store and drives its existing Reanimated slide via a `useEffect` that watches the store value and runs `tabX.value = withTiming(-idx * SCREEN_WIDTH, …)`. Tab taps still route through `goToTab`, which now just calls `setActiveTabIdx`.
+
+**Why:** Several flows need to switch tabs from a non-tab screen (e.g. `AddCardReviewScreen`'s Done button wants to land the user on the Wallets tab regardless of which tab they entered from). The custom tab navigator here doesn't use React Navigation's tab API — all four tabs are rendered side-by-side in a Reanimated row — so `navigation.navigate('Main', { screen: 'Wallets' })` has nothing to attach to. A module-level store is the simplest mechanism any screen can read/write without prop drilling or context wiring. The slide animation stays in `TabNavigator` because the Reanimated shared value needs to live beside the row it animates.
+
+### 141. Land-in animation for newly-added cards on Wallets
+
+**Decision:** When a card is added, `AddCardReviewScreen`'s Done button (a) calls `setActiveTabIdx(0)` to switch to the Wallets tab, (b) calls `markJustAdded(cardId)` to set `justAddedCardId` in the card store, then (c) calls `popToTop()`. `WalletsScreen` watches `justAddedCardId` via a `useEffect`:
+
+1. Vertically scroll the outer `ScrollView` to the card section (`scrollTo({ y: cardSectionY.current − 24 })`, captured via `onLayout`) so the stack is in view.
+2. Horizontally scroll the wallet carousel (`flatListRef.current?.scrollToOffset({ offset: idx * W, animated: true })`) to the wallet owning the new card if different from `currentIndex`.
+3. Pass `playEntrance={true}` and `onEntranceComplete={clearJustAddedCardId}` to the `AnimatedCardStack` for that wallet.
+
+Inside `AnimatedCardStack`, a new `entranceProgress` shared value starts at 1, then `withDelay(420, withTiming(0, { duration: 540, easing: Easing.out(Easing.cubic) }))` eases it to 0. Slot 0's existing `useAnimatedStyle` folds the entrance into its transform: `translateY -= ev * 40`, `scale *= (1 + ev * 0.06)`. On finish, the completion callback runs `clearJustAddedCardId` via `runOnJS`.
+
+**Crucially, `justAddedCardId` is set by the Done handler, not by `addCard`.** `addCard` is called in `AddCardColorScreen` several seconds before the user reaches Done — if that action set the signal, the `useEffect` in `AnimatedCardStack` would fire during the add-card flow (while Wallets is hidden behind the stack), the delay + settle would run to completion unseen, and by the time the user arrived at Wallets the animation would be over. Setting the signal at Done ensures it fires when the user is about to see the result.
+
+**Why:** Without this, tapping Done dropped the user onto Wallets with zero feedback about where the new card went — especially disorienting if it belonged to a wallet other than the one currently in view. The land-in pattern (appear lifted, hold, settle) communicates both arrival and placement: the hold gives the eye time to lock onto the card, and the settle demonstrates where it rests. The 420ms delay is tuned to cover the native stack-pop transition (~300ms) plus the horizontal carousel scroll (~350ms) — so the visible settle begins after everything else has stopped moving. Newest-first ordering (#137) means slot 0 is always the entrance target, so the animation needs no special case for which slot the new card landed in. `onEntranceComplete → clearJustAddedCardId` guarantees the animation is one-shot; re-entering Wallets later doesn't replay it.
+
+### 142. AppLockGate redesign + shadowed-import bug fix
+
+**Decision:** Three changes to `src/components/AppLockGate.tsx`:
+
+1. **Bug fix — shadowed `authenticate` import.** The component imported `authenticate` from `../utils/auth` and then declared `const authenticate = useCallback(async () => { … await authenticate(…) … })`. Inside the closure, `await authenticate(...)` resolved to the local `const`, not the import — an infinite recursive promise chain that hung silently, so the unlock button (and the auto-prompt effect) did nothing visible. Fixed by aliasing the import as `runAuth` and renaming the local handler to `handleUnlock`.
+2. **Replaced raw `Pressable` with `PrimaryButton`.** The previous unlock button was a hand-rolled `Pressable` with `backgroundColor: colors.brand` and `color: '#fff'` text — violated both the "always use existing button components" rule and the "never white text on brand orange — use #441306" rule. Now uses `PrimaryButton` with children-mode (icon + text row), so it inherits the gradient, inset edges, pressed-scale, disabled state, and the correct dark-brown label colour.
+3. **Screen redesign.** The "CM" avatar + name + lock-row + button-in-the-middle layout is replaced with a focused unlock flow: a hero glyph (the `ScanFace` / `Fingerprint` / `Lock` icon for the active method, sized 56 inside a brandSubtle 132pt ring with a white 100pt inner disc) → `xl`/bold "Welcome back, Carlos" headline → `base` subtitle in `textSecondary` ("Use Face ID to unlock Ria Wallet" / red `failed` colour with retry copy on error) → tiny "Session locked" badge → footer-pinned `PrimaryButton` with the auth icon next to its label. A `busy` flag guards against double-tapping while the Alert is open.
+
+**Why:** The bug had to be fixed regardless — the screen was non-functional. Once the button worked, the rest was visible: the avatar duplicated identity the user already knows, the centered button had no visual anchor, the `Pressable`/white-text combo was inconsistent with every other CTA in the app, and the error message ("Authentication failed — try again.") didn't tell the user *what* to do. The redesign makes the screen task-focused (one obvious action, one icon that matches what the OS will show, copy that adapts to error state) and the `PrimaryButton` swap restores parity with `WalletSuccessScreen` / `SendErrorScreen` / every other terminal-action footer in the app. Method copy is keyed off `authMethod` (`faceId` / `touchId` / `passcode`) so the icon and verb stay in sync if the demo ever switches biometric type — currently always `faceId` per the existing mock-stub policy.
+
+### 143. AppLockGate — lock on `active`→`inactive`, not `background`→`active`
+
+**Decision:** The `AppState` listener now sets `locked = true` the moment the app leaves the foreground (`prev === 'active' && next !== 'active'`) instead of waiting for the `background → active` transition. A `wentBackgroundRef` distinguishes a true app-switch from a brief `inactive` (notification / control center pull-down): on return to `active`, biometric prompt fires only if `wentBackgroundRef.current === true`; otherwise the overlay auto-dismisses with no auth. The standalone `useEffect(() => { if (locked) handleUnlock() }, [locked])` is removed (the AppState handler now triggers the prompt directly), and `handleUnlock` is mirrored into a `handleUnlockRef` so the AppState `useEffect` stays subscribed to `[appLockEnabled]` only — the listener doesn't tear down/re-add every render when `busy` flips inside the callback.
+
+**Why:** Locking on `background → active` runs *after* React has already painted one frame of the underlying screen, producing a visible flash of the previous content before the lock overlay mounts. Mounting the overlay on `active → inactive` instead means the overlay is already present when the snapshot is taken (covering the App Switcher screenshot — a real privacy benefit) and is already mounted when the app returns to active, so there's nothing to flash. The `wentBackgroundRef` exists because iOS fires `inactive` for *both* directions of the state machine: `active → inactive → background` on the way out and `background → inactive → active` on the way back. Without the ref, a notification-center pull-down would lock the app, then the return-to-active would auto-dismiss it as if nothing happened, BUT a real app-switch return would also pass through `inactive → active` and would also be auto-dismissed — defeating the lock entirely. Flagging on entry to `background` lets the active-return handler tell the two cases apart.
+
+---
+
+## Snapshot 4 — 2026-04-16
+*Covers: Flat settings pattern across settings-type screens*
+
+### 144. Flat settings pattern — drop gray-container groupings for edge-to-edge section dividers
+
+**Decision:** Settings-type screens replace the previous grouped gray container (rows inside a `backgroundColor: colors.surface` + `borderRadius: radius.lg` + `borderWidth: 1` + `borderColor: colors.border` card) with a flat recipe built from three rules:
+
+1. **Section wrapper carries horizontal padding + edge-to-edge bottom hairline.** `styles.section` is `{ paddingHorizontal: 24, paddingBottom: spacing.lg, marginBottom: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }`. `styles.sectionLast` zeros the border and extends `marginBottom` to `spacing.xxxl`. The ScrollView's `contentContainerStyle` has **no** horizontal padding — it lives on the section so the bottom hairline reaches both screen edges. This matches `WalletsScreen`'s existing pattern for its top/bottom header and footer hairlines.
+2. **Rows have no internal `paddingHorizontal`.** They inherit 24px from the section wrapper, so section label, row icon, and row value share the same left edge. Row `paddingVertical` is standardised at `spacing.lg` (16px). Icon column is a fixed 22px wrap with `spacing.md` (12) gap, so labels always start at 34px regardless of row type. Icons unified at 17px / `colors.textSecondary`.
+3. **Inter-row dividers inset to match the label.** Row components render as Fragments — `<>Pressable + {!last && <View style={styles.rowDivider} />}</>` — with `rowDivider: { height: 1, backgroundColor: colors.borderSubtle, marginLeft: 22 + spacing.md }`. The row's previous `borderBottomWidth` is removed entirely.
+
+Applied to: `CardDetailScreen` (Card settings, Spending limits, Card info, Danger zone — 4 sections; InfoRow gets a `infoIconWrap` matching settingsRowIcon), `ProfileScreen` (Wallets, Preferences, Security, Support — 4 sections; both `Row` and `WalletRow` converted to Fragment-with-divider), `WalletSettingsScreen` (Wallet name, Accent color, Wallet options — 3 sections; the palette-header inner divider is removed since the grid below provides its own visual weight), `TransactionDetailScreen` (Details, Transfer status — 2 sections; scroll loses its `paddingHorizontal`, hero + `refundBanner` gain their own — refundBanner via `marginHorizontal: 24` since it's a contained notice element, not a settings group).
+
+**Why gray containers were removed:** Stacking a `#f4f4f5` card on top of the white surface added a visual container that competed with the content it held. On a phone screen every grouping cue fights for attention; a labelled section with a hairline beneath it is already legible without the background doing double duty. Removing the container also removes the nested-corner appearance where an inner row with its own padding sat inside an outer border with its own `radius.lg` — a stack of three concentric rectangles for every row.
+
+**Why section padding moved from ScrollView to the section wrapper:** If `paddingHorizontal` stays on `contentContainerStyle`, any bottom border on a child renders inset from the screen edges by that padding. `WalletsScreen` already demonstrated the fix — put horizontal padding on each direct child individually, and full-width rules are free. Adopting the same pattern keeps "section boundary = edge-to-edge hairline" consistent across every settings-adjacent screen.
+
+**Why inset dividers inside a section, full-width between sections:** Two different jobs. Intra-section dividers separate items that belong together — insetting them past the icon column lets the left icon "run" read as a visual thread linking the rows. Inter-section dividers separate unrelated groups — a full-width rule makes the break unambiguous and matches the existing `WalletsScreen` convention. The two behaviours together let whitespace and hairlines carry the grouping without any background colour.
+
+**Why icon sizing unified at 17px:** Previously `InfoRow` used 14px/`textMuted` icons while `SettingsRow` used 17px/`textSecondary`. Inside a gray container the size difference was absorbed by the card framing; once the container was removed, the mismatch stood out and the smaller icons looked accidentally faded. Unifying to 17px / `textSecondary` in a 22px column with `spacing.md` gap means every row on every settings screen has the same label start position and the same icon weight.
+
+**What stays boxed:** `refundBanner` in `TransactionDetailScreen` keeps its `borderRadius` + tinted background because it is a notice element, not a settings group — its purpose is to visually interrupt the flow with a warning, which requires a contained shape. It just gains `marginHorizontal: 24` to replace the padding it used to inherit from the ScrollView. Similarly, transaction summary cards in `SendMoneyScreen`, `SendSuccessScreen`, and `ConfirmationScreen` keep their card treatment — they're single summary artefacts, not repeated settings rows.
+
+---
+
+## Snapshot 5 — 2026-04-16
+*Covers: transaction view systematization across SendSuccess and TransactionDetail*
+
+### 145. Systematized transaction view — shared sections across SendSuccess and TransactionDetail
+
+**Decision:** `SendSuccessScreen` and `TransactionDetailScreen` now share one set of section primitives (`src/components/TransactionView.tsx`):
+
+- `StatusBadge` — unified status pill, variants `completed` / `pending` / `failed` / `inProgress` (the last exclusive to the post-send ETA-driven state).
+- `RefCopyRow` — reference pill with inline copy affordance; lives on both screens now (detail screen previously had no copy).
+- `TxSummaryCard` — P2P breakdown (You sent / Transfer fee / Total deducted / X receives + rate footnote). Stays **boxed** per decision 144's "single summary artefact" carve-out.
+- `TxDetailsList` — flat rows (date, wallet, card, category, note, reason) with inset hairlines, following decision 144's flat recipe.
+- `TxTimeline` — the 3-step transfer progression, shown only when `shouldShowTimeline(tx)` returns true.
+
+`shouldShowTimeline(tx) = !isCardTx(tx) && !isIncoming(tx)`. The timeline is hidden for card transactions (instantaneous authorization, not a multi-step transfer) and for incoming P2P (we never observed the sender's end of the flow, so "Transfer initiated → Processing → you received" reads hollow). Outgoing P2P is the only variant where the journey is meaningful.
+
+**Data model change:** `Transaction` gains five optional P2P-only fields — `fee`, `rate`, `receivedAmount`, `receiveCurrency`, `eta` — persisted at send time by both `ConfirmationScreen` and `SendMoneyScreen`'s inline confirm step. The detail screen now has the data it needs to render the same summary card that `ConfirmationScreen` shows pre-send. Mock/legacy transactions without these fields skip the summary gracefully (the card's null guard returns `null` when any of fee/receivedAmount/receiveCurrency are absent).
+
+**`SendSuccess` param simplified to `{ txId }`:** previously seven ad-hoc fields (recipientName, amount, currency, receivedAmount, receiveCurrency, eta, txRef). Now one. Both the standalone screen and the background layer in `SendMoneyScreen` read the transaction from the wallet store via the id. Single source of truth — no duplication between the navigation param and the persisted transaction.
+
+**Ref format unified:** `RIA-XXXXXX` is generated once at send time, stored on `tx.ref`, and displayed identically by both screens. Legacy/mock transactions without a ref fall back to `RIA-<last 6 digits of id>` via `getTxRef(tx)` so the detail screen never shows an empty pill.
+
+**Hero variants:** the hero on each screen diverges intentionally — `SendSuccess` celebrates the received amount in recipient currency (the "what your friend gets" narrative), while `TransactionDetail` shows the signed amount in wallet currency (the historical debit/credit narrative). Everything below the hero is identical.
+
+**Hero avatar is variant-aware:** card transactions render the category icon (from `CATEGORY_META`) inside the circular avatar instead of the P2P direction arrow. The underlying `heroAvatar` style is shared; only the inner content differs.
+
+**Why not reuse `isP2P`/`isCard` checks inline:** the timeline, the summary card, and the hero avatar each need to reason about the same variant split. Centralising the predicates (`isCardTx`, `isIncoming`, `shouldShowTimeline`) in `TransactionView.tsx` means a single place owns the matrix of (card × p2p) × (in × out) × (completed × pending × failed). Callers read intent, not a cascade of boolean checks.
+
+**Why "X receives" green was removed:** the previous SendSuccess summary tinted the received-amount row green (`colors.success`). Green on a value isn't a status signal — it's a semantic claim that "received = good". The status pill already carries that meaning; duplicating it on the value reads as if the number itself is in a success state, which is noisy when stacked next to a neutral "You sent" row. Neutral `textPrimary` on both rows keeps the breakdown symmetrical, and the rate footnote underneath carries the cross-currency meaning without colour.
+
+### 146. Get-help is available on every transaction, not just failed
+
+**Decision:** The sticky footer on `TransactionDetailScreen` is no longer gated on `tx.status === 'failed'`. It renders on every transaction with the label **"Get help with this transaction"** (previously "Contact support", previously only on failed). The `refundBanner` copy on failed transactions now says "…use the button below to get help" to match.
+
+`SendSuccessScreen` gains a third "Get help" text action in the Share receipt / Send again secondary row (three-way split).
+
+**Why:** a user who wants support doesn't necessarily have a failed transaction — they may be disputing a completed charge, chasing a pending transfer, or questioning a category. Gating the CTA on failure makes it undiscoverable exactly when the user is already frustrated enough to dig. Making it always-available on the detail screen also simplifies the `ScrollView` `paddingBottom` calculation — it now unconditionally reserves space for the sticky footer (`80 + insets.bottom + spacing.lg`) instead of branching on status.
+
+**Why the new label:** "Contact support" is a generic CTA that could belong on any screen. "Get help with this transaction" is scoped — the user arrives at support with the txId already in hand, which should prefill the support thread downstream. The label advertises that scoping, so the user knows they don't have to re-state what they're asking about.
+
+### 147. TransactionDetail spacing — restored rhythm after decision 144 conversion
+
+**Decision:** `TransactionDetailScreen` section padding and section-label margins are increased from `spacing.lg` (16) to `spacing.xl` (24) between sections, and `spacing.xs` (4) to `spacing.sm` (8) under section labels. Hero uses `paddingTop: spacing.md` + `paddingBottom: spacing.xl` instead of symmetric `spacing.xl` padding; the ref pill gains `marginTop: spacing.md` so it sits one beat away from the status badge instead of hugging it.
+
+**Why:** the flat-settings conversion in decision 144 removed the visual weight of gray containers without compensating the surrounding whitespace. With the containers gone, the same margins that felt balanced inside a boxed layout read as cramped on open ground — sections and their labels ran into each other. Bumping vertical rhythm by one step restores the legibility the boxed layout had for free.
+
+**Why asymmetric hero padding:** a symmetric `paddingVertical: spacing.xl` put 24px above the avatar, which duplicated the visual weight of the navbar sitting just above. Dropping the top padding to `spacing.md` while keeping `spacing.xl` at the bottom pulls the hero closer to the navbar (where it belongs — they're both "this screen is about this transaction") and preserves the breathing room above the first section.

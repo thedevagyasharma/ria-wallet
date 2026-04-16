@@ -125,7 +125,22 @@ function sanitizeAmount(text: string): string {
   const intPart = s.split('.')[0];
   if (intPart.length > 8) s = intPart.slice(0, 8) + (s.includes('.') ? s.slice(s.indexOf('.')) : '');
   if (s.length > 1 && s[0] === '0' && s[1] !== '.') s = s.slice(1);
-  return s || '0';
+  // Reject a standalone '0' — the field can't meaningfully hold just zero.
+  // '0.XX' is preserved because the leading-zero strip above only fires when s[1] is not '.'.
+  if (s === '0') s = '';
+  return s;
+}
+
+// Dynamic TextInput maxLength so native input refuses chars that would exceed the 8-int/2-decimal limits —
+// avoids the flash from native-accept then sanitize-reject on ios.
+function maxLengthFor(raw: string): number {
+  const dotIdx = raw.indexOf('.');
+  if (dotIdx === -1) {
+    // no dot yet: allow up to 8 int digits, plus room for '.' + 2 decimals
+    return raw.length >= 8 ? raw.length + 3 : 11;
+  }
+  const decLen = raw.length - dotIdx - 1;
+  return decLen >= 2 ? raw.length : raw.length + (2 - decLen);
 }
 
 const CALLING_CODE_BY_CURRENCY: Record<string, string> = {
@@ -483,8 +498,8 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
 
   // Dual-field editing
   const [activeField, setActiveField] = useState<'send' | 'receive'>('send');
-  const [sendRaw, setSendRaw] = useState('0');
-  const [receiveRaw, setReceiveRaw] = useState('0');
+  const [sendRaw, setSendRaw] = useState('');
+  const [receiveRaw, setReceiveRaw] = useState('');
 
   const sendInputRef = useRef<TextInput>(null);
   const receiveInputRef = useRef<TextInput>(null);
@@ -539,7 +554,9 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
 
   const fee = getFee(sendAmountNum, sendWallet.currency);
   const total = sendAmountNum + fee;
-  const hasFunds = total <= sendWallet.balance;
+  // Half-cent tolerance — FX round-trips can overshoot balance by < $0.01, which would otherwise show "over by $0.00"
+  const hasFunds = total <= sendWallet.balance + 0.005;
+  const maxSendable = Math.max(0, sendWallet.balance - getFee(sendWallet.balance, sendWallet.currency));
   const canReview = sendAmountNum > 0 && hasFunds && selectedContact !== null;
 
   const sendDisplayText =
@@ -547,14 +564,14 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
       ? sendRaw
       : sendAmountNum > 0
       ? sendAmountNum.toFixed(2)
-      : '0';
+      : '';
 
   const receiveDisplayText =
     activeField === 'receive'
       ? receiveRaw
       : receiveAmountNum > 0
       ? new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(receiveAmountNum)
-      : '0.00';
+      : '';
 
   // Confirm step derived values
   const eta = selectedContact ? getETA(sendWallet.currency, receiveCurrency) : 'Instantly';
@@ -660,20 +677,17 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
         currency: sendWallet.currency,
         date: new Date(),
         status: 'completed',
-      };
-      deductBalance(sendWalletId, total);
-      addTransaction(tx);
-      const sp = {
-        recipientName: selectedContact.name,
-        amount: sendAmountNum,
-        currency: sendWallet.currency,
+        ref: txRef,
+        fee,
+        rate,
         receivedAmount: converted,
         receiveCurrency,
         eta,
-        txRef,
       };
-      successParamsRef.current = sp;
-      setSuccessBgParams(sp);
+      deductBalance(sendWalletId, total);
+      addTransaction(tx);
+      successParamsRef.current = { txId: tx.id };
+      setSuccessBgParams({ txId: tx.id });
       setShowSuccessBg(true);
     }
     setPhase('processing');
@@ -747,14 +761,35 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
     );
   }, [amountShake]);
 
+  // Shake + haptic as soon as the user types past their balance
+  const prevHasFundsRef = useRef(true);
+  useEffect(() => {
+    if (prevHasFundsRef.current && !hasFunds && sendAmountNum > 0) {
+      shake();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+    prevHasFundsRef.current = hasFunds;
+  }, [hasFunds, sendAmountNum, shake]);
+
   // ── Amount input handlers ──
   const handleSendChange = useCallback((text: string) => {
-    setSendRaw(sanitizeAmount(text));
+    const sanitized = sanitizeAmount(text);
+    // Flush native first so the rejected char never has a chance to render.
+    // Unconditional call because React bails out when sanitized === previous sendRaw,
+    // and we can't rely on value prop reconciling back to native in that case.
+    if (sanitized !== text) {
+      sendInputRef.current?.setNativeProps({ text: sanitized, selection: { start: sanitized.length, end: sanitized.length } });
+    }
+    setSendRaw(sanitized);
     setActiveField('send');
   }, []);
 
   const handleReceiveChange = useCallback((text: string) => {
-    setReceiveRaw(sanitizeAmount(text));
+    const sanitized = sanitizeAmount(text);
+    if (sanitized !== text) {
+      receiveInputRef.current?.setNativeProps({ text: sanitized, selection: { start: sanitized.length, end: sanitized.length } });
+    }
+    setReceiveRaw(sanitized);
     setActiveField('receive');
     receiveUserEditedRef.current = true;
   }, []);
@@ -765,7 +800,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
       if (receiveUserEditedRef.current) {
         const computed = (parseFloat(receiveRawRef.current) || 0) / rate;
         if (computed > 0) setSendRaw(computed.toFixed(2));
-        else setSendRaw('0');
+        else setSendRaw('');
       }
       receiveUserEditedRef.current = false;
     }
@@ -777,7 +812,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
     if (activeField === 'send') {
       const computed = (parseFloat(sendRawRef.current) || 0) * rate;
       if (computed > 0) setReceiveRaw(computed.toFixed(2));
-      else setReceiveRaw('0');
+      else setReceiveRaw('');
       receiveUserEditedRef.current = false;
     }
     setActiveField('receive');
@@ -1031,7 +1066,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                           onPress={handleSwapRecipient}
                           style={styles.changeBtn}
                         >
-                          <RefreshCw size={11} color={colors.textSecondary} strokeWidth={2} />
+                          <RefreshCw size={11} color={colors.textPrimary} strokeWidth={2.5} />
                           <Text style={styles.changeBtnLabel}>Change</Text>
                         </SecondaryButton>
                       </View>
@@ -1039,15 +1074,13 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                   </View>
 
                   {/* Combined exchange card */}
-                  <Animated.View style={[styles.exchangeCard, amountStyle]}>
+                  <View style={styles.exchangeCard}>
                     {/* You send */}
-                    <Pressable onPress={() => { sendInputRef.current?.focus(); setTimeout(() => sendInputRef.current?.setNativeProps({ selection: { start: 999, end: 999 } }), 0); }} style={[styles.exchangeSection, activeField === 'send' && styles.exchangeSectionActive, !hasFunds && sendAmountNum > 0 && styles.exchangeSectionError]}>
+                    <Pressable onPress={() => { sendInputRef.current?.focus(); setTimeout(() => sendInputRef.current?.setNativeProps({ selection: { start: 999, end: 999 } }), 0); }} style={[styles.exchangeSection, activeField === 'send' && styles.exchangeSectionActive]}>
                       <View style={styles.exchangeLabelRow}>
                         <Text style={styles.fieldLabel}>You send</Text>
-                        <Text style={[styles.fieldHint, !hasFunds && sendAmountNum > 0 && { color: colors.failed }]}>
-                          {!hasFunds && sendAmountNum > 0
-                            ? `Insufficient · ${formatAmount(sendWallet.balance, sendWallet.currency)}`
-                            : `Balance: ${formatAmount(sendWallet.balance, sendWallet.currency)}`}
+                        <Text style={styles.fieldHint}>
+                          Balance: {formatAmount(sendWallet.balance, sendWallet.currency)}
                         </Text>
                       </View>
                       <View style={styles.exchangeInputRow}>
@@ -1060,19 +1093,22 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                           <ChevronDown size={12} color={colors.textSecondary} strokeWidth={2} />
                         </Pressable>
                         <View style={styles.amountDivider} onStartShouldSetResponder={() => true} />
-                        <TextInput
-                          ref={sendInputRef}
-                          style={[styles.exchangeInput, activeField !== 'send' && styles.amountInputInactive, !hasFunds && sendAmountNum > 0 && styles.amountInputError]}
-                          value={sendDisplayText === '0' ? '' : sendDisplayText}
-                          onChangeText={handleSendChange}
-                          onFocus={handleSendFocus}
-                          onBlur={handleSendBlur}
-                          onSelectionChange={() => sendInputRef.current?.setNativeProps({ selection: { start: 999, end: 999 } })}
-                          keyboardType="decimal-pad"
-                          placeholder="0"
-                          placeholderTextColor={colors.textMuted}
-                          textAlign="right"
-                        />
+                        <Animated.View style={[styles.exchangeInputWrap, amountStyle]}>
+                          <TextInput
+                            ref={sendInputRef}
+                            style={[styles.exchangeInput, activeField !== 'send' && styles.amountInputInactive, !hasFunds && sendAmountNum > 0 && styles.amountInputError]}
+                            value={sendDisplayText}
+                            onChangeText={handleSendChange}
+                            onFocus={handleSendFocus}
+                            onBlur={handleSendBlur}
+                            onSelectionChange={() => sendInputRef.current?.setNativeProps({ selection: { start: 999, end: 999 } })}
+                            keyboardType="decimal-pad"
+                            placeholder="0"
+                            placeholderTextColor={colors.textMuted}
+                            textAlign="right"
+                            maxLength={maxLengthFor(sendRaw)}
+                          />
+                        </Animated.View>
                       </View>
                     </Pressable>
 
@@ -1104,8 +1140,8 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                         <View style={styles.amountDivider} onStartShouldSetResponder={() => true} />
                         <TextInput
                           ref={receiveInputRef}
-                          style={[styles.exchangeInput, (activeField !== 'receive' || parseFloat(receiveRaw) === 0) && styles.amountInputInactive]}
-                          value={receiveDisplayText === '0.00' || receiveDisplayText === '0' ? '' : receiveDisplayText}
+                          style={[styles.exchangeInput, (activeField !== 'receive' || !(parseFloat(receiveRaw) > 0)) && styles.amountInputInactive]}
+                          value={receiveDisplayText}
                           onChangeText={handleReceiveChange}
                           onFocus={handleReceiveFocus}
                           onBlur={handleReceiveBlur}
@@ -1114,13 +1150,15 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                           placeholder="0"
                           placeholderTextColor={colors.textMuted}
                           textAlign="right"
+                          maxLength={maxLengthFor(receiveRaw)}
                         />
                       </View>
                     </Pressable>
-                  </Animated.View>
+                  </View>
                   {sendAmountNum > 0 && (
-                    <Text style={styles.feeHint}>
+                    <Text style={[styles.feeHint, !hasFunds && { color: colors.failed }]}>
                       Fee: {formatAmount(fee, sendWallet.currency)}  ·  Total: {formatAmount(total, sendWallet.currency)}
+                      {!hasFunds && `  ·  over by ${formatAmount(total - sendWallet.balance, sendWallet.currency)}`}
                     </Text>
                   )}
                 </ScrollView>
@@ -1129,7 +1167,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                     {(activeField === 'send'
                       ? (QUICK_AMOUNTS[sendWallet.currency] ?? DEFAULT_QUICK_AMOUNTS)
                       : (QUICK_AMOUNTS[receiveCurrency]    ?? DEFAULT_QUICK_AMOUNTS)
-                    ).map((amt, i) => {
+                    ).slice(0, 3).map((amt, i) => {
                       const isSend = activeField === 'send';
                       const symbol = isSend ? sendCurrency.symbol : getCurrency(receiveCurrency).symbol;
                       const affordable = isSend
@@ -1160,6 +1198,35 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                         />
                       );
                     })}
+                    {(() => {
+                      // Max always anchors on send side — receive is a derived display value.
+                      // This keeps the debit exactly at maxSendable regardless of which field the user tapped from.
+                      const maxTarget = Math.floor(maxSendable * 100) / 100;
+                      // Use sendAmountNum (derived from the active field) so a new preset tap on receive clears the Max highlight
+                      const isActive = maxTarget > 0 && Math.abs(sendAmountNum - maxTarget) < 0.005;
+                      return (
+                        <DrumChip
+                          key="max"
+                          index={3}
+                          animKey={activeField}
+                          label="Max"
+                          isActive={isActive}
+                          isDisabled={maxTarget <= 0}
+                          onPress={() => {
+                            if (maxTarget <= 0) return;
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            const sendV = maxTarget.toFixed(2);
+                            // Floor so the back-divide from receiveRaw never exceeds maxTarget
+                            const receiveV = (Math.floor(maxTarget * rate * 100) / 100).toFixed(2);
+                            setSendRaw(sendV);
+                            setReceiveRaw(receiveV);
+                            sendInputRef.current?.setNativeProps({ text: sendV });
+                            receiveInputRef.current?.setNativeProps({ text: receiveV });
+                            receiveUserEditedRef.current = false;
+                          }}
+                        />
+                      );
+                    })()}
                   </View>
 
                   <View style={[styles.footer, { paddingBottom: keyboardVisible ? 6 : insets.bottom + 6 }]}>
@@ -1398,7 +1465,7 @@ const styles = StyleSheet.create({
   fieldGroup: { marginBottom: 4 },
   fieldLabel: {
     fontSize: typography.xs,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     fontWeight: typography.semibold,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
@@ -1448,7 +1515,6 @@ const styles = StyleSheet.create({
     zIndex: 0,
   },
   exchangeSectionActive: {},
-  exchangeSectionError: { backgroundColor: colors.failedSubtle },
   exchangeLabelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1460,6 +1526,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     height: 48,
   },
+  exchangeInputWrap: { flex: 1, alignSelf: 'stretch' },
   exchangeInput: {
     flex: 1,
     paddingLeft: spacing.xs,
@@ -1713,7 +1780,7 @@ const styles = StyleSheet.create({
   editBtn: { alignSelf: 'center', paddingVertical: spacing.sm, paddingHorizontal: spacing.lg, marginTop: spacing.xs },
   editBtnText: { fontSize: typography.sm, color: colors.textSecondary },
   protoWrap: { marginTop: spacing.xxl, paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.borderSubtle, gap: spacing.sm },
-  protoTitle: { fontSize: typography.xs, color: colors.textMuted, fontWeight: typography.semibold, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: spacing.xs },
+  protoTitle: { fontSize: typography.xs, color: colors.textSecondary, fontWeight: typography.semibold, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: spacing.xs },
   confirmFooter: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm },
   failureBanner: {
     alignItems: 'center',

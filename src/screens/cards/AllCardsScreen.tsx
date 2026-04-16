@@ -16,13 +16,6 @@ import { useTabScrollReset } from '../../navigation/TabScrollContext';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-const WALLET_ACCENTS: Record<string, string> = {
-  USD: '#2563eb', MXN: '#16a34a', PHP: '#9333ea', INR: '#d97706',
-  NGN: '#059669', GBP: '#4f46e5', EUR: '#0284c7', GTQ: '#0d9488',
-  HNL: '#0369a1', DOP: '#dc2626', COP: '#ca8a04', MAD: '#ea580c',
-};
-function walletAccent(c: string) { return WALLET_ACCENTS[c] ?? colors.brand; }
-
 export default function AllCardsScreen() {
   const navigation = useNavigation<Nav>();
   const { cards } = useCardStore();
@@ -36,7 +29,7 @@ export default function AllCardsScreen() {
   const walletGroups = wallets.map((w) => {
     const walletCards = cards.filter((c) => c.walletId === w.id);
     const currency = getCurrency(w.currency);
-    return { wallet: w, currency, walletCards, accent: walletAccent(w.currency) };
+    return { wallet: w, currency, walletCards };
   });
 
   const allEmpty = walletGroups.every((g) => g.walletCards.length === 0);
@@ -64,7 +57,7 @@ export default function AllCardsScreen() {
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
-          {walletGroups.map(({ wallet, currency, walletCards, accent }) => (
+          {walletGroups.map(({ wallet, currency, walletCards }) => (
             <View key={wallet.id} style={styles.walletBlock}>
               <Pressable
                 onPress={() => handlePress(wallet.id)}
@@ -77,14 +70,14 @@ export default function AllCardsScreen() {
                     <Text style={styles.walletName}>{currency.name}</Text>
                   </View>
                 </View>
-                <Text style={[styles.walletCount, { color: accent }]}>
+                <Text style={styles.walletCount}>
                   {walletCards.length} {walletCards.length === 1 ? 'card' : 'cards'}  →
                 </Text>
               </Pressable>
 
               <CardStackPreview
                 cards={walletCards}
-                accent={accent}
+                accent={colors.brand}
                 onPress={() => handlePress(wallet.id)}
                 showHeader={false}
               />
@@ -147,6 +140,7 @@ const styles = StyleSheet.create({
   walletCount: {
     fontSize: typography.sm,
     fontWeight: typography.semibold,
+    color: colors.brand,
   },
 
   // Empty state

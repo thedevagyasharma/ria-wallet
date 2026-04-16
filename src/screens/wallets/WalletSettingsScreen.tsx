@@ -130,11 +130,11 @@ export default function WalletSettingsScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* ── Name ──────────────────────────────────────────────────────── */}
-        <SectionLabel label="Wallet name" />
-        <View style={styles.card}>
+        <View style={styles.section}>
+          <SectionLabel label="Wallet name" />
           <Pressable
             onPress={() => { Haptics.selectionAsync(); handleRename(); }}
-            style={({ pressed }) => [styles.row, styles.rowLast, pressed && { opacity: 0.6 }]}
+            style={({ pressed }) => [styles.row, pressed && { opacity: 0.6 }]}
           >
             <View style={styles.rowLeft}>
               <View style={styles.rowIcon}>
@@ -147,8 +147,8 @@ export default function WalletSettingsScreen() {
         </View>
 
         {/* ── Accent color ──────────────────────────────────────────────── */}
-        <SectionLabel label="Accent color" />
-        <View style={styles.card}>
+        <View style={styles.section}>
+          <SectionLabel label="Accent color" />
           <View style={styles.paletteHeader}>
             <View style={styles.rowIcon}>
               <Palette size={17} color={colors.textSecondary} strokeWidth={1.8} />
@@ -180,11 +180,11 @@ export default function WalletSettingsScreen() {
         </View>
 
         {/* ── Primary ───────────────────────────────────────────────────── */}
-        <SectionLabel label="Wallet options" />
-        <View style={styles.card}>
+        <View style={[styles.section, styles.sectionLast]}>
+          <SectionLabel label="Wallet options" />
           <Pressable
             onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); handleSetPrimary(); }}
-            style={({ pressed }) => [styles.row, styles.rowLast, pressed && !wallet.isPrimary && { opacity: 0.6 }]}
+            style={({ pressed }) => [styles.row, pressed && !wallet.isPrimary && { opacity: 0.6 }]}
           >
             <View style={styles.rowLeft}>
               <View style={styles.rowIcon}>
@@ -269,24 +269,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // ── Section label ──
-  sectionLabel: {
-    fontSize: 10,
-    color: colors.textMuted,
-    fontWeight: typography.semibold,
-    textTransform: 'uppercase',
-    letterSpacing: 1.1,
+  // ── Sections ──
+  section: {
     paddingHorizontal: H_PAD,
-    paddingBottom: spacing.sm,
-    paddingTop: spacing.xl,
+    paddingBottom: spacing.lg,
+    marginBottom: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
+  },
+  sectionLast: {
+    paddingBottom: 0,
+    marginBottom: spacing.xxxl,
+    borderBottomWidth: 0,
   },
 
-  // ── Card ──
-  card: {
-    marginHorizontal: H_PAD,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
+  // ── Section label ──
+  sectionLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: typography.semibold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: spacing.xs,
   },
 
   // ── Generic row ──
@@ -294,12 +298,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSubtle,
+    paddingVertical: spacing.lg,
   },
-  rowLast: { borderBottomWidth: 0 },
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, flex: 1 },
   rowIcon: { width: 22, alignItems: 'center' },
   rowLabel: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.medium },
@@ -310,12 +310,8 @@ const styles = StyleSheet.create({
   paletteHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: 14,
-    paddingBottom: 14,
+    paddingVertical: spacing.lg,
     gap: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSubtle,
   },
   currentSwatch: {
     width: 20,
@@ -326,7 +322,8 @@ const styles = StyleSheet.create({
   paletteGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    padding: 14,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
     gap: 10,
   },
   swatch: {

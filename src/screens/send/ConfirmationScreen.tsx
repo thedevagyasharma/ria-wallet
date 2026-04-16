@@ -369,18 +369,16 @@ export default function ConfirmationScreen({ route }: RootStackProps<'Confirmati
         currency: wallet.currency,
         date: new Date(),
         status: 'completed',
-      };
-      deductBalance(walletId, total);
-      addTransaction(tx);
-      successParamsRef.current = {
-        recipientName: contact.name,
-        amount,
-        currency: wallet.currency,
+        ref: txRef,
+        fee,
+        rate,
         receivedAmount: converted,
         receiveCurrency,
         eta,
-        txRef,
       };
+      deductBalance(walletId, total);
+      addTransaction(tx);
+      successParamsRef.current = { txId: tx.id };
     }
 
     setPhase('processing');
@@ -623,7 +621,7 @@ const styles = StyleSheet.create({
   editBtnText: { fontSize: typography.sm, color: colors.textSecondary },
 
   protoWrap: { marginTop: spacing.xxl, paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.borderSubtle, gap: spacing.sm },
-  protoTitle: { fontSize: typography.xs, color: colors.textMuted, fontWeight: typography.semibold, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: spacing.xs },
+  protoTitle: { fontSize: typography.xs, color: colors.textSecondary, fontWeight: typography.semibold, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: spacing.xs },
 
   footer: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xl, paddingTop: spacing.sm, gap: spacing.xs },
   closeBtn: { alignSelf: 'center', paddingVertical: spacing.sm, paddingHorizontal: spacing.xl },

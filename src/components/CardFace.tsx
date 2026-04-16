@@ -17,6 +17,8 @@ import type { Card, CardType } from '../stores/types';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 export const CARD_WIDTH = SCREEN_WIDTH - spacing.xl * 2;
 export const CARD_HEIGHT = CARD_WIDTH / 1.586;
+// Vertical peek between stacked cards — sized to reveal the top row (name + badges).
+export const STACK_V_OFFSET = 56;
 
 const SVG_W = CARD_WIDTH - 4;
 const SVG_H = CARD_HEIGHT - 4;
@@ -90,11 +92,18 @@ const TYPE_LABELS: Record<CardType, string> = {
 
 // ─── Card surface ─────────────────────────────────────────────────────────────
 
-function CardSurface({ card, children }: { card: Card; children: React.ReactNode }) {
+function CardSurface({ card, children, compact = false }: { card: Card; children: React.ReactNode; compact?: boolean }) {
   const isMetallic = card.finish === 'metallic';
 
   return (
-    <View style={[styles.cardOuter, { borderColor: isMetallic ? 'rgba(200,200,200,0.25)' : hexToRgba(card.color, 0.06) }]}>
+    <View style={[
+      styles.cardOuter,
+      {
+        borderColor: compact
+          ? 'transparent'
+          : isMetallic ? 'rgba(200,200,200,0.25)' : hexToRgba(card.color, 0.06),
+      },
+    ]}>
       <View style={[styles.card, !isMetallic && { backgroundColor: card.color }]}>
 
         {/* Metallic gradient background — replaces flat colour */}
@@ -294,14 +303,17 @@ export function CardFront({
   onCopyNumber,
   onCopyCvv,
   copiedField,
+  compact = false,
 }: {
   card: Card;
-  currency: string;
+  currency?: string;
   revealedNumber?: boolean;
   revealedCvv?: boolean;
   onCopyNumber?: () => void;
   onCopyCvv?: () => void;
   copiedField?: string | null;
+  /** Stack-preview mode: hides EXPIRES (CVV is already gated by interactive). */
+  compact?: boolean;
 }) {
   const isFrozen = card.frozen;
   const isExpired = card.expired === true;
@@ -312,7 +324,7 @@ export function CardFront({
   const tc = cardTextColors(light);
 
   return (
-    <CardSurface card={card}>
+    <CardSurface card={card} compact={compact}>
       {isFrozen && !isExpired && <View style={styles.frozenOverlay} />}
       {card.branded && <RiaLogoWatermark />}
 
@@ -392,6 +404,24 @@ export function CardFront({
         {card.network === 'Visa' ? <VisaLogo dark={light} /> : <MastercardLogo />}
       </View>
     </CardSurface>
+  );
+}
+
+// ─── "+N more cards" placeholder ─────────────────────────────────────────────
+// Sits at the back of a stack preview. Only its top row peeks out (STACK_V_OFFSET),
+// so we render a stripped-down surface — no overlay, chip, number, or type badge.
+
+export function MoreCardsPlaceholder({ count }: { count: number }) {
+  return (
+    <View style={[styles.cardOuter, { borderColor: 'transparent' }]}>
+      <View style={[styles.card, { backgroundColor: colors.surfaceHigh }]}>
+        <View style={styles.topRow}>
+          <Text style={[styles.cardName, { color: colors.textSecondary }]} numberOfLines={1}>
+            +{count} more {count === 1 ? 'card' : 'cards'}
+          </Text>
+        </View>
+      </View>
+    </View>
   );
 }
 

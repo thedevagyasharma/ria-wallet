@@ -63,13 +63,19 @@ export type Transaction = {
   cardId?: string;          // set when the transaction was made via a specific card
   type: TransactionType;
   recipientName: string;
-  amount: number;           // negative = outgoing, positive = incoming
-  currency: string;
+  amount: number;           // signed total deducted/credited (includes fee for outgoing P2P)
+  currency: string;         // wallet currency
   date: Date;
   status: TransactionStatus;
   note?: string;
-  ref?: string;             // payment reference number (card transactions)
+  ref?: string;             // payment reference (RIA-XXXXXX for P2P, merchant code for card)
   category?: CardCategory;  // spending category (card transactions only)
+  // ── P2P-only fields (populated at send time) ───────────────────────────
+  fee?: number;             // fee charged in sender currency
+  receivedAmount?: number;  // amount credited to recipient, in receiveCurrency
+  receiveCurrency?: string; // recipient currency (may differ from `currency`)
+  rate?: number;            // exchange rate used (1 sender → rate receive)
+  eta?: string;             // estimated delivery time label
 };
 
 export type Contact = {

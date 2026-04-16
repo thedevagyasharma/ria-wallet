@@ -4,7 +4,15 @@ import { MOCK_CARDS } from '../data/mockData';
 
 type CardStore = {
   cards: Card[];
+  // One-shot signal the Wallets screen reads after a card is added: scrolls
+  // to the card's wallet and runs the land-in animation on the new front card.
+  // Set explicitly when the user finishes the add flow (AddCardReview's Done)
+  // so the animation fires at the right moment — not when addCard runs, which
+  // happens earlier in the flow while Wallets is still hidden.
+  justAddedCardId: string | null;
   addCard: (card: Card) => void;
+  markJustAdded: (cardId: string) => void;
+  clearJustAddedCardId: () => void;
   removeCard: (cardId: string) => void;
   toggleFreeze: (cardId: string) => void;
   changePin: (cardId: string, pin: string) => void;
@@ -19,9 +27,16 @@ type CardStore = {
 
 export const useCardStore = create<CardStore>((set, get) => ({
   cards: MOCK_CARDS,
+  justAddedCardId: null,
 
+  // Prepend so the newest card sits at index 0 — front of the stack preview
+  // and first card in the WalletCardList carousel. Matches newest-first
+  // ordering used across the app (activity, etc.).
   addCard: (card) =>
-    set((state) => ({ cards: [...state.cards, card] })),
+    set((state) => ({ cards: [card, ...state.cards] })),
+
+  markJustAdded: (cardId) => set({ justAddedCardId: cardId }),
+  clearJustAddedCardId: () => set({ justAddedCardId: null }),
 
   removeCard: (cardId) =>
     set((state) => ({ cards: state.cards.filter((c) => c.id !== cardId) })),

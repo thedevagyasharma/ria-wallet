@@ -70,7 +70,7 @@ function Row({
   last?: boolean;
 }) {
   const inner = (
-    <View style={[styles.row, last && styles.rowLast]}>
+    <View style={styles.row}>
       <View style={styles.rowLeft}>
         <View style={styles.rowIcon}>{icon}</View>
         <Text style={[styles.rowLabel, destructive && { color: colors.failed }]}>{label}</Text>
@@ -93,15 +93,18 @@ function Row({
     </View>
   );
 
-  if (toggle) return inner;
-
   return (
-    <Pressable
-      onPress={() => { Haptics.selectionAsync(); onPress?.(); }}
-      style={({ pressed }) => pressed && { opacity: 0.6 }}
-    >
-      {inner}
-    </Pressable>
+    <>
+      {toggle ? inner : (
+        <Pressable
+          onPress={() => { Haptics.selectionAsync(); onPress?.(); }}
+          style={({ pressed }) => pressed && { opacity: 0.6 }}
+        >
+          {inner}
+        </Pressable>
+      )}
+      {!last && <View style={styles.rowDivider} />}
+    </>
   );
 }
 
@@ -128,7 +131,8 @@ function WalletRow({
   const label    = wallet.nickname ?? currency.code;
 
   return (
-    <View style={[styles.walletRow, last && styles.rowLast]}>
+    <>
+    <View style={styles.walletRow}>
       {/* Left: flag + name + balance */}
       <View style={styles.walletRowLeft}>
         <View style={[styles.walletFlagBadge, { backgroundColor: alpha(accent, 0.08) }]}>
@@ -164,6 +168,8 @@ function WalletRow({
         </FlatButton>
       )}
     </View>
+    {!last && <View style={styles.rowDivider} />}
+    </>
   );
 }
 
@@ -234,8 +240,8 @@ export default function ProfileScreen() {
         </View>
 
         {/* ── Wallets ─────────────────────────────────────────────────────── */}
-        <SectionLabel label="Wallets" />
-        <View style={styles.card}>
+        <View style={styles.section}>
+          <SectionLabel label="Wallets" />
           {wallets.map((w, i) => (
             <WalletRow
               key={w.id}
@@ -249,8 +255,8 @@ export default function ProfileScreen() {
         </View>
 
         {/* ── Preferences ─────────────────────────────────────────────────── */}
-        <SectionLabel label="Preferences" />
-        <View style={styles.card}>
+        <View style={styles.section}>
+          <SectionLabel label="Preferences" />
           <Row
             icon={hideBalances
               ? <EyeOff size={18} color={colors.textSecondary} strokeWidth={1.8} />
@@ -271,8 +277,8 @@ export default function ProfileScreen() {
         </View>
 
         {/* ── Security ────────────────────────────────────────────────────── */}
-        <SectionLabel label="Security" />
-        <View style={styles.card}>
+        <View style={styles.section}>
+          <SectionLabel label="Security" />
           <Row
             icon={<Lock size={18} color={colors.textSecondary} strokeWidth={1.8} />}
             label="App lock"
@@ -289,8 +295,8 @@ export default function ProfileScreen() {
         </View>
 
         {/* ── Support ─────────────────────────────────────────────────────── */}
-        <SectionLabel label="Support" />
-        <View style={styles.card}>
+        <View style={[styles.section, styles.sectionLast]}>
+          <SectionLabel label="Support" />
           <Row
             icon={<HelpCircle size={18} color={colors.textSecondary} strokeWidth={1.8} />}
             label="Help center"
@@ -352,7 +358,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   userName: {
-    fontSize: typography.lg,
+    fontSize: typography.xl,
     color: colors.textPrimary,
     fontWeight: typography.bold,
   },
@@ -361,24 +367,28 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
 
-  // ── Section label ──
-  sectionLabel: {
-    fontSize: 10,
-    color: colors.textMuted,
-    fontWeight: typography.semibold,
-    textTransform: 'uppercase',
-    letterSpacing: 1.1,
+  // ── Sections ──
+  section: {
     paddingHorizontal: H_PAD,
-    paddingBottom: spacing.sm,
-    paddingTop: spacing.xl,
+    paddingBottom: spacing.lg,
+    marginBottom: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
+  },
+  sectionLast: {
+    paddingBottom: 0,
+    marginBottom: spacing.xxxl,
+    borderBottomWidth: 0,
   },
 
-  // ── Card ──
-  card: {
-    marginHorizontal: H_PAD,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    overflow: 'hidden',
+  // ── Section label ──
+  sectionLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: typography.semibold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: spacing.xs,
   },
 
   // ── Generic row ──
@@ -386,12 +396,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSubtle,
+    paddingVertical: spacing.lg,
   },
-  rowLast: { borderBottomWidth: 0 },
+  rowDivider: {
+    height: 1,
+    backgroundColor: colors.borderSubtle,
+    marginLeft: 22 + spacing.md,
+  },
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   rowIcon: { width: 22, alignItems: 'center' },
   rowLabel: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.medium },
@@ -403,10 +414,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
     paddingVertical: 13,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSubtle,
   },
   walletRowLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   walletFlagBadge: {

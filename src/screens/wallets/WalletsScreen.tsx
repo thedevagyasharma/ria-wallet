@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -21,6 +21,7 @@ import {
   ScrollView,
   Dimensions,
   Animated as RNAnimated,
+  InteractionManager,
   ListRenderItemInfo,
   NativeSyntheticEvent,
   NativeScrollEvent,
@@ -47,9 +48,9 @@ import { useCardStore } from '../../stores/useCardStore';
 import { usePrefsStore } from '../../stores/usePrefsStore';
 import { getCurrency, formatAmount } from '../../data/currencies';
 import SecondaryButton from '../../components/SecondaryButton';
-import TransactionRow from '../../components/TransactionRow';
+import ActivityItem from '../../components/ActivityItem';
 import FlatButton from '../../components/FlatButton';
-import StackCardFace, { STACK_CARD_H, STACK_V_OFFSET } from '../../components/StackCardFace';
+import { CardFront, MoreCardsPlaceholder, CARD_HEIGHT, STACK_V_OFFSET } from '../../components/CardFace';
 import FlagIcon from '../../components/FlagIcon';
 import type { RootStackParamList } from '../../navigation/types';
 import { useTabScrollReset } from '../../navigation/TabScrollContext';
@@ -60,7 +61,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 const { width: W } = Dimensions.get('window');
 const H_PAD = 24;
 
-const GREETING_H      = 52;
+const GREETING_H      = 64;
 const ITEM_H          = 72;   // carousel header — snug to content
 const BALANCE_H       = 210;  // digit area + equal top/bottom space + toggle
 const BALANCE_DIGIT_H = 54;   // clip height per digit cell
@@ -325,10 +326,21 @@ function ActionBtn({
 
 const CARD_SLOTS = 3;
 
+// Stable empty fallback for wallets with no cards — avoids allocating a fresh
+// [] reference each render, which would bust AnimatedCardStack's memo.
+const EMPTY_CARDS: Card[] = [];
+
+
+// Total visual slots: real cards (capped at CARD_SLOTS) + 1 if there's overflow.
+// The overflow slot is a "+N more" placeholder peeking out at the back of the stack.
+function visibleSlots(cardCount: number): number {
+  const real = Math.min(cardCount, CARD_SLOTS);
+  return real + (cardCount > CARD_SLOTS ? 1 : 0);
+}
 
 // Container height for n visible cards
 function stackH(n: number): number {
-  return n <= 1 ? STACK_CARD_H : STACK_CARD_H + STACK_V_OFFSET * (n - 1);
+  return n <= 1 ? CARD_HEIGHT : CARD_HEIGHT + STACK_V_OFFSET * (n - 1);
 }
 
 // translateY for slot i in an n-card stack (front card = largest offset = bottom)
@@ -338,111 +350,274 @@ function slotTargetY(i: number, n: number): number {
   return n <= 1 ? 0 : (n - 1 - i) * STACK_V_OFFSET;
 }
 
-function AnimatedCardStack({ walletIndex, cards, accent, onPress, scrollX }: {
+// Press feedback — mirrored in CardStackPreview so motion is identical across both entry points.
+const PRESS_LIFT      = 6;
+const PRESS_SCALE     = 0.025;
+const PRESS_DEPTH     = [1, 0.55, 0.25];
+const PRESS_IN_MS     = 140;
+const PRESS_OUT_MS    = 180;
+
+// Memoized so a parent re-render (e.g. setCurrentIndex fired inside the
+// justAddedCardId effect) doesn't recreate this component's useAnimatedStyle
+// closures mid-entrance — Reanimated rebinding those worklets in the middle of
+// a withTiming causes a visible frame drop during the land-in settle.
+const AnimatedCardStack = React.memo(function AnimatedCardStack({ walletIndex, cards, accent, onPress, scrollX, playEntrance, onEntranceComplete }: {
   walletIndex: number;
   cards: Card[];
   accent: string;
   onPress: () => void;
   scrollX: SharedValue<number>;
+  playEntrance?: boolean;
+  onEntranceComplete?: () => void;
 }) {
-  const n = Math.min(cards.length, CARD_SLOTS);
+  // realN  = real cards rendered (capped at CARD_SLOTS)
+  // overflow = remaining count shown in the "+N more" placeholder
+  // slotN  = total visual slots (real + placeholder if any) — drives stagger geometry
+  const realN = Math.min(cards.length, CARD_SLOTS);
+  const overflow = Math.max(0, cards.length - CARD_SLOTS);
+  const slotN = realN + (overflow > 0 ? 1 : 0);
+
+  const pressProgress = useSharedValue(0);
+
+  // Land-in animation for a newly-added card. Slot 0 starts lifted & scaled up
+  // (card arriving from above), and the settle starts once all concurrent
+  // native work (stack pop, tab slide, balance-drum animations) has finished —
+  // otherwise the settle drops frames as Reanimated's UI thread competes with
+  // that work. InteractionManager.runAfterInteractions is the mechanism RN
+  // provides for exactly this "wait until things quiet down" case.
+  const entranceProgress = useSharedValue(playEntrance ? 1 : 0);
+  useEffect(() => {
+    if (!playEntrance) return;
+    entranceProgress.value = 1;
+    const task = InteractionManager.runAfterInteractions(() => {
+      entranceProgress.value = withTiming(
+        0,
+        { duration: 540, easing: Easing.out(Easing.cubic) },
+        (finished) => {
+          if (finished && onEntranceComplete) runOnJS(onEntranceComplete)();
+        },
+      );
+    });
+    return () => task.cancel?.();
+  }, [playEntrance]);
 
   // st = signed distance from this wallet's centre in wallet-widths.
   // visible = this stack's active region: hard-cut at ±0.5, no scroll-linked fade.
   // p  = stagger progress: 0 = fully staggered, 1 = fully collapsed.
+  // pp = press progress scaled by the slot's depth multiplier (front moves most).
 
-  // Slot 0 — front card (or empty-state placeholder when n=0)
+  // Slot 0 — front card (or empty-state placeholder when slotN=0).
+  // entranceProgress adds a lift+upscale on top of the resting transform so the
+  // newly-added card appears "arriving from above" before it settles into place.
   const as0 = useAnimatedStyle(() => {
     const st = scrollX.value / W - walletIndex;
     const visible = st > -0.5 && st < 0.5;
     const p = Math.min(Math.abs(st) * 2, 1);
+    const pp = pressProgress.value * PRESS_DEPTH[0];
+    const ev = entranceProgress.value;
     return {
       opacity: visible ? 1 : 0,
       transform: [
-        { translateY: (n > 0 ? slotTargetY(0, n) : 0) * (1 - p) },
-        { scale: 1 },
+        { translateY: (slotN > 0 ? slotTargetY(0, slotN) : 0) * (1 - p) - pp * PRESS_LIFT - ev * 40 },
+        { scale: (1 + pp * PRESS_SCALE) * (1 + ev * 0.06) },
       ],
     };
   });
 
   // Slot 1
   const as1 = useAnimatedStyle(() => {
-    if (n <= 1) return { opacity: 0, transform: [{ translateY: 0 }, { scale: 1 }] };
+    if (slotN <= 1) return { opacity: 0, transform: [{ translateY: 0 }, { scale: 1 }] };
     const st = scrollX.value / W - walletIndex;
     const visible = st > -0.5 && st < 0.5;
     const p = Math.min(Math.abs(st) * 2, 1);
+    const pp = pressProgress.value * PRESS_DEPTH[1];
     return {
       opacity: visible ? 1 : 0,
       transform: [
-        { translateY: slotTargetY(1, n) * (1 - p) },
-        { scale: 1 - 0.02 * (1 - p) },
+        { translateY: slotTargetY(1, slotN) * (1 - p) - pp * PRESS_LIFT },
+        { scale: (1 - 0.02 * (1 - p)) * (1 + pp * PRESS_SCALE) },
       ],
     };
   });
 
   // Slot 2
   const as2 = useAnimatedStyle(() => {
-    if (n <= 2) return { opacity: 0, transform: [{ translateY: 0 }, { scale: 1 }] };
+    if (slotN <= 2) return { opacity: 0, transform: [{ translateY: 0 }, { scale: 1 }] };
+    const st = scrollX.value / W - walletIndex;
+    const visible = st > -0.5 && st < 0.5;
+    const p = Math.min(Math.abs(st) * 2, 1);
+    const pp = pressProgress.value * PRESS_DEPTH[2];
+    return {
+      opacity: visible ? 1 : 0,
+      transform: [
+        { translateY: slotTargetY(2, slotN) * (1 - p) - pp * PRESS_LIFT },
+        { scale: (1 - 0.04 * (1 - p)) * (1 + pp * PRESS_SCALE) },
+      ],
+    };
+  });
+
+  // Slot 3 — "+N more" placeholder. Only renders when overflow > 0.
+  // Press depth = 0 so it stays static while real cards lift — reads as a backplate.
+  const as3 = useAnimatedStyle(() => {
+    if (slotN <= 3) return { opacity: 0, transform: [{ translateY: 0 }, { scale: 1 }] };
     const st = scrollX.value / W - walletIndex;
     const visible = st > -0.5 && st < 0.5;
     const p = Math.min(Math.abs(st) * 2, 1);
     return {
       opacity: visible ? 1 : 0,
       transform: [
-        { translateY: slotTargetY(2, n) * (1 - p) },
-        { scale: 1 - 0.04 * (1 - p) },
+        { translateY: slotTargetY(3, slotN) * (1 - p) },
+        { scale: 1 - 0.06 * (1 - p) },
       ],
     };
   });
 
-  const animStyles = [as0, as1, as2];
+  const handlePressIn = () => {
+    pressProgress.value = withTiming(1, { duration: PRESS_IN_MS, easing: Easing.out(Easing.cubic) });
+  };
+
+  const handlePressOut = () => {
+    pressProgress.value = withTiming(0, { duration: PRESS_OUT_MS, easing: Easing.out(Easing.cubic) });
+  };
 
   return (
-    <Pressable onPress={onPress} style={StyleSheet.absoluteFill}>
-      {n === 0 ? (
-        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, top: 0, height: STACK_CARD_H }, as0]}>
+    <Pressable
+      onPressIn={handlePressIn}
+      onPress={onPress}
+      onPressOut={handlePressOut}
+      pressRetentionOffset={{ top: 40, left: 40, right: 40, bottom: 40 }}
+      style={StyleSheet.absoluteFill}
+    >
+      {realN === 0 ? (
+        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, top: 0, height: CARD_HEIGHT }, as0]}>
           <View style={[styles.cardEmpty, { borderColor: alpha(accent, 0.25), backgroundColor: alpha(accent, 0.04) }]}>
             <Text style={[styles.cardEmptyText, { color: accent }]}>+ Add your first card</Text>
           </View>
         </Animated.View>
       ) : (
-        cards.slice(0, n).map((card, idx) => (
-          <Animated.View
-            key={card.id}
-            style={[styles.cardSlot, { zIndex: n - idx, borderColor: alpha(card.color, 0.06) }, animStyles[idx]]}
-          >
-            <StackCardFace card={card} showLast4={idx === 0} />
-          </Animated.View>
-        ))
+        <>
+          {cards.slice(0, realN).map((card, idx) => {
+            const animStyle = idx === 0 ? as0 : idx === 1 ? as1 : as2;
+            return (
+              <Animated.View
+                key={card.id}
+                style={[
+                  styles.cardSlot,
+                  idx === 0 && styles.cardSlotFrontShadow,
+                  { zIndex: slotN - idx },
+                  animStyle,
+                ]}
+              >
+                <CardFront card={card} compact />
+              </Animated.View>
+            );
+          })}
+          {overflow > 0 && (
+            <Animated.View
+              key="more-placeholder"
+              style={[styles.cardSlot, { zIndex: slotN - 3 }, as3]}
+            >
+              <MoreCardsPlaceholder count={overflow} />
+            </Animated.View>
+          )}
+        </>
       )}
     </Pressable>
   );
-}
+});
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function WalletsScreen() {
   const navigation = useNavigation<Nav>();
   const { wallets, transactions, setActiveWallet } = useWalletStore();
-  const { getWalletCards } = useCardStore();
+  const { cards, getWalletCards, justAddedCardId, clearJustAddedCardId } = useCardStore();
   const { hideBalances, toggleHideBalances } = usePrefsStore();
 
-  const startIdx = wallets.findIndex((w) => w.isPrimary);
-  const [currentIndex, setCurrentIndex] = useState(startIdx >= 0 ? startIdx : 0);
+  // Initial wallet: prefer the one containing the just-added card so the
+  // land-in animation plays where the user lands. Otherwise, primary wallet.
+  const initialIdx = (() => {
+    if (justAddedCardId) {
+      const card = cards.find((c) => c.id === justAddedCardId);
+      const idx = card ? wallets.findIndex((w) => w.id === card.walletId) : -1;
+      if (idx >= 0) return idx;
+    }
+    const primary = wallets.findIndex((w) => w.isPrimary);
+    return primary >= 0 ? primary : 0;
+  })();
+
+  const [currentIndex, setCurrentIndex] = useState(initialIdx);
   // Track the last index we fired for so onScroll doesn't double-fire.
-  const pendingIdx = useRef(startIdx >= 0 ? startIdx : 0);
+  const pendingIdx = useRef(initialIdx);
   const flatListRef = useRef<FlatList<Wallet>>(null);
   const scrollRef = useRef<ScrollView>(null);
   const scrollReset = useTabScrollReset();
-  const scrollX = useSharedValue(startIdx >= 0 ? startIdx * W : 0);
+  const scrollX = useSharedValue(initialIdx * W);
+  // Captured via onLayout on the card section so we can scroll it into view
+  // when a new card is added.
+  const cardSectionY = useRef(0);
 
   useEffect(() => {
     if (scrollReset > 0) scrollRef.current?.scrollTo({ y: 0, animated: true });
   }, [scrollReset]);
 
+  // On mount with a pre-existing justAddedCardId (rare: app resumed mid-flow),
+  // snap the carousel to the target wallet so scrollX matches the native view.
+  useEffect(() => {
+    if (initialIdx > 0 && justAddedCardId) {
+      flatListRef.current?.scrollToOffset({ offset: initialIdx * W, animated: false });
+      setActiveWallet(wallets[initialIdx].id);
+    }
+    // Only runs on mount — intentionally empty deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // React to a new justAddedCardId while mounted (common case: user was on
+  // Wallets, added a card, tapped Done). Snap both scrolls (vertical page and
+  // horizontal wallet carousel) into position — `animated: false` keeps the
+  // UI thread free for the land-in animation that's about to run. The snap
+  // itself is hidden by the native stack-pop transition, so the user sees
+  // Wallets fully in place when AddCardReview slides away.
+  useEffect(() => {
+    if (!justAddedCardId) return;
+    const card = cards.find((c) => c.id === justAddedCardId);
+    if (!card) return;
+
+    // Bring the card section into view — small top offset keeps the balance/
+    // actions partially visible so the page still reads as the Wallets home.
+    const targetY = Math.max(0, cardSectionY.current - 24);
+    scrollRef.current?.scrollTo({ y: targetY, animated: false });
+
+    const idx = wallets.findIndex((w) => w.id === card.walletId);
+    if (idx < 0 || idx === currentIndex) return;
+    flatListRef.current?.scrollToOffset({ offset: idx * W, animated: false });
+    pendingIdx.current = idx;
+    setCurrentIndex(idx);
+    setActiveWallet(wallets[idx].id);
+    scrollX.value = idx * W;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [justAddedCardId]);
+
   const active      = wallets[currentIndex] ?? wallets[0];
   const activeCards = active ? getWalletCards(active.id) : [];
   const accent      = walletAccent(active?.currency ?? 'USD', active?.accentColor);
+
+  // active-wallet ref: lets tap handlers read the current wallet without
+  // listing `active` in their deps — keeps their references stable across
+  // currentIndex changes so AnimatedCardStack's memo doesn't bust mid-entrance.
+  const activeRef = useRef(active);
+  useEffect(() => { activeRef.current = active; }, [active]);
+
+  // Pre-grouped cards per wallet id. Stable reference as long as the cards
+  // array and wallet list don't change, so AnimatedCardStack's cards prop
+  // doesn't flip to a new reference on every render.
+  const cardsByWalletId = useMemo(() => {
+    const map: Record<string, Card[]> = {};
+    for (const w of wallets) {
+      map[w.id] = cards.filter((c) => c.walletId === w.id);
+    }
+    return map;
+  }, [wallets, cards]);
   const walletTxs   = transactions
     .filter((t) => t.walletId === active?.id)
     .sort((a, b) => b.date.getTime() - a.date.getTime());
@@ -456,12 +631,12 @@ export default function WalletsScreen() {
   // so the new wallet's full height is "reserved" before the cards begin to
   // unstagger — no overflow, no jitter, no per-frame bridge calls.
   const cardStackHeightAnim = useRef(
-    new RNAnimated.Value(stackH(Math.min(activeCards.length, CARD_SLOTS)))
+    new RNAnimated.Value(stackH(visibleSlots(activeCards.length)))
   ).current;
 
   // Keep height in sync when cards are added/removed on the active wallet.
   useEffect(() => {
-    cardStackHeightAnim.setValue(stackH(Math.min(activeCards.length, CARD_SLOTS)));
+    cardStackHeightAnim.setValue(stackH(visibleSlots(activeCards.length)));
   }, [activeCards.length]);
 
   // JS-thread side-effects: state updates + haptics (called via runOnJS)
@@ -471,8 +646,7 @@ export default function WalletsScreen() {
       pendingIdx.current = nearest;
       // Reserve the new wallet's full stack height now — cards are fully collapsed
       // at the midpoint so this setValue is invisible to the user.
-      const n = Math.min(getWalletCards(wallets[nearest].id).length, CARD_SLOTS);
-      cardStackHeightAnim.setValue(stackH(n));
+      cardStackHeightAnim.setValue(stackH(visibleSlots(getWalletCards(wallets[nearest].id).length)));
       setCurrentIndex(nearest);
       setActiveWallet(wallets[nearest].id);
       Haptics.selectionAsync();
@@ -505,12 +679,15 @@ export default function WalletsScreen() {
     [],
   );
 
-  const handleSend       = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); if (active) navigation.navigate('SendMoney', { walletId: active.id }); }, [active, navigation]);
-  const handleCards      = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);  if (active) navigation.navigate('WalletCardList', { walletId: active.id }); }, [active, navigation]);
-  const handleCustomize  = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);  if (active) navigation.navigate('WalletSettings', { walletId: active.id }); }, [active, navigation]);
+  // All tap handlers read the active wallet from activeRef so they don't
+  // re-derive when currentIndex changes — reference-stable handlers let
+  // memoized children skip re-renders on scroll / wallet switch.
+  const handleSend       = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); const w = activeRef.current; if (w) navigation.navigate('SendMoney', { walletId: w.id }); }, [navigation]);
+  const handleCards      = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);  const w = activeRef.current; if (w) navigation.navigate('WalletCardList', { walletId: w.id }); }, [navigation]);
+  const handleCustomize  = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);  const w = activeRef.current; if (w) navigation.navigate('WalletSettings', { walletId: w.id }); }, [navigation]);
   const handleStub       = useCallback(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), []);
   const handleAddWallet  = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); navigation.navigate('CurrencyPicker'); }, [navigation]);
-  const handleSeeAll     = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); if (active) navigation.navigate('Activity', { walletId: active.id }); }, [active, navigation]);
+  const handleSeeAll     = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); const w = activeRef.current; if (w) navigation.navigate('Activity', { walletId: w.id }); }, [navigation]);
 
   // Interpolation ranges — stable as long as wallets list doesn't change
   const accentInputRange = wallets.map((_, i) => i * W);
@@ -549,7 +726,7 @@ export default function WalletsScreen() {
           </View>
           <View style={styles.greetingRight}>
             <SecondaryButton onPress={handleAddWallet} style={styles.addBtn}>
-              <Plus size={11} color={colors.textMuted} strokeWidth={2.5} />
+              <Plus size={11} color={colors.textPrimary} strokeWidth={2.5} />
               <Text style={styles.addBtnText}>Wallet</Text>
             </SecondaryButton>
           </View>
@@ -632,7 +809,10 @@ export default function WalletsScreen() {
         </View>
 
         {/* ── Cards section ─────────────────────────────────────────────── */}
-        <View style={styles.cardStackSection}>
+        <View
+          style={styles.cardStackSection}
+          onLayout={(e) => { cardSectionY.current = e.nativeEvent.layout.y; }}
+        >
           <View style={styles.cardHead}>
             <Text style={styles.cardLabel}>Cards</Text>
             <Pressable onPress={handleCards} hitSlop={8}>
@@ -651,10 +831,15 @@ export default function WalletsScreen() {
               >
                 <AnimatedCardStack
                   walletIndex={i}
-                  cards={getWalletCards(wallet.id)}
+                  cards={cardsByWalletId[wallet.id] ?? EMPTY_CARDS}
                   accent={walletAccent(wallet.currency, wallet.accentColor)}
                   onPress={handleCards}
                   scrollX={scrollX}
+                  playEntrance={
+                    justAddedCardId != null &&
+                    (cardsByWalletId[wallet.id] ?? EMPTY_CARDS)[0]?.id === justAddedCardId
+                  }
+                  onEntranceComplete={clearJustAddedCardId}
                 />
               </View>
             ))}
@@ -674,7 +859,12 @@ export default function WalletsScreen() {
         ) : (
           <>
             {previewTxs.map((tx) => (
-              <TransactionRow key={tx.id} tx={tx} onPress={() => navigation.navigate('TransactionDetail', { txId: tx.id })} />
+              <ActivityItem
+                key={tx.id}
+                tx={tx}
+                wallets={wallets}
+                onPress={() => navigation.navigate('TransactionDetail', { txId: tx.id })}
+              />
             ))}
             <SecondaryButton onPress={handleSeeAll} style={styles.seeAllBtn}>
               <Text style={styles.seeAllText}>See all activity</Text>
@@ -703,15 +893,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: H_PAD,
   },
   greetingLabel: {
-    fontSize: 10,
-    color: colors.textMuted,
+    fontSize: 11,
+    color: colors.textSecondary,
     textTransform: 'uppercase',
-    letterSpacing: 0.9,
-    fontWeight: typography.medium,
-    marginBottom: 1,
+    letterSpacing: 0.8,
+    fontWeight: typography.semibold,
+    marginBottom: 2,
   },
   greetingName: {
-    fontSize: typography.md,
+    fontSize: typography.xl,
     color: colors.textPrimary,
     fontWeight: typography.bold,
   },
@@ -723,7 +913,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  addBtnText: { fontSize: 11, color: colors.textMuted, fontWeight: typography.medium },
+  addBtnText: { fontSize: 11, color: colors.textPrimary, fontWeight: typography.semibold },
 
   // ── Carousel + balance overlay ──
   // carouselWrap is relative-positioned so the balance overlay can be absolute.
@@ -890,11 +1080,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   cardLabel: {
-    fontSize: 10,
-    color: colors.textMuted,
+    fontSize: 11,
+    color: colors.textSecondary,
     fontWeight: typography.semibold,
     textTransform: 'uppercase',
-    letterSpacing: 1.1,
+    letterSpacing: 0.8,
   },
   cardViewAll: {
     fontSize: typography.sm,
@@ -909,13 +1099,20 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     top: 0,
-    height: STACK_CARD_H,
-    borderRadius: radius.lg,
-    borderWidth: 1,
+    borderRadius: radius.xl,
+  },
+  cardSlotFrontShadow: {
+    // Kept small on purpose — a transformed view with a large blurred shadow
+    // forces iOS to recompute the shadow shape every animation frame.
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   cardEmpty: {
-    height: STACK_CARD_H,
-    borderRadius: radius.lg,
+    height: CARD_HEIGHT,
+    borderRadius: radius.xl,
     borderWidth: 1.5,
     borderStyle: 'dashed',
     alignItems: 'center',
@@ -935,17 +1132,17 @@ const styles = StyleSheet.create({
     borderTopColor: colors.borderSubtle,
   },
   activityLabel: {
-    fontSize: 10,
-    color: colors.textMuted,
+    fontSize: 11,
+    color: colors.textSecondary,
     fontWeight: typography.semibold,
     textTransform: 'uppercase',
-    letterSpacing: 1.1,
+    letterSpacing: 0.8,
   },
 
   seeAllBtn: {
     marginHorizontal: H_PAD,
-    marginTop: 4,
-    marginBottom: 8,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
     paddingVertical: 14,
     alignItems: 'center',
   },

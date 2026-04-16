@@ -1,35 +1,69 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { colors, typography, radius, spacing } from '../theme';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing,
+  type SharedValue,
+} from 'react-native-reanimated';
+import { colors, typography, radius } from '../theme';
 import { alpha } from '../utils/color';
-import StackCardFace, { STACK_CARD_H, STACK_V_OFFSET } from './StackCardFace';
+import { CardFront, MoreCardsPlaceholder, CARD_HEIGHT, STACK_V_OFFSET } from './CardFace';
 import type { Card } from '../stores/types';
 
-export { STACK_CARD_H, STACK_V_OFFSET };
+export { CARD_HEIGHT, STACK_V_OFFSET };
 
-const MAX_STACK = 3;
+const MAX_REAL_CARDS = 3;
 
-// ─── Per-card item ────────────────────────────────────────────────────────────
+// Press feedback — mirrored by AnimatedCardStack in WalletsScreen so both entry points feel identical.
+const PRESS_LIFT      = 6;
+const PRESS_SCALE     = 0.025;
+// Depth per slot (front → back). The "+N more" placeholder uses 0 so it stays
+// static while real cards lift on press — reads as a backplate, not a card.
+const DEPTH_MULT      = [1, 0.55, 0.25];
+const PRESS_IN_MS     = 140;
+const PRESS_OUT_MS    = 180;
 
-type ItemProps = { card: Card; idx: number; totalShown: number };
+// ─── Per-slot item ────────────────────────────────────────────────────────────
 
-function StackCardItem({ card, idx, totalShown }: ItemProps) {
+type ItemProps = {
+  idx: number;
+  totalShown: number;
+  pressProgress: SharedValue<number>;
+  children: React.ReactNode;
+  depth?: number;
+};
+
+function StackSlot({ idx, totalShown, pressProgress, children, depth }: ItemProps) {
   const topOffset = (totalShown - 1 - idx) * STACK_V_OFFSET;
+  const baseScale = 1 - idx * 0.02;
+  const slotDepth = depth ?? DEPTH_MULT[idx] ?? 0;
+
+  const animStyle = useAnimatedStyle(() => {
+    const p = pressProgress.value * slotDepth;
+    return {
+      transform: [
+        { translateY: -p * PRESS_LIFT },
+        { scale: baseScale * (1 + p * PRESS_SCALE) },
+      ],
+    };
+  });
 
   return (
-    <View
+    <Animated.View
       style={[
         styles.stackOuter,
+        idx === 0 && styles.frontShadow,
         {
-          borderColor: alpha(card.color, 0.06),
           top: topOffset,
           zIndex: totalShown - idx,
-          transform: [{ scale: 1 - idx * 0.02 }],
         },
+        animStyle,
       ]}
     >
-      <StackCardFace card={card} showLast4={idx === 0} />
-    </View>
+      {children}
+    </Animated.View>
   );
 }
 
@@ -38,14 +72,29 @@ function StackCardItem({ card, idx, totalShown }: ItemProps) {
 type Props = { cards: Card[]; accent: string; onPress: () => void; showHeader?: boolean };
 
 export default function CardStackPreview({ cards, accent, onPress, showHeader = true }: Props) {
-  const shown = cards.slice(0, MAX_STACK);
+  const pressProgress = useSharedValue(0);
+
+  const shown = cards.slice(0, MAX_REAL_CARDS);
   const count = cards.length;
-  const containerH = STACK_CARD_H + STACK_V_OFFSET * (shown.length - 1);
+  const overflow = Math.max(0, count - MAX_REAL_CARDS);
+  const totalSlots = shown.length + (overflow > 0 ? 1 : 0);
+  const containerH = CARD_HEIGHT + STACK_V_OFFSET * Math.max(0, totalSlots - 1);
+
+  const handlePressIn = () => {
+    pressProgress.value = withTiming(1, { duration: PRESS_IN_MS, easing: Easing.out(Easing.cubic) });
+  };
+
+  const handlePressOut = () => {
+    pressProgress.value = withTiming(0, { duration: PRESS_OUT_MS, easing: Easing.out(Easing.cubic) });
+  };
 
   return (
     <Pressable
+      onPressIn={handlePressIn}
       onPress={onPress}
-      style={({ pressed }) => [styles.container, pressed && { opacity: 0.82 }]}
+      onPressOut={handlePressOut}
+      pressRetentionOffset={{ top: 40, left: 40, right: 40, bottom: 40 }}
+      style={styles.container}
     >
       {showHeader && (
         <View style={styles.head}>
@@ -66,8 +115,26 @@ export default function CardStackPreview({ cards, accent, onPress, showHeader = 
       ) : (
         <View style={[styles.stackContainer, { height: containerH }]}>
           {shown.map((card, idx) => (
-            <StackCardItem key={card.id} card={card} idx={idx} totalShown={shown.length} />
+            <StackSlot
+              key={card.id}
+              idx={idx}
+              totalShown={totalSlots}
+              pressProgress={pressProgress}
+            >
+              <CardFront card={card} compact />
+            </StackSlot>
           ))}
+          {overflow > 0 && (
+            <StackSlot
+              key="more-placeholder"
+              idx={totalSlots - 1}
+              totalShown={totalSlots}
+              pressProgress={pressProgress}
+              depth={0}
+            >
+              <MoreCardsPlaceholder count={overflow} />
+            </StackSlot>
+          )}
         </View>
       )}
     </Pressable>
@@ -96,8 +163,8 @@ const styles = StyleSheet.create({
     fontWeight: typography.semibold,
   },
   empty: {
-    height: STACK_CARD_H,
-    borderRadius: radius.lg,
+    height: CARD_HEIGHT,
+    borderRadius: radius.xl,
     borderWidth: 1.5,
     borderStyle: 'dashed',
     alignItems: 'center',
@@ -115,8 +182,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    height: STACK_CARD_H,
-    borderRadius: radius.lg,
-    borderWidth: 1,
+    borderRadius: radius.xl,
+  },
+  frontShadow: {
+    // Kept small on purpose — a transformed view with a large blurred shadow
+    // forces iOS to recompute the shadow shape every animation frame.
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
 });

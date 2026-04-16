@@ -19,7 +19,7 @@ export type RootStackParamList = {
   WalletSuccess: { currency: string };
   // Card flows
   WalletCardList: { walletId: string };
-  CardDetail: { cardId: string };
+  CardDetail: { cardId: string; scrollTo?: 'limits' };
   AddCardType: { walletId: string };
   AddCardName: { walletId: string; cardType: string };
   AddCardColor: { walletId: string; cardType: string; name: string };
@@ -31,7 +31,7 @@ export type RootStackParamList = {
   TransactionDetail: { txId: string };
   // Send money
   SendMoney: { walletId?: string };
-  SendSuccess: { recipientName: string; amount: number; currency: string; receivedAmount: number; receiveCurrency: string; eta: string; txRef: string };
+  SendSuccess: { txId: string };
   SendError: { reason: 'insufficient_funds' | 'transfer_failed' };
 };
 
