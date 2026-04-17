@@ -153,32 +153,37 @@ function ChangePinSheet({
 
   return (
     <BottomSheet visible={visible} onClose={onClose}>
-      <View style={[styles.sheetIconWrap, styles.sheetIconBrand]}>
-        <KeyRound size={26} color={colors.brand} strokeWidth={1.8} />
+      <View style={styles.changePinContent}>
+        <View style={[styles.sheetIconWrap, styles.sheetIconBrand]}>
+          <KeyRound size={26} color={colors.brand} strokeWidth={1.8} />
+        </View>
+        <Text style={styles.sheetTitle}>{TITLES[step]}</Text>
+        <Text style={styles.sheetBody}>{BODIES[step]}</Text>
+
+        <Pressable onPress={() => inputRef.current?.focus()}>
+          <Animated.View style={[styles.pinDotsRow, shakeStyle]}>
+            {[0, 1, 2, 3].map((i) => (
+              <View key={i} style={[styles.pinDot, i < displayPin.length && styles.pinDotFilled]} />
+            ))}
+          </Animated.View>
+        </Pressable>
+
+        <TextInput
+          ref={inputRef}
+          value={displayPin}
+          onChangeText={handleChange}
+          keyboardType="number-pad"
+          keyboardAppearance="light"
+          maxLength={4}
+          caretHidden
+          autoComplete="off"
+          style={styles.hiddenInput}
+        />
       </View>
-      <Text style={styles.sheetTitle}>{TITLES[step]}</Text>
-      <Text style={styles.sheetBody}>{BODIES[step]}</Text>
 
-      <Pressable onPress={() => inputRef.current?.focus()}>
-        <Animated.View style={[styles.pinDotsRow, shakeStyle]}>
-          {[0, 1, 2, 3].map((i) => (
-            <View key={i} style={[styles.pinDot, i < displayPin.length && styles.pinDotFilled]} />
-          ))}
-        </Animated.View>
-      </Pressable>
-
-      <TextInput
-        ref={inputRef}
-        value={displayPin}
-        onChangeText={handleChange}
-        keyboardType="number-pad"
-        maxLength={4}
-        caretHidden
-        autoComplete="off"
-        style={styles.hiddenInput}
-      />
-
-      <FlatButton onPress={onClose} label="Cancel" style={styles.sheetCancelBtn} />
+      <View style={styles.changePinActions}>
+        <FlatButton onPress={onClose} label="Cancel" style={styles.sheetCancelBtn} />
+      </View>
     </BottomSheet>
   );
 }
@@ -243,6 +248,7 @@ function LimitSheet({
           value={value}
           onChangeText={handleChange}
           keyboardType="decimal-pad"
+          keyboardAppearance="light"
           placeholder="0"
           placeholderTextColor={colors.textMuted}
           style={[styles.limitAmount, isEmpty && styles.limitMuted]}
@@ -1061,12 +1067,23 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
 
-  // ── Change PIN keypad dots ──
+  // ── Change PIN sheet layout ──
+  changePinContent: {
+    width: '100%',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xxl,
+  },
+  changePinActions: {
+    width: '100%',
+    gap: spacing.sm,
+  },
   pinDotsRow: {
     flexDirection: 'row',
     gap: spacing.lg,
     justifyContent: 'center',
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
   pinDot: {
     width: 14,

@@ -140,8 +140,8 @@ function FilterChip({
   activeColor: string;
   disabled?: boolean;
   showChevron?: boolean;
-  entering?: Parameters<typeof Animated.View>[0]['entering'];
-  exiting?: Parameters<typeof Animated.View>[0]['exiting'];
+  entering?: React.ComponentProps<typeof Animated.View>['entering'];
+  exiting?: React.ComponentProps<typeof Animated.View>['exiting'];
   onPress: () => void;
 }) {
   const lastActiveColor = useRef(activeColor);
@@ -895,6 +895,7 @@ export default function UnifiedActivityScreen() {
             style={styles.searchInput}
             placeholder="Search transactions…"
             placeholderTextColor={colors.textMuted}
+            keyboardAppearance="light"
             value={query}
             onChangeText={setQuery}
             autoCorrect={false}

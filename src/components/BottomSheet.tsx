@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, Pressable, Modal, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, StyleSheet, Pressable, Modal, Dimensions, Keyboard, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -30,9 +30,18 @@ const SCREEN_H = Dimensions.get('window').height;
 export default function BottomSheet({ visible, onClose, children, gap = 0, fullHeight = false, swipeToDismiss = false }: Props) {
   const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(false);
+  const [kbHeight, setKbHeight] = useState(0);
   const overlayOpacity = useSharedValue(0);
   const sheetY = useSharedValue(SCREEN_H);
   const dragY = useSharedValue(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => setKbHeight(e.endCoordinates.height));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKbHeight(0));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
 
   useEffect(() => {
     if (visible) setMounted(true);
@@ -88,40 +97,36 @@ export default function BottomSheet({ visible, onClose, children, gap = 0, fullH
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <Animated.View style={[styles.overlay, overlayStyle]} pointerEvents="box-none">
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onClose(); }} />
-          <Animated.View
-            style={[
-              styles.sheet,
-              gap > 0 && { gap },
-              fullHeight && styles.sheetFull,
-              fullHeight && {
-                paddingTop: spacing.xl + insets.top,
-                paddingBottom: spacing.xl + insets.bottom,
-              },
-              sheetStyle,
-            ]}
-            onStartShouldSetResponder={() => true}
-          >
-            {swipeToDismiss ? (
-              <GestureDetector gesture={panGesture}>
-                <View style={styles.handleArea}>
-                  <View style={styles.handle} />
-                </View>
-              </GestureDetector>
-            ) : (
+      <Animated.View style={[styles.overlay, overlayStyle]} pointerEvents="box-none">
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onClose(); }} />
+        <Animated.View
+          style={[
+            styles.sheet,
+            gap > 0 && { gap },
+            kbHeight > 0 && { paddingBottom: kbHeight },
+            fullHeight && styles.sheetFull,
+            fullHeight && {
+              paddingTop: spacing.xl + insets.top,
+              paddingBottom: spacing.xl + insets.bottom,
+            },
+            sheetStyle,
+          ]}
+          onStartShouldSetResponder={() => true}
+        >
+          {swipeToDismiss ? (
+            <GestureDetector gesture={panGesture}>
               <View style={styles.handleArea}>
                 <View style={styles.handle} />
               </View>
-            )}
-            {children}
-          </Animated.View>
+            </GestureDetector>
+          ) : (
+            <View style={styles.handleArea}>
+              <View style={styles.handle} />
+            </View>
+          )}
+          {children}
         </Animated.View>
-      </KeyboardAvoidingView>
+      </Animated.View>
     </Modal>
   );
 }

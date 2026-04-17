@@ -1089,6 +1089,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                       onChangeText={setContactQuery}
                       placeholder="Name or phone number…"
                       placeholderTextColor={colors.textMuted}
+                      keyboardAppearance="light"
                       autoFocus={false}
                       autoCorrect={false}
                       autoCapitalize="none"
@@ -1252,6 +1253,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                             onBlur={handleSendBlur}
                             onSelectionChange={() => sendInputRef.current?.setNativeProps({ selection: { start: 999, end: 999 } })}
                             keyboardType="decimal-pad"
+                            keyboardAppearance="light"
                             placeholder="0"
                             placeholderTextColor={colors.textMuted}
                             textAlign="right"
@@ -1296,6 +1298,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                           onBlur={handleReceiveBlur}
                           onSelectionChange={() => receiveInputRef.current?.setNativeProps({ selection: { start: 999, end: 999 } })}
                           keyboardType="decimal-pad"
+                          keyboardAppearance="light"
                           placeholder="0"
                           placeholderTextColor={colors.textMuted}
                           textAlign="right"

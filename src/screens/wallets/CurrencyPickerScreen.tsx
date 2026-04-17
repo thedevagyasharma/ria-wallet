@@ -65,6 +65,7 @@ export default function CurrencyPickerScreen() {
           onChangeText={setQuery}
           placeholder="Search currency…"
           placeholderTextColor={colors.textMuted}
+          keyboardAppearance="light"
           autoCorrect={false}
           autoCapitalize="none"
         />

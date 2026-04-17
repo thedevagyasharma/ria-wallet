@@ -68,6 +68,7 @@ export default function AddCardNameScreen({ route }: RootStackProps<'AddCardName
             onChangeText={setName}
             placeholder="e.g. Everyday Spend"
             placeholderTextColor={colors.textMuted}
+            keyboardAppearance="light"
             autoFocus
             maxLength={24}
             returnKeyType="done"

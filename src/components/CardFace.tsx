@@ -399,12 +399,13 @@ const OVERLAY_W = OVERLAY_H * (294 / 196);              // preserve source aspec
 
 function RiaLogoWatermark() {
   return (
-    <Image
-      source={require('../../assets/ria-card-overlay.png')}
-      style={watermarkStyles.overlay}
-      resizeMode="stretch"
-      pointerEvents="none"
-    />
+    <View pointerEvents="none">
+      <Image
+        source={require('../../assets/ria-card-overlay.png')}
+        style={watermarkStyles.overlay}
+        resizeMode="stretch"
+      />
+    </View>
   );
 }
 
