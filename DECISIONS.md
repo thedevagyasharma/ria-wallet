@@ -1847,3 +1847,27 @@ The old stub `CardListScreen.tsx` (which returned `null`) was deleted to free th
 **Decision:** The chip row uses `marginTop: 24, marginLeft: 10` positioning, placing it visually centered between the card name and card number, offset slightly right from the content edge. The card number's `marginTop` was reduced from 32px to 24px to compensate for the chip's increased top margin, keeping the number at the same absolute position.
 
 **Why:** ISO 7816-2 specifies chip placement at ~10% from left and ~47% from top of a standard card. The exact spec position is too low for our compact UI card, so a compromise was struck: centered between name and number (~35% from top), with ~10px right offset. Multiple iterations tested — pure spec placement crowded the bottom, original placement was too high and flush-left compared to physical cards.
+
+### 175. "View card details" after creation lands on CardList, not CardSettings
+
+**Decision:** Tapping "View card details" on the card creation success screen navigates to CardList (the wallet's card list) with the new card highlighted via `markJustAdded`, instead of pushing CardSettings on top. The stack resets to Main → CardList so back navigation is clean.
+
+**Why:** After creating a card the user wants to see it in context — in the card carousel alongside their other cards. Landing on CardSettings felt disorienting because the user hadn't expressed intent to configure anything yet. CardList with the entrance animation gives a satisfying "your card is here" moment.
+
+### 176. Empty card block navigates to AddCardType, not CardList
+
+**Decision:** On the Wallets screen, tapping the empty card placeholder ("+ Add your first card") or the "Add card →" link navigates to `AddCardType` when the wallet has zero cards. When cards exist, it still navigates to `CardList`. The handler reads card count from the store at tap time.
+
+**Why:** Navigating to an empty CardList screen is a dead end — the user has to tap "Add card" again. Going straight to AddCardType removes a wasted tap and makes the empty-state CTA do what it promises.
+
+### 177. Card creation uses brief animated interstitial instead of static success screen
+
+**Decision:** After the user confirms a new card on the color picker, the flow shows a ~1.7s animated interstitial (card materializes → "Creating your card..." → green checkmark "Card created") that auto-navigates to CardList. Replaces the previous static AddCardReview screen that had "View card details" / "Done" buttons and an Apple/Google Wallet badge. Both regular and single-use card flows now use the same interstitial pattern. Gesture is disabled during the animation.
+
+**Why:** The static success screen added a mandatory extra tap with no real utility — the Add to Wallet button was a stub, and the user always wanted to see their card. The brief interstitial gives a moment of satisfaction (card appearing, checkmark) without blocking the flow. Matches the single-use card pattern that was already shipping and tested well.
+
+### 178. Single-use card creation lands on CardList, not CardSettings
+
+**Decision:** The SingleUseCreatingScreen auto-navigates to CardList (with `markJustAdded`) after the creating animation, instead of pushing CardSettings. Stack resets to Main → CardList.
+
+**Why:** Same rationale as #175 — the user wants to see the card in context first. CardSettings is one tap away from CardList if they want to configure it.

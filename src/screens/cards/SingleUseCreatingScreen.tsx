@@ -41,13 +41,13 @@ export default function SingleUseCreatingScreen({ route }: RootStackProps<'Singl
   const navigateToCard = () => {
     if (!cardIdRef.current) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    useCardStore.getState().markJustAdded(cardIdRef.current);
     navigation.dispatch(
       CommonActions.reset({
-        index: 2,
+        index: 1,
         routes: [
           { name: 'Main' },
           { name: 'CardList', params: { walletId } },
-          { name: 'CardSettings', params: { cardId: cardIdRef.current } },
         ],
       }),
     );

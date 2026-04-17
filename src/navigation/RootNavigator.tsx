@@ -213,7 +213,7 @@ export default function RootNavigator() {
         <Stack.Screen name="AddCardType" component={AddCardTypeScreen} />
         <Stack.Screen name="AddCardName" component={AddCardNameScreen} />
         <Stack.Screen name="AddCardColor" component={AddCardColorScreen} />
-        <Stack.Screen name="AddCardReview" component={AddCardReviewScreen} />
+        <Stack.Screen name="AddCardReview" component={AddCardReviewScreen} options={{ gestureEnabled: false }} />
         <Stack.Screen name="SingleUseCreating" component={SingleUseCreatingScreen} options={{ gestureEnabled: false }} />
       </Stack.Navigator>
     </NavigationContainer>
