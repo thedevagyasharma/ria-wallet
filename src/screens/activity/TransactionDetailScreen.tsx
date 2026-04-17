@@ -114,6 +114,9 @@ export default function TransactionDetailScreen({ route }: RootStackProps<'Trans
         {/* ── Failed — refund notice ── */}
         {tx.status === 'failed' && (
           <View style={styles.refundBanner}>
+            <Text style={styles.refundReason}>
+              {tx.note ?? 'Transfer rejected by payment network'}
+            </Text>
             <Text style={styles.refundText}>
               Your funds were not deducted. If you believe this is an error, use the button below to get help.
             </Text>
@@ -231,8 +234,13 @@ const styles = StyleSheet.create({
     borderColor: colors.failed + '33',
     paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
     marginHorizontal: H_PAD, marginBottom: spacing.md,
+    gap: spacing.xs,
   },
-  refundText: { fontSize: typography.sm, color: colors.failed, lineHeight: 20 },
+  refundReason: {
+    fontSize: typography.base, fontWeight: typography.semibold,
+    color: colors.failed, lineHeight: 22,
+  },
+  refundText: { fontSize: typography.sm, color: colors.failed, lineHeight: 20, opacity: 0.75 },
 
   actions: {
     paddingHorizontal: H_PAD, paddingTop: spacing.md, gap: spacing.sm,

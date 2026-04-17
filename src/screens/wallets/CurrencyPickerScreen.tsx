@@ -74,6 +74,8 @@ export default function CurrencyPickerScreen() {
       <FlatList
         data={filtered}
         keyExtractor={(c) => c.code}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         renderItem={({ item }) => {

@@ -9,6 +9,7 @@ import {
   Image,
   Platform,
   LayoutChangeEvent,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
@@ -46,7 +47,6 @@ import DestructiveButton from '../../components/DestructiveButton';
 import FlatButton from '../../components/FlatButton';
 import BottomSheet from '../../components/BottomSheet';
 import ConfirmSheet from '../../components/ConfirmSheet';
-import { NumKey, NUM_KEYS_AMOUNT, NUM_KEYS_PIN } from '../../components/NumPad';
 
 import { colors, typography, spacing, radius } from '../../theme';
 import { useCardStore } from '../../stores/useCardStore';
@@ -79,10 +79,11 @@ function ChangePinSheet({
   onConfirm: (newPin: string) => void;
   onClose: () => void;
 }) {
-  const [step, setStep] = useState<0 | 1 | 2>(0); // 0=verify current, 1=enter new, 2=confirm new
+  const [step, setStep] = useState<0 | 1 | 2>(0);
   const [pin0, setPin0] = useState('');
   const [pin1, setPin1] = useState('');
   const [pin2, setPin2] = useState('');
+  const inputRef = useRef<TextInput>(null);
   const shakeX = useSharedValue(0);
 
   const shakeStyle = useAnimatedStyle(() => ({
@@ -92,6 +93,10 @@ function ChangePinSheet({
   useEffect(() => {
     if (!visible) { setStep(0); setPin0(''); setPin1(''); setPin2(''); }
   }, [visible]);
+
+  useEffect(() => {
+    if (visible) setTimeout(() => inputRef.current?.focus(), 400);
+  }, [visible, step]);
 
   function shake(then: () => void) {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -105,21 +110,13 @@ function ChangePinSheet({
     setTimeout(then, 300);
   }
 
-  function handleKey(key: string) {
-    if (key === '⌫') {
-      if (step === 0) setPin0((p) => p.slice(0, -1));
-      else if (step === 1) setPin1((p) => p.slice(0, -1));
-      else setPin2((p) => p.slice(0, -1));
-      return;
-    }
-    const current = step === 0 ? pin0 : step === 1 ? pin1 : pin2;
-    if (current.length >= 4) return;
-    const next = current + key;
+  function handleChange(text: string) {
+    const digits = text.replace(/\D/g, '').slice(0, 4);
 
     if (step === 0) {
-      setPin0(next);
-      if (next.length === 4) {
-        if (next === currentPin) {
+      setPin0(digits);
+      if (digits.length === 4) {
+        if (digits === currentPin) {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           setTimeout(() => { setStep(1); setPin0(''); }, 120);
         } else {
@@ -127,15 +124,15 @@ function ChangePinSheet({
         }
       }
     } else if (step === 1) {
-      setPin1(next);
-      if (next.length === 4) {
+      setPin1(digits);
+      if (digits.length === 4) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         setTimeout(() => setStep(2), 120);
       }
     } else {
-      setPin2(next);
-      if (next.length === 4) {
-        if (next === pin1) {
+      setPin2(digits);
+      if (digits.length === 4) {
+        if (digits === pin1) {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           onConfirm(pin1);
         } else {
@@ -162,21 +159,24 @@ function ChangePinSheet({
       <Text style={styles.sheetTitle}>{TITLES[step]}</Text>
       <Text style={styles.sheetBody}>{BODIES[step]}</Text>
 
-      <Animated.View style={[styles.pinDotsRow, shakeStyle]}>
-        {[0, 1, 2, 3].map((i) => (
-          <View key={i} style={[styles.pinDot, i < displayPin.length && styles.pinDotFilled]} />
-        ))}
-      </Animated.View>
+      <Pressable onPress={() => inputRef.current?.focus()}>
+        <Animated.View style={[styles.pinDotsRow, shakeStyle]}>
+          {[0, 1, 2, 3].map((i) => (
+            <View key={i} style={[styles.pinDot, i < displayPin.length && styles.pinDotFilled]} />
+          ))}
+        </Animated.View>
+      </Pressable>
 
-      <View style={styles.numpad}>
-        {NUM_KEYS_PIN.map((k, i) =>
-          k === '' ? (
-            <View key={i} style={styles.numKey} />
-          ) : (
-            <NumKey key={k} label={k} onPress={() => handleKey(k)} style={styles.numKey} />
-          )
-        )}
-      </View>
+      <TextInput
+        ref={inputRef}
+        value={displayPin}
+        onChangeText={handleChange}
+        keyboardType="number-pad"
+        maxLength={4}
+        caretHidden
+        autoComplete="off"
+        style={styles.hiddenInput}
+      />
 
       <FlatButton onPress={onClose} label="Cancel" style={styles.sheetCancelBtn} />
     </BottomSheet>
@@ -208,48 +208,47 @@ function LimitSheet({
   const [value, setValue] = useState('');
   const [localPeriod, setLocalPeriod] = useState<LimitPeriod>(period);
   const [localLimit, setLocalLimit] = useState<number | null>(currentLimit);
+  const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     if (visible) {
       setLocalPeriod(period);
       setLocalLimit(currentLimit);
       setValue(currentLimit != null ? String(currentLimit) : '');
+      setTimeout(() => inputRef.current?.focus(), 400);
     }
   }, [visible]);
 
-  function handleKey(key: string) {
-    if (key === '⌫') { setValue((v) => v.slice(0, -1)); return; }
-    if (key === '.') {
-      if (value.includes('.')) return;
-      setValue((v) => (v === '' ? '0.' : v + '.'));
-      return;
-    }
-    if (value === '0') { setValue(key); return; }
-    const dotIdx = value.indexOf('.');
-    if (dotIdx !== -1 && value.length - dotIdx > 2) return;
-    if (value.replace('.', '').length >= 8) return;
-    setValue((v) => v + key);
+  function handleChange(text: string) {
+    let s = text.replace(/[^0-9.]/g, '');
+    const parts = s.split('.');
+    if (parts.length > 2) s = parts[0] + '.' + parts.slice(1).join('');
+    if (parts.length === 2 && parts[1].length > 2) s = parts[0] + '.' + parts[1].slice(0, 2);
+    if (s.replace('.', '').length > 8) return;
+    setValue(s);
   }
 
   const parsed = parseFloat(value);
   const isValid = !isNaN(parsed) && parsed > 0;
-  const displayValue = value === '' ? '0' : value;
   const isEmpty = value === '' || value === '0';
 
   return (
     <BottomSheet visible={visible} onClose={onClose} swipeToDismiss>
       <Text style={styles.sheetTitle}>{PERIOD_LABELS[localPeriod]} limit</Text>
 
-      <View style={styles.limitAmountRow}>
+      <Pressable style={styles.limitAmountRow} onPress={() => inputRef.current?.focus()}>
         <Text style={[styles.limitSymbol, isEmpty && styles.limitMuted]}>{currencySymbol}</Text>
-        <Text style={[styles.limitAmount, isEmpty && styles.limitMuted]}>{displayValue}</Text>
-      </View>
-
-      <View style={styles.numpad}>
-        {NUM_KEYS_AMOUNT.map((k) => (
-          <NumKey key={k} label={k} onPress={() => handleKey(k)} style={styles.limitNumKey} />
-        ))}
-      </View>
+        <TextInput
+          ref={inputRef}
+          value={value}
+          onChangeText={handleChange}
+          keyboardType="decimal-pad"
+          placeholder="0"
+          placeholderTextColor={colors.textMuted}
+          style={[styles.limitAmount, isEmpty && styles.limitMuted]}
+          selectionColor={colors.brand}
+        />
+      </Pressable>
 
       <View style={styles.limitActions}>
         <PrimaryButton
@@ -1082,17 +1081,12 @@ const styles = StyleSheet.create({
     borderColor: colors.brand,
   },
 
-  // ── Shared numpad (PIN + amount) ──
-  numpad: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: spacing.sm,
-  },
-  numKey: {
-    width: '33.333%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.sm,
+  // ── Hidden input for PIN entry ──
+  hiddenInput: {
+    position: 'absolute',
+    opacity: 0,
+    height: 0,
+    width: 0,
   },
 
   // ── Spending limit amount display ──
@@ -1117,14 +1111,6 @@ const styles = StyleSheet.create({
     lineHeight: 60,
   },
   limitMuted: { color: colors.textMuted },
-
-  // ── Limit sheet numpad (taller keys) ──
-  limitNumKey: {
-    width: '33.333%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: spacing.lg,
-  },
 
   // ── Limit sheet actions ──
   limitActions: {

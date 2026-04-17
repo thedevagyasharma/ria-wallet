@@ -345,8 +345,8 @@ function ActionBtn({
 
 // ─── Animated card stack ─────────────────────────────────────────────────────
 
-const SPREAD_V_OFFSET = CARD_HEIGHT - 40;
-const SPREAD_DRAG_DIST = 140;
+const SPREAD_V_OFFSET = 90;
+const SPREAD_DRAG_DIST = 160;
 
 const EMPTY_CARDS: Card[] = [];
 
@@ -354,7 +354,7 @@ const EMPTY_CARDS: Card[] = [];
 
 const AnimatedCardSlot = React.memo(function AnimatedCardSlot({
   card, index, totalCards, walletIndex, scrollX, spreadProgress,
-  entranceProgress, isEntranceTarget,
+  entranceProgress, isEntranceTarget, liftProgress, liftedIndex,
 }: {
   card: Card;
   index: number;
@@ -364,6 +364,8 @@ const AnimatedCardSlot = React.memo(function AnimatedCardSlot({
   spreadProgress: SharedValue<number>;
   entranceProgress: SharedValue<number>;
   isEntranceTarget: boolean;
+  liftProgress: SharedValue<number>;
+  liftedIndex: SharedValue<number>;
 }) {
   const animStyle = useAnimatedStyle(() => {
     const st = scrollX.value / W - walletIndex;
@@ -372,23 +374,23 @@ const AnimatedCardSlot = React.memo(function AnimatedCardSlot({
     const sp = spreadProgress.value;
     const n = totalCards;
 
-    const stackOff = (n - 1 - index) * STACK_V_OFFSET;
-    const spreadOff = (n - 1 - index) * SPREAD_V_OFFSET;
-    const baseY = stackOff + sp * (spreadOff - stackOff);
+    const stagger = n > 1 ? 0.7 / (n - 1) : 0;
+    const delay = index * stagger;
+    const perSp = Math.min(1, Math.max(0, (sp - delay) / Math.max(0.01, 1 - delay)));
+
+    const vOff = STACK_V_OFFSET + perSp * (SPREAD_V_OFFSET - STACK_V_OFFSET);
+    const baseY = (n - 1 - index) * vOff;
 
     const shrink = 0.01 * Math.min(index, 6) * (1 - sp);
     const baseScale = 1 - shrink * (1 - p);
 
     const ev = isEntranceTarget ? entranceProgress.value : 0;
-
-    const tiltDeg = sp * (2 + index * 1.2);
+    const lift = liftedIndex.value === index ? liftProgress.value * 8 : 0;
 
     return {
       opacity: visible ? 1 : 0,
       transform: [
-        { perspective: 800 },
-        { translateY: baseY * (1 - p) - ev * 40 },
-        { rotateX: `${-tiltDeg}deg` },
+        { translateY: baseY * (1 - p) - ev * 40 - lift },
         { scale: baseScale * (1 + ev * 0.06) },
       ],
     };
@@ -410,13 +412,15 @@ const AnimatedCardSlot = React.memo(function AnimatedCardSlot({
 
 // ─── Card stack container ───────────────────────────────────────────────────
 
-const AnimatedCardStack = React.memo(function AnimatedCardStack({ walletIndex, cards, accent, onPressCard, scrollX, spreadProgress, playEntrance, onEntranceComplete }: {
+const AnimatedCardStack = React.memo(function AnimatedCardStack({ walletIndex, cards, accent, onPressCard, scrollX, spreadProgress, liftProgress, liftedIndex, playEntrance, onEntranceComplete }: {
   walletIndex: number;
   cards: Card[];
   accent: string;
   onPressCard: (index: number) => void;
   scrollX: SharedValue<number>;
   spreadProgress: SharedValue<number>;
+  liftProgress: SharedValue<number>;
+  liftedIndex: SharedValue<number>;
   playEntrance?: boolean;
   onEntranceComplete?: () => void;
 }) {
@@ -471,6 +475,8 @@ const AnimatedCardStack = React.memo(function AnimatedCardStack({ walletIndex, c
           spreadProgress={spreadProgress}
           entranceProgress={entranceProgress}
           isEntranceTarget={idx === 0 && !!playEntrance}
+          liftProgress={liftProgress}
+          liftedIndex={liftedIndex}
         />
       ))}
     </View>
@@ -600,6 +606,8 @@ export default function WalletsScreen() {
   const startTouchY = useSharedValue(0);
   const startTapLocalY = useSharedValue(0);
   const hasMoved = useSharedValue(false);
+  const liftProgress = useSharedValue(0);
+  const liftedIndex = useSharedValue(-1);
 
   const active      = wallets[currentIndex] ?? wallets[0];
   const activeCards = active ? getWalletCards(active.id) : [];
@@ -709,8 +717,14 @@ export default function WalletsScreen() {
       if (tapY >= (n - 1 - i) * vOff) { tappedIndex = i; break; }
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    spreadProgress.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.cubic) });
-    navigation.navigate('CardList', { walletId: w.id, initialCardIndex: tappedIndex });
+    liftedIndex.value = tappedIndex;
+    liftProgress.value = 0;
+    liftProgress.value = withTiming(1, { duration: 120, easing: Easing.out(Easing.cubic) });
+    setTimeout(() => {
+      navigation.navigate('CardList', { walletId: w.id, initialCardIndex: tappedIndex });
+      liftProgress.value = 0;
+      liftedIndex.value = -1;
+    }, 140);
   }, [navigation, getWalletCards]);
 
   const cardPanGesture = useMemo(() =>
@@ -724,10 +738,8 @@ export default function WalletsScreen() {
       .onTouchesMove((e, state) => {
         const dy = e.allTouches[0].absoluteY - startTouchY.value;
         if (Math.abs(dy) > 8) hasMoved.value = true;
-        const isSpread = spreadProgress.value > 0.5;
-        if (!isSpread && dy > 14) state.activate();
-        else if (isSpread && dy < -14) state.activate();
-        else if (Math.abs(dy) > 24) state.fail();
+        if (dy > 14 || (spreadProgress.value > 0.01 && dy < -14)) state.activate();
+        else if (spreadProgress.value < 0.01 && dy < -20) state.fail();
       })
       .onTouchesUp((_, state) => {
         if (!hasMoved.value) {
@@ -741,11 +753,12 @@ export default function WalletsScreen() {
         spreadProgress.value = Math.max(0, Math.min(1, newSp));
       })
       .onEnd((e) => {
-        let target: number;
-        if (e.velocityY > 500) target = 1;
-        else if (e.velocityY < -500) target = 0;
-        else target = spreadProgress.value > 0.5 ? 1 : 0;
-        spreadProgress.value = withSpring(target, { damping: 22, stiffness: 200 });
+        const vel = e.velocityY;
+        if (vel > 800) {
+          spreadProgress.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) });
+        } else if (vel < -800) {
+          spreadProgress.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.cubic) });
+        }
       }),
     [handleCardTapAtY],
   );
@@ -897,6 +910,8 @@ export default function WalletsScreen() {
                     onPressCard={handleCardTapAtY}
                     scrollX={scrollX}
                     spreadProgress={spreadProgress}
+                    liftProgress={liftProgress}
+                    liftedIndex={liftedIndex}
                     playEntrance={
                       justAddedCardId != null &&
                       (cardsByWalletId[wallet.id] ?? EMPTY_CARDS)[0]?.id === justAddedCardId

@@ -174,9 +174,6 @@ function detectFromPhone(phone: string): { flag: string; currency: string } | nu
   return null;
 }
 
-// ─── Numpad ───────────────────────────────────────────────────────────────────
-
-
 // ─── Recent contact circle ────────────────────────────────────────────────────
 
 function RecentCircle({ contact, onPress }: { contact: Contact; onPress: () => void }) {

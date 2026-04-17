@@ -39,6 +39,14 @@ export default function AllCardsScreen() {
     navigation.navigate('CardList', { walletId });
   }, [navigation]);
 
+  const handleCardPress = useCallback((walletId: string, cardIndex: number) => {
+    if (cardIndex === -1) {
+      navigation.navigate('AddCardType', { walletId });
+      return;
+    }
+    navigation.navigate('CardList', { walletId, initialCardIndex: cardIndex });
+  }, [navigation]);
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
@@ -77,7 +85,7 @@ export default function AllCardsScreen() {
               <CardStackPreview
                 cards={walletCards}
                 accent={colors.brand}
-                onPress={() => handlePress(wallet.id)}
+                onPressCard={(idx) => handleCardPress(wallet.id, idx)}
                 showHeader={false}
               />
             </View>

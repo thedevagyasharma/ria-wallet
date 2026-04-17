@@ -30,11 +30,8 @@ export const useCardStore = create<CardStore>((set, get) => ({
   cards: MOCK_CARDS,
   justAddedCardId: null,
 
-  // Prepend so the newest card sits at index 0 — front of the stack preview
-  // and first card in the CardList carousel. Matches newest-first
-  // ordering used across the app (activity, etc.).
   addCard: (card) =>
-    set((state) => ({ cards: [card, ...state.cards] })),
+    set((state) => ({ cards: [...state.cards, card] })),
 
   markJustAdded: (cardId) => set({ justAddedCardId: cardId }),
   clearJustAddedCardId: () => set({ justAddedCardId: null }),

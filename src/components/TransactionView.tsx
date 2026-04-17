@@ -157,7 +157,6 @@ export function TxDetailsList({
   const isP2P = !isCardTx(tx);
 
   const showNote   = !!tx.note && tx.status !== 'failed';
-  const showReason = tx.status === 'failed';
 
   const rows: React.ReactNode[] = [];
   if (isP2P)      rows.push(<FlatRow key="recipient" label="Recipient" value={tx.recipientName} />);
@@ -167,7 +166,6 @@ export function TxDetailsList({
   if (card)       rows.push(<FlatRow key="card"     label="Card"     value={`${card.name} •••• ${card.last4}`} />);
   if (cardMeta)   rows.push(<FlatRow key="category" label="Category" value={cardMeta.label} />);
   if (showNote)   rows.push(<FlatRow key="note"     label="Note"     value={tx.note!} />);
-  if (showReason) rows.push(<StackedRow key="reason" label="Reason" value={tx.note ?? 'Transfer rejected by payment network'} valueColor={colors.failed} />);
 
   return (
     <View>
@@ -217,7 +215,7 @@ function FlatRow({
       {flagCode ? (
         <View style={rowStyles.valueWithFlag}>
           <FlagIcon code={flagCode} size={14} />
-          <Text style={[rowStyles.value, valueColor ? { color: valueColor } : undefined]}>
+          <Text style={[rowStyles.valueFlagged, valueColor ? { color: valueColor } : undefined]}>
             {value}
           </Text>
         </View>
@@ -230,25 +228,7 @@ function FlatRow({
   );
 }
 
-function StackedRow({
-  label, value, valueColor,
-}: {
-  label: string; value: string; valueColor?: string;
-}) {
-  return (
-    <View style={stackedStyles.row}>
-      <Text style={rowStyles.label}>{label}</Text>
-      <Text style={[stackedStyles.value, valueColor ? { color: valueColor } : undefined]}>
-        {value}
-      </Text>
-    </View>
-  );
-}
 
-const stackedStyles = StyleSheet.create({
-  row: { paddingVertical: spacing.md, gap: spacing.xs },
-  value: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.medium, lineHeight: 20 },
-});
 
 const listStyles = StyleSheet.create({
   row: {
@@ -328,6 +308,7 @@ const timelineStyles = StyleSheet.create({
 const rowStyles = StyleSheet.create({
   label: { fontSize: typography.base, color: colors.textSecondary, flexShrink: 0 },
   value: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.medium, textAlign: 'right', flex: 1 },
+  valueFlagged: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.medium },
   valueWithFlag: { flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'flex-end', flex: 1 },
 });
 

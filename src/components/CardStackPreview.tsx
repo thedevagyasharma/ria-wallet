@@ -1,52 +1,60 @@
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
   Easing,
+  runOnJS,
   type SharedValue,
 } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { colors, typography, radius } from '../theme';
 import { alpha } from '../utils/color';
-import { CardFront, MoreCardsPlaceholder, CARD_HEIGHT, STACK_V_OFFSET } from './CardFace';
+import { CardFront, CARD_HEIGHT, STACK_V_OFFSET } from './CardFace';
 import type { Card } from '../stores/types';
 
 export { CARD_HEIGHT, STACK_V_OFFSET };
 
-const MAX_REAL_CARDS = 3;
+const SPREAD_V_OFFSET = 90;
+const SPREAD_DRAG_DIST = 160;
 
-// Press feedback — mirrored by AnimatedCardStack in WalletsScreen so both entry points feel identical.
-const PRESS_LIFT      = 6;
-const PRESS_SCALE     = 0.025;
-// Depth per slot (front → back). The "+N more" placeholder uses 0 so it stays
-// static while real cards lift on press — reads as a backplate, not a card.
-const DEPTH_MULT      = [1, 0.55, 0.25];
-const PRESS_IN_MS     = 140;
-const PRESS_OUT_MS    = 180;
-
-// ─── Per-slot item ────────────────────────────────────────────────────────────
-
-type ItemProps = {
-  idx: number;
-  totalShown: number;
-  pressProgress: SharedValue<number>;
-  children: React.ReactNode;
-  depth?: number;
-};
-
-function StackSlot({ idx, totalShown, pressProgress, children, depth }: ItemProps) {
-  const topOffset = (totalShown - 1 - idx) * STACK_V_OFFSET;
-  const baseScale = 1 - idx * 0.02;
-  const slotDepth = depth ?? DEPTH_MULT[idx] ?? 0;
-
+function CardSlot({
+  card,
+  index,
+  totalCards,
+  spreadProgress,
+  liftProgress,
+  liftedIndex,
+}: {
+  card: Card;
+  index: number;
+  totalCards: number;
+  spreadProgress: SharedValue<number>;
+  liftProgress: SharedValue<number>;
+  liftedIndex: SharedValue<number>;
+}) {
   const animStyle = useAnimatedStyle(() => {
-    const p = pressProgress.value * slotDepth;
+    const sp = spreadProgress.value;
+    const n = totalCards;
+
+    const stagger = n > 1 ? 0.7 / (n - 1) : 0;
+    const delay = index * stagger;
+    const perSp = Math.min(1, Math.max(0, (sp - delay) / Math.max(0.01, 1 - delay)));
+
+    const vOff = STACK_V_OFFSET + perSp * (SPREAD_V_OFFSET - STACK_V_OFFSET);
+    const baseY = (n - 1 - index) * vOff;
+
+    const shrink = 0.01 * Math.min(index, 6) * (1 - sp);
+    const baseScale = 1 - shrink;
+
+    const lift = liftedIndex.value === index ? liftProgress.value * 8 : 0;
+
     return {
       transform: [
-        { translateY: -p * PRESS_LIFT },
-        { scale: baseScale * (1 + p * PRESS_SCALE) },
+        { translateY: baseY - lift },
+        { scale: baseScale },
       ],
     };
   });
@@ -55,49 +63,102 @@ function StackSlot({ idx, totalShown, pressProgress, children, depth }: ItemProp
     <Animated.View
       style={[
         styles.stackOuter,
-        idx === 0 && styles.frontShadow,
-        {
-          top: topOffset,
-          zIndex: totalShown - idx,
-        },
+        index === 0 && styles.frontShadow,
+        { zIndex: totalCards - index },
         animStyle,
       ]}
     >
-      {children}
+      <CardFront card={card} compact />
     </Animated.View>
   );
 }
 
-// ─── Container ────────────────────────────────────────────────────────────────
+type Props = {
+  cards: Card[];
+  accent: string;
+  onPressCard: (index: number) => void;
+  showHeader?: boolean;
+};
 
-type Props = { cards: Card[]; accent: string; onPress: () => void; showHeader?: boolean };
-
-export default function CardStackPreview({ cards, accent, onPress, showHeader = true }: Props) {
-  const pressProgress = useSharedValue(0);
-
-  const shown = cards.slice(0, MAX_REAL_CARDS);
+export default function CardStackPreview({ cards, accent, onPressCard, showHeader = true }: Props) {
+  const spreadProgress = useSharedValue(0);
+  const spreadStart = useSharedValue(0);
+  const startTouchY = useSharedValue(0);
+  const startTapLocalY = useSharedValue(0);
+  const hasMoved = useSharedValue(false);
+  const liftProgress = useSharedValue(0);
+  const liftedIndex = useSharedValue(-1);
   const count = cards.length;
-  const overflow = Math.max(0, count - MAX_REAL_CARDS);
-  const totalSlots = shown.length + (overflow > 0 ? 1 : 0);
-  const containerH = CARD_HEIGHT + STACK_V_OFFSET * Math.max(0, totalSlots - 1);
 
-  const handlePressIn = () => {
+  const containerAnimStyle = useAnimatedStyle(() => {
+    const sp = spreadProgress.value;
+    const vOff = STACK_V_OFFSET + sp * (SPREAD_V_OFFSET - STACK_V_OFFSET);
+    const h = count <= 1 ? CARD_HEIGHT : CARD_HEIGHT + vOff * (count - 1);
+    return { height: h };
+  });
+
+  const handleTapAtY = useCallback((tapY: number) => {
+    if (count === 0) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onPressCard(-1);
+      return;
+    }
+    const sp = spreadProgress.value;
+    const n = count;
+    const vOff = STACK_V_OFFSET + sp * (SPREAD_V_OFFSET - STACK_V_OFFSET);
+    let tappedIndex = n - 1;
+    for (let i = 0; i < n; i++) {
+      if (tapY >= (n - 1 - i) * vOff) { tappedIndex = i; break; }
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    pressProgress.value = withTiming(1, { duration: PRESS_IN_MS, easing: Easing.out(Easing.cubic) });
-  };
+    liftedIndex.value = tappedIndex;
+    liftProgress.value = 0;
+    liftProgress.value = withTiming(1, { duration: 120, easing: Easing.out(Easing.cubic) });
+    setTimeout(() => {
+      onPressCard(tappedIndex);
+      liftProgress.value = 0;
+      liftedIndex.value = -1;
+    }, 140);
+  }, [count, onPressCard]);
 
-  const handlePressOut = () => {
-    pressProgress.value = withTiming(0, { duration: PRESS_OUT_MS, easing: Easing.out(Easing.cubic) });
-  };
+  const panGesture = useMemo(() =>
+    Gesture.Pan()
+      .manualActivation(true)
+      .onTouchesDown((e) => {
+        startTouchY.value = e.allTouches[0].absoluteY;
+        startTapLocalY.value = e.allTouches[0].y;
+        hasMoved.value = false;
+      })
+      .onTouchesMove((e, state) => {
+        const dy = e.allTouches[0].absoluteY - startTouchY.value;
+        if (Math.abs(dy) > 8) hasMoved.value = true;
+        if (dy > 14 || (spreadProgress.value > 0.01 && dy < -14)) state.activate();
+        else if (spreadProgress.value < 0.01 && dy < -20) state.fail();
+      })
+      .onTouchesUp((_, state) => {
+        if (!hasMoved.value) {
+          runOnJS(handleTapAtY)(startTapLocalY.value);
+        }
+        state.fail();
+      })
+      .onStart(() => { spreadStart.value = spreadProgress.value; })
+      .onUpdate((e) => {
+        const newSp = spreadStart.value + e.translationY / SPREAD_DRAG_DIST;
+        spreadProgress.value = Math.max(0, Math.min(1, newSp));
+      })
+      .onEnd((e) => {
+        const vel = e.velocityY;
+        if (vel > 800) {
+          spreadProgress.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.cubic) });
+        } else if (vel < -800) {
+          spreadProgress.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.cubic) });
+        }
+      }),
+    [handleTapAtY],
+  );
 
   return (
-    <Pressable
-      onPressIn={handlePressIn}
-      onPress={onPress}
-      onPressOut={handlePressOut}
-      pressRetentionOffset={{ top: 40, left: 40, right: 40, bottom: 40 }}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       {showHeader && (
         <View style={styles.head}>
           <Text style={styles.label}>Cards</Text>
@@ -108,42 +169,34 @@ export default function CardStackPreview({ cards, accent, onPress, showHeader = 
       )}
 
       {count === 0 ? (
-        <View style={[
-          styles.empty,
-          { borderColor: alpha(accent, 0.25), backgroundColor: alpha(accent, 0.04) },
-        ]}>
-          <Text style={[styles.emptyText, { color: accent }]}>+ Add your first card</Text>
-        </View>
+        <Pressable onPress={() => onPressCard(-1)}>
+          <View style={[
+            styles.empty,
+            { borderColor: alpha(accent, 0.25), backgroundColor: alpha(accent, 0.04) },
+          ]}>
+            <Text style={[styles.emptyText, { color: accent }]}>+ Add your first card</Text>
+          </View>
+        </Pressable>
       ) : (
-        <View style={[styles.stackContainer, { height: containerH }]}>
-          {shown.map((card, idx) => (
-            <StackSlot
-              key={card.id}
-              idx={idx}
-              totalShown={totalSlots}
-              pressProgress={pressProgress}
-            >
-              <CardFront card={card} compact />
-            </StackSlot>
-          ))}
-          {overflow > 0 && (
-            <StackSlot
-              key="more-placeholder"
-              idx={totalSlots - 1}
-              totalShown={totalSlots}
-              pressProgress={pressProgress}
-              depth={0}
-            >
-              <MoreCardsPlaceholder count={overflow} />
-            </StackSlot>
-          )}
-        </View>
+        <GestureDetector gesture={panGesture}>
+          <Animated.View style={[styles.stackContainer, containerAnimStyle]}>
+            {cards.map((card, idx) => (
+              <CardSlot
+                key={card.id}
+                card={card}
+                index={idx}
+                totalCards={count}
+                spreadProgress={spreadProgress}
+                liftProgress={liftProgress}
+                liftedIndex={liftedIndex}
+              />
+            ))}
+          </Animated.View>
+        </GestureDetector>
       )}
-    </Pressable>
+    </View>
   );
 }
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: {},
@@ -187,8 +240,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
   },
   frontShadow: {
-    // Kept small on purpose — a transformed view with a large blurred shadow
-    // forces iOS to recompute the shadow shape every animation frame.
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,

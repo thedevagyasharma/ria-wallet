@@ -981,6 +981,8 @@ export default function UnifiedActivityScreen() {
             ref={listRef}
             sections={sections}
             keyExtractor={(item) => item.id}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
             renderItem={({ item }) => (
               <ActivityItem
                 tx={item}

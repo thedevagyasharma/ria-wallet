@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, Pressable, Modal, Dimensions } from 'react-native';
+import { View, StyleSheet, Pressable, Modal, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -88,35 +88,40 @@ export default function BottomSheet({ visible, onClose, children, gap = 0, fullH
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose}>
-      <Animated.View style={[styles.overlay, overlayStyle]} pointerEvents="box-none">
-        <Pressable style={StyleSheet.absoluteFill} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onClose(); }} />
-        <Animated.View
-          style={[
-            styles.sheet,
-            gap > 0 && { gap },
-            fullHeight && styles.sheetFull,
-            fullHeight && {
-              paddingTop: spacing.xl + insets.top,
-              paddingBottom: spacing.xl + insets.bottom,
-            },
-            sheetStyle,
-          ]}
-          onStartShouldSetResponder={() => true}
-        >
-          {swipeToDismiss ? (
-            <GestureDetector gesture={panGesture}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <Animated.View style={[styles.overlay, overlayStyle]} pointerEvents="box-none">
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onClose(); }} />
+          <Animated.View
+            style={[
+              styles.sheet,
+              gap > 0 && { gap },
+              fullHeight && styles.sheetFull,
+              fullHeight && {
+                paddingTop: spacing.xl + insets.top,
+                paddingBottom: spacing.xl + insets.bottom,
+              },
+              sheetStyle,
+            ]}
+            onStartShouldSetResponder={() => true}
+          >
+            {swipeToDismiss ? (
+              <GestureDetector gesture={panGesture}>
+                <View style={styles.handleArea}>
+                  <View style={styles.handle} />
+                </View>
+              </GestureDetector>
+            ) : (
               <View style={styles.handleArea}>
                 <View style={styles.handle} />
               </View>
-            </GestureDetector>
-          ) : (
-            <View style={styles.handleArea}>
-              <View style={styles.handle} />
-            </View>
-          )}
-          {children}
+            )}
+            {children}
+          </Animated.View>
         </Animated.View>
-      </Animated.View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
