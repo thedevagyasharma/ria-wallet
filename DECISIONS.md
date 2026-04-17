@@ -1871,3 +1871,79 @@ The old stub `CardListScreen.tsx` (which returned `null`) was deleted to free th
 **Decision:** The SingleUseCreatingScreen auto-navigates to CardList (with `markJustAdded`) after the creating animation, instead of pushing CardSettings. Stack resets to Main → CardList.
 
 **Why:** Same rationale as #175 — the user wants to see the card in context first. CardSettings is one tap away from CardList if they want to configure it.
+
+---
+
+## Snapshot — 2026-04-17
+
+### 179. Transaction detail — remove boxes, flatten layout
+
+**Decision:** Removed card containers (border, background, border-radius) from TxSummaryCard, confirmation breakdown, and recipient sections. All content uses flat rows with hairline dividers. Total row uses bold text instead of highlighted background.
+
+**Why:** Boxes added visual clutter. Flat layout is cleaner and consistent with the Details section pattern established in #144.
+
+### 180. Unified TransactionDetailScreen for both post-send and activity
+
+**Decision:** Consolidated SendSuccessScreen and TransactionDetailScreen into a single screen with a `mode` param (`'detail'` | `'receipt'`). Deleted SendSuccessScreen.tsx and ConfirmationScreen.tsx (dead code). Removed `SendSuccess` route entirely.
+
+**Why:** Both screens rendered identical content (hero, details, summary, timeline) — only the CTAs differed. Receipt mode shows "Share receipt" (primary) + "Get help"; detail mode shows "Send again" (primary, P2P only) + "Get help".
+
+### 181. SendMoney is a regular screen, not a transparent modal
+
+**Decision:** Changed SendMoney from `presentation: 'transparentModal'` to a regular stack screen with default slide-from-right animation. Removed all custom Reanimated enter/dismiss animations (`enterY`, `dismissStyle`).
+
+**Why:** The transparent modal caused navigation gymnastics when transitioning to TransactionDetail after a successful send. Every approach (reset, replace, navigate, push) flashed the Main screen because the native stack tears down modals before building new screens. A regular screen allows `navigation.replace('TransactionDetail')` to work cleanly.
+
+### 182. "View transfer" uses replace, not reset
+
+**Decision:** SendMoneyScreen's `handleViewTransfer` calls `navigation.replace('TransactionDetail', { mode: 'receipt' })` instead of `CommonActions.reset`.
+
+**Why:** Replace swaps SendMoney for TransactionDetail in-place. Stack goes `[Main, SendMoney]` → `[Main, TransactionDetail]` with a standard slide transition. No flash, no stack cleanup, no animation hacks.
+
+### 183. Close button replaces back chevron on detail screens
+
+**Decision:** Both detail screen modes use an X close button instead of a back chevron. `handleClose` calls `navigation.goBack()`.
+
+**Why:** The screen is a destination, not a step in a flow. Close communicates "dismiss" rather than "go back to previous step."
+
+### 184. Status badge — no dot, border ring, matched verbiage
+
+**Decision:** Removed the colored dot from StatusBadge. Kept the border ring. Labels: "COMPLETE" / "PENDING" / "FAILED" (uppercase on detail page), "Complete" / "Pending" / "Failed" (title case on transaction rows). Both use brand orange for pending instead of amber.
+
+**Why:** The dot was redundant with the colored text and ring. Amber pending was muddy — brand orange reads as "active" and is more intentional.
+
+### 185. Transaction row chip placement — inline with name
+
+**Decision:** Status chip sits on the same row as the recipient name (to its right), not under the name or near the amount.
+
+**Why:** Keeps the meta row (date) clean, doesn't clutter the amount column, and the chip is visually associated with the transaction identity.
+
+### 186. Hero amount — currency symbol offset, number centered
+
+**Decision:** Currency symbol is a separate Text with an invisible counterweight on the right, so the number stays screen-centered.
+
+**Why:** The symbol shouldn't shift the number off-center. Invisible spacer balances the layout without absolute positioning issues.
+
+### 187. Details section includes recipient and reference
+
+**Decision:** Moved recipient name and reference (with inline copy button) into the flat Details section. Removed RefCopyRow from hero. Details section renders first, before Summary and Timeline.
+
+**Why:** Hero was cluttered with partial recipient info and a boxed ref row. Details section is the natural home for all metadata. Showing it first puts the most important info (who, when, where, ref) above the fold.
+
+### 188. Timeline indicators — smaller icons, timestamps, center-aligned
+
+**Decision:** Step indicators reduced from 28px to 20px. Each step shows a formatted timestamp (date + time). Icons center-align against both text lines via `paddingTop: 9` on the icon column. Connector lines use `marginBottom: -9` to bridge between steps.
+
+**Why:** 28px indicators dominated the timeline. Timestamps add real context to each step. Center-aligning against both lines (label + sub) looks more balanced than first-line alignment.
+
+### 189. Inline actions replace sticky footer
+
+**Decision:** Action buttons (Send again, Share receipt, Get help) are inline at the bottom of the scroll content, not in a sticky footer. Share receipt is primary in receipt mode; Send again is primary in detail mode.
+
+**Why:** Content is short enough that buttons are always reachable. Sticky footer wasted vertical space and added visual weight for non-urgent actions.
+
+### 190. Failed transaction — stacked reason row
+
+**Decision:** The "Reason" row in TxDetailsList uses a vertical stack layout (label on top, value below) instead of the standard side-by-side row.
+
+**Why:** Failure reasons can be long and multi-line. Side-by-side layout caused the value to crowd into the label.

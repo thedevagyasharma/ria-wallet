@@ -24,8 +24,6 @@ import TransactionDetailScreen from '../screens/activity/TransactionDetailScreen
 
 // Send screens
 import SendMoneyScreen from '../screens/send/SendMoneyScreen';
-import SendSuccessScreen from '../screens/send/SendSuccessScreen';
-import SendErrorScreen from '../screens/send/SendErrorScreen';
 
 // Card screens
 import AllCardsScreen from '../screens/cards/AllCardsScreen';
@@ -35,7 +33,6 @@ import AddCardTypeScreen from '../screens/cards/AddCardTypeScreen';
 import AddCardNameScreen from '../screens/cards/AddCardNameScreen';
 import AddCardColorScreen from '../screens/cards/AddCardColorScreen';
 import AddCardReviewScreen from '../screens/cards/AddCardReviewScreen';
-import SingleUseCreatingScreen from '../screens/cards/SingleUseCreatingScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -170,42 +167,9 @@ export default function RootNavigator() {
         <Stack.Screen name="WalletReview" component={WalletReviewScreen} />
         <Stack.Screen name="WalletSuccess" component={WalletSuccessScreen} options={{ animation: 'fade' }} />
 
-        {/* Send money flows
-         *
-         * TRANSITION RULE — read before editing these options:
-         *
-         * SendMoney and SendSuccess both use a custom Reanimated slide animation
-         * (enterY / slideY) to move their content off-screen before calling
-         * navigation.popToTop().  For this to work without a blank-screen flash,
-         * BOTH screens MUST be declared with  presentation: 'transparentModal'.
-         *
-         * Why transparentModal matters:
-         *   - Regular stack screens: iOS UIKit does NOT keep the screen beneath
-         *     them composited.  When the JS content translates off-screen the
-         *     native view behind it is blank (white window background) until
-         *     popToTop() completes its own transition.  This produces the flash.
-         *   - transparentModal screens: UIKit keeps the presenting screen (Main /
-         *     WalletsScreen) fully rendered and visible at all times.  As the
-         *     animated content slides away, wallets are revealed naturally.
-         *     popToTop() then just removes the transparent overlay — no flash.
-         *
-         * STRICTLY NOT ALLOWED on these screens:
-         *   - Removing  presentation: 'transparentModal'  (causes blank flash)
-         *   - Removing  contentStyle: { backgroundColor: 'transparent' }
-         *   - Replacing  animation: 'none'  with any native transition
-         *   - Calling  navigation.goBack()  instead of  navigation.popToTop()
-         *     when multiple transparent screens are stacked
-         *   - Running the JS exit animation AFTER popToTop (wrong order — animate
-         *     first, navigate when the callback fires)
-         *
-         * SendMoney inline-success path (handleCloseToWallets):
-         *   setShowSuccessBg(false) → slide enterY to screenHeight → popToTop()
-         * SendSuccess standalone path (handleBack):
-         *   slide slideY to screenHeight → popToTop()
-         */}
-        <Stack.Screen name="SendMoney" component={SendMoneyScreen} options={{ animation: 'none', presentation: 'transparentModal', gestureEnabled: false, contentStyle: { backgroundColor: 'transparent' } }} />
-        <Stack.Screen name="SendSuccess" component={SendSuccessScreen} options={{ animation: 'none', presentation: 'transparentModal', gestureEnabled: false, contentStyle: { backgroundColor: 'transparent' } }} />
-        <Stack.Screen name="SendError" component={SendErrorScreen} options={{ animation: 'fade', gestureEnabled: false }} />
+        {/* Send money — fullScreenModal slides up/down natively, keeps Main composited.
+         * "View transfer" replaces SendMoney with TransactionDetail (receipt mode). */}
+        <Stack.Screen name="SendMoney" component={SendMoneyScreen} />
 
         {/* Card flows */}
         <Stack.Screen name="CardList" component={CardListScreen} />
@@ -214,7 +178,7 @@ export default function RootNavigator() {
         <Stack.Screen name="AddCardName" component={AddCardNameScreen} />
         <Stack.Screen name="AddCardColor" component={AddCardColorScreen} />
         <Stack.Screen name="AddCardReview" component={AddCardReviewScreen} options={{ gestureEnabled: false }} />
-        <Stack.Screen name="SingleUseCreating" component={SingleUseCreatingScreen} options={{ gestureEnabled: false }} />
+        <Stack.Screen name="SingleUseCreating" component={AddCardReviewScreen} options={{ gestureEnabled: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

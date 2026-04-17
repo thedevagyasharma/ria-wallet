@@ -19,6 +19,7 @@ import { colors, typography, spacing, radius } from '../theme';
 import { getCurrency, formatAmount } from '../data/currencies';
 import { CATEGORY_META } from '../utils/cardCategories';
 import FlagIcon from './FlagIcon';
+import Chip from './Chip';
 import { StepRow, type Step } from './TransferSteps';
 import type { Card, Transaction, TransactionStatus, Wallet } from '../stores/types';
 
@@ -40,32 +41,17 @@ type BadgeVariant = TransactionStatus | 'inProgress';
 
 export function statusConfig(variant: BadgeVariant) {
   switch (variant) {
-    case 'completed':  return { label: 'COMPLETED',   color: colors.success, bg: colors.successSubtle };
-    case 'pending':    return { label: 'PENDING',     color: colors.pending, bg: colors.pendingSubtle };
+    case 'completed':  return { label: 'COMPLETE',    color: colors.success, bg: colors.successSubtle };
+    case 'pending':    return { label: 'PENDING', color: colors.brand, bg: colors.brandSubtle };
     case 'failed':     return { label: 'FAILED',      color: colors.failed,  bg: colors.failedSubtle  };
-    case 'inProgress': return { label: 'IN PROGRESS', color: colors.pending, bg: colors.pendingSubtle };
+    case 'inProgress': return { label: 'PENDING', color: colors.brand, bg: colors.brandSubtle };
   }
 }
 
 export function StatusBadge({ variant }: { variant: BadgeVariant }) {
   const cfg = statusConfig(variant);
-  return (
-    <View style={[badgeStyles.badge, { backgroundColor: cfg.bg, borderColor: cfg.color }]}>
-      <View style={[badgeStyles.dot, { backgroundColor: cfg.color }]} />
-      <Text style={[badgeStyles.label, { color: cfg.color }]}>{cfg.label}</Text>
-    </View>
-  );
+  return <Chip label={cfg.label} color={cfg.color} bg={cfg.bg} />;
 }
-
-const badgeStyles = StyleSheet.create({
-  badge: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
-    borderRadius: radius.full, borderWidth: 1,
-    paddingHorizontal: spacing.md, paddingVertical: 5,
-  },
-  dot: { width: 6, height: 6, borderRadius: radius.full },
-  label: { fontSize: typography.xs, fontWeight: typography.bold, letterSpacing: 1 },
-});
 
 // ─── Reference + copy ─────────────────────────────────────────────────────────
 
@@ -105,10 +91,18 @@ const refStyles = StyleSheet.create({
   btnText: { fontSize: typography.xs, color: colors.brand, fontWeight: typography.semibold },
 });
 
-// ─── P2P summary card ─────────────────────────────────────────────────────────
+// ─── P2P summary (flat rows) ─────────────────────────────────────────────────
+
+function SummaryRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+  return (
+    <View style={listStyles.row}>
+      <Text style={[rowStyles.label, bold && summaryStyles.boldLabel]}>{label}</Text>
+      <Text style={[rowStyles.value, bold && summaryStyles.boldValue]}>{value}</Text>
+    </View>
+  );
+}
 
 export function TxSummaryCard({ tx }: { tx: Transaction }) {
-  // Only render when we have the P2P breakdown data.
   if (tx.fee === undefined || tx.receivedAmount === undefined || !tx.receiveCurrency) return null;
 
   const total    = Math.abs(tx.amount);
@@ -119,25 +113,22 @@ export function TxSummaryCard({ tx }: { tx: Transaction }) {
   const firstName = tx.recipientName.split(' ')[0];
 
   return (
-    <View style={cardStyles.card}>
-      <Row label="You sent"     value={formatAmount(sendPart, tx.currency)} />
-      <Divider />
-      <Row label="Transfer fee" value={formatAmount(tx.fee, tx.currency)} />
-      <View style={cardStyles.totalDivider} />
-      <View style={cardStyles.totalRow}>
-        <Text style={cardStyles.totalLabel}>Total deducted</Text>
-        <Text style={cardStyles.totalValue}>{formatAmount(total, tx.currency)}</Text>
-      </View>
-      <Divider />
-      <Row
+    <View>
+      <SummaryRow label="You sent" value={formatAmount(sendPart, tx.currency)} />
+      <View style={listStyles.divider} />
+      <SummaryRow label="Transfer fee" value={formatAmount(tx.fee, tx.currency)} />
+      <View style={listStyles.divider} />
+      <SummaryRow label="Total deducted" value={formatAmount(total, tx.currency)} bold />
+      <View style={listStyles.divider} />
+      <SummaryRow
         label={`${firstName} receives`}
         value={`${formatAmount(tx.receivedAmount, tx.receiveCurrency)} ${tx.receiveCurrency}`}
       />
       {rateLine && (
         <>
-          <Divider />
-          <View style={cardStyles.footnote}>
-            <Text style={cardStyles.footnoteText}>{rateLine}</Text>
+          <View style={listStyles.divider} />
+          <View style={summaryStyles.footnote}>
+            <Text style={summaryStyles.footnoteText}>{rateLine}</Text>
           </View>
         </>
       )}
@@ -153,8 +144,8 @@ export function TxSummaryCard({ tx }: { tx: Transaction }) {
  * label; this just renders the rows.
  */
 export function TxDetailsList({
-  tx, wallet, card, flat = true,
-}: { tx: Transaction; wallet?: Wallet; card?: Card; flat?: boolean }) {
+  tx, wallet, card,
+}: { tx: Transaction; wallet?: Wallet; card?: Card }) {
   const dateStr = new Intl.DateTimeFormat('en-US', {
     month: 'long', day: 'numeric', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
@@ -162,42 +153,66 @@ export function TxDetailsList({
 
   const currency = getCurrency(tx.currency);
   const cardMeta = tx.category ? CATEGORY_META[tx.category] : undefined;
-
   const walletValue = `${tx.currency}${wallet?.nickname ? ` · ${wallet.nickname}` : ''}`;
+  const isP2P = !isCardTx(tx);
 
   const showNote   = !!tx.note && tx.status !== 'failed';
   const showReason = tx.status === 'failed';
 
-  const rows: React.ReactNode[] = [
-    <FlatRow key="date"   label="Date"   value={dateStr} flat={flat} />,
-    <FlatRow key="wallet" label="Wallet" value={walletValue} flagCode={currency.flag} flat={flat} />,
-  ];
-  if (card)       rows.push(<FlatRow key="card"     label="Card"     value={`${card.name} •••• ${card.last4}`} flat={flat} />);
-  if (cardMeta)   rows.push(<FlatRow key="category" label="Category" value={cardMeta.label} flat={flat} />);
-  if (showNote)   rows.push(<FlatRow key="note"     label="Note"     value={tx.note!} flat={flat} />);
-  if (showReason) rows.push(<FlatRow key="reason"   label="Reason"   value={tx.note ?? 'Transfer rejected by payment network'} valueColor={colors.failed} flat={flat} />);
+  const rows: React.ReactNode[] = [];
+  if (isP2P)      rows.push(<FlatRow key="recipient" label="Recipient" value={tx.recipientName} />);
+  rows.push(<FlatRow key="date" label="Date" value={dateStr} />);
+  rows.push(<FlatRow key="wallet" label="Wallet" value={walletValue} flagCode={currency.flag} />);
+  rows.push(<RefRow key="ref" refValue={getTxRef(tx)} />);
+  if (card)       rows.push(<FlatRow key="card"     label="Card"     value={`${card.name} •••• ${card.last4}`} />);
+  if (cardMeta)   rows.push(<FlatRow key="category" label="Category" value={cardMeta.label} />);
+  if (showNote)   rows.push(<FlatRow key="note"     label="Note"     value={tx.note!} />);
+  if (showReason) rows.push(<StackedRow key="reason" label="Reason" value={tx.note ?? 'Transfer rejected by payment network'} valueColor={colors.failed} />);
 
-  const wrapStyle = flat ? undefined : cardStyles.card;
   return (
-    <View style={wrapStyle}>
+    <View>
       {rows.map((row, i) => (
         <React.Fragment key={i}>
           {row}
-          {i < rows.length - 1 && <View style={flat ? listStyles.divider : cardStyles.divider} />}
+          {i < rows.length - 1 && <View style={listStyles.divider} />}
         </React.Fragment>
       ))}
     </View>
   );
 }
 
+function RefRow({ refValue }: { refValue: string }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+  return (
+    <Pressable onPress={onCopy} style={listStyles.row}>
+      <Text style={rowStyles.label}>Reference</Text>
+      <View style={refFlatStyles.valueRow}>
+        <Text style={[rowStyles.value, { fontVariant: ['tabular-nums'] }]}>{refValue}</Text>
+        {copied
+          ? <Check size={16} color={colors.success} strokeWidth={2.5} />
+          : <Copy size={16} color={colors.textSecondary} strokeWidth={2} />}
+      </View>
+    </Pressable>
+  );
+}
+
+const refFlatStyles = StyleSheet.create({
+  valueRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1, justifyContent: 'flex-end' },
+});
+
 function FlatRow({
-  label, value, flagCode, valueColor, flat,
+  label, value, flagCode, valueColor,
 }: {
   label: string; value: string;
-  flagCode?: string; valueColor?: string; flat: boolean;
+  flagCode?: string; valueColor?: string;
 }) {
   return (
-    <View style={flat ? listStyles.row : rowStyles.row}>
+    <View style={listStyles.row}>
       <Text style={rowStyles.label}>{label}</Text>
       {flagCode ? (
         <View style={rowStyles.valueWithFlag}>
@@ -214,6 +229,26 @@ function FlatRow({
     </View>
   );
 }
+
+function StackedRow({
+  label, value, valueColor,
+}: {
+  label: string; value: string; valueColor?: string;
+}) {
+  return (
+    <View style={stackedStyles.row}>
+      <Text style={rowStyles.label}>{label}</Text>
+      <Text style={[stackedStyles.value, valueColor ? { color: valueColor } : undefined]}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+const stackedStyles = StyleSheet.create({
+  row: { paddingVertical: spacing.md, gap: spacing.xs },
+  value: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.medium, lineHeight: 20 },
+});
 
 const listStyles = StyleSheet.create({
   row: {
@@ -236,36 +271,47 @@ export function shouldShowTimeline(tx: Transaction): boolean {
   return !isCardTx(tx) && !isIncoming(tx);
 }
 
+function fmtStepTime(date: Date): string {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  }).format(date);
+}
+
 export function buildTimelineSteps(
   status: TransactionStatus,
   firstName: string,
+  txDate?: Date,
 ): Step[] {
+  const t0 = txDate ? fmtStepTime(txDate) : undefined;
+  const t1 = txDate ? fmtStepTime(new Date(txDate.getTime() + 2 * 60_000)) : undefined;
+  const t2 = txDate ? fmtStepTime(new Date(txDate.getTime() + 5 * 60_000)) : undefined;
+
   if (status === 'completed') {
     return [
-      { label: 'Transfer initiated',            sub: 'Confirmed — funds reserved', status: 'done' },
-      { label: 'Processing transfer',           sub: 'Completed',                  status: 'done' },
-      { label: `${firstName} received funds`,   sub: 'Delivered',                  status: 'done' },
+      { label: 'Transfer initiated',            sub: 'Confirmed — funds reserved', status: 'done', time: t0 },
+      { label: 'Processing transfer',           sub: 'Completed',                  status: 'done', time: t1 },
+      { label: `${firstName} received funds`,   sub: 'Delivered',                  status: 'done', time: t2 },
     ];
   }
   if (status === 'pending') {
     return [
-      { label: 'Transfer initiated',            sub: 'Confirmed — funds reserved', status: 'done'    },
-      { label: 'Processing transfer',           sub: 'In progress…',               status: 'active'  },
+      { label: 'Transfer initiated',            sub: 'Confirmed — funds reserved', status: 'done',    time: t0 },
+      { label: 'Processing transfer',           sub: 'In progress…',               status: 'active',  time: t1 },
       { label: `${firstName} receives funds`,   sub: 'Awaiting delivery',          status: 'pending' },
     ];
   }
   // failed
   return [
-    { label: 'Transfer initiated',            sub: 'Confirmed — funds reserved', status: 'done'    },
-    { label: 'Processing transfer',           sub: 'Failed — transfer rejected', status: 'failed'  },
+    { label: 'Transfer initiated',            sub: 'Confirmed — funds reserved', status: 'done',   time: t0 },
+    { label: 'Processing transfer',           sub: 'Failed — transfer rejected', status: 'failed', time: t1 },
     { label: `${firstName} receives funds`,   sub: 'Not delivered',              status: 'pending' },
   ];
 }
 
 export function TxTimeline({
-  status, firstName,
-}: { status: TransactionStatus; firstName: string }) {
-  const steps = buildTimelineSteps(status, firstName);
+  status, firstName, txDate,
+}: { status: TransactionStatus; firstName: string; txDate?: Date }) {
+  const steps = buildTimelineSteps(status, firstName, txDate);
   return (
     <View style={timelineStyles.wrap}>
       {steps.map((step, i) => (
@@ -279,59 +325,15 @@ const timelineStyles = StyleSheet.create({
   wrap: { paddingBottom: spacing.md },
 });
 
-// ─── Shared Row primitive ─────────────────────────────────────────────────────
-
-function Row({
-  label, value, flagCode, valueColor,
-}: { label: string; value: string; flagCode?: string; valueColor?: string }) {
-  return (
-    <View style={rowStyles.row}>
-      <Text style={rowStyles.label}>{label}</Text>
-      {flagCode ? (
-        <View style={rowStyles.valueWithFlag}>
-          <FlagIcon code={flagCode} size={14} />
-          <Text style={[rowStyles.value, valueColor ? { color: valueColor } : undefined]}>
-            {value}
-          </Text>
-        </View>
-      ) : (
-        <Text style={[rowStyles.value, valueColor ? { color: valueColor } : undefined]}>
-          {value}
-        </Text>
-      )}
-    </View>
-  );
-}
-
-function Divider() {
-  return <View style={cardStyles.divider} />;
-}
-
 const rowStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.md,
-  },
   label: { fontSize: typography.base, color: colors.textSecondary, flexShrink: 0 },
   value: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.medium, textAlign: 'right', flex: 1 },
   valueWithFlag: { flexDirection: 'row', alignItems: 'center', gap: 6, justifyContent: 'flex-end', flex: 1 },
 });
 
-const cardStyles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surface, borderRadius: radius.lg,
-    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
-    marginBottom: spacing.md,
-  },
-  divider: { height: 1, backgroundColor: colors.borderSubtle },
-  totalDivider: { height: 2, backgroundColor: colors.border },
-  totalRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    backgroundColor: colors.surfaceHigh,
-  },
-  totalLabel: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.semibold },
-  totalValue: { fontSize: typography.lg,   color: colors.textPrimary, fontWeight: typography.bold, letterSpacing: -0.5 },
-  footnote:   { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, alignItems: 'center' },
+const summaryStyles = StyleSheet.create({
+  boldLabel: { color: colors.textPrimary, fontWeight: typography.semibold },
+  boldValue: { fontSize: typography.lg, fontWeight: typography.bold, letterSpacing: -0.5 },
+  footnote: { paddingVertical: spacing.sm, alignItems: 'center' },
   footnoteText: { fontSize: typography.xs, color: colors.textMuted, fontWeight: typography.medium },
 });

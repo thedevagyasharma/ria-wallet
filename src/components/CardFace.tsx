@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Dimensions, Pressable, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -141,6 +141,15 @@ function CardSurface({ card, children, compact = false, width: overrideW }: { ca
 
 // ─── Slot-machine flip character ──────────────────────────────────────────────
 // The masked dot rolls UP and exits; the actual digit rolls UP from below.
+//
+// Looping mode (loading state):
+//   Both faces show "•". Dot flips up, new dot comes in, hold, repeat.
+//   When looping stops:
+//     - If revealed=true  → one final flip: dot up, actual digit in, stop.
+//     - If revealed=false → finish current cycle, stop on dot.
+
+const LOOP_FLIP = 450;
+const LOOP_HOLD = 850;
 
 function FlipChar({
   masked,
@@ -148,21 +157,97 @@ function FlipChar({
   revealed,
   delay,
   color,
+  looping = false,
 }: {
   masked: string;
   actual: string;
   revealed: boolean;
   delay: number;
   color?: string;
+  looping?: boolean;
 }) {
   const progress = useSharedValue(0);
+  const [backFace, setBackFace] = React.useState(looping ? masked : actual);
+  const loopActiveRef = useRef(false);
+  const loopingPropRef = useRef(looping);
+  const revealedPropRef = useRef(revealed);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  loopingPropRef.current = looping;
+  revealedPropRef.current = revealed;
 
+  const runCycle = React.useCallback(() => {
+    // Flip: front (dot) rolls up, back face rolls in
+    progress.value = withTiming(1, {
+      duration: LOOP_FLIP,
+      easing: Easing.out(Easing.cubic),
+    });
+
+    timerRef.current = setTimeout(() => {
+      // Flip complete. Should we keep looping?
+      if (!loopingPropRef.current) {
+        if (revealedPropRef.current) {
+          // Reveal: reset, put actual on back, do one last flip
+          progress.value = 0;
+          setBackFace(actual);
+          timerRef.current = setTimeout(() => {
+            progress.value = withTiming(1, {
+              duration: LOOP_FLIP,
+              easing: Easing.out(Easing.cubic),
+            });
+            loopActiveRef.current = false;
+          }, 50);
+        } else {
+          // Just stop on dot
+          loopActiveRef.current = false;
+        }
+        return;
+      }
+
+      // Continue looping: snap reset (both faces are dots), schedule next
+      progress.value = 0;
+      timerRef.current = setTimeout(runCycle, LOOP_HOLD);
+    }, LOOP_FLIP);
+  }, [actual, masked]);
+
+  // Start the loop on mount
   useEffect(() => {
-    progress.value = withDelay(
-      delay,
-      withTiming(revealed ? 1 : 0, { duration: 320, easing: Easing.out(Easing.cubic) }),
-    );
-  }, [revealed]);
+    if (looping) {
+      loopActiveRef.current = true;
+      setBackFace(masked);
+      timerRef.current = setTimeout(runCycle, delay);
+    }
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, []);
+
+  // When looping stops: cancel pending timers, do the reveal or settle
+  useEffect(() => {
+    if (!looping && loopActiveRef.current) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      loopActiveRef.current = false;
+      if (revealed) {
+        progress.value = 0;
+        setBackFace(actual);
+        timerRef.current = setTimeout(() => {
+          progress.value = withTiming(1, {
+            duration: LOOP_FLIP,
+            easing: Easing.out(Easing.cubic),
+          });
+        }, delay + 50);
+      } else {
+        progress.value = 0;
+      }
+      return;
+    }
+
+    // Non-looping reveal (normal card list behavior)
+    if (!loopActiveRef.current && !looping) {
+      setBackFace(actual);
+      progress.value = withDelay(
+        delay,
+        withTiming(revealed ? 1 : 0, { duration: 320, easing: Easing.out(Easing.cubic) }),
+      );
+    }
+  }, [revealed, looping]);
 
   const frontStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: interpolate(progress.value, [0, 1], [0, -CHAR_H]) }],
@@ -174,7 +259,7 @@ function FlipChar({
   return (
     <View style={styles.charCell}>
       <Animated.View style={[StyleSheet.absoluteFill, styles.charInner, backStyle]}>
-        <Text style={[styles.charText, color ? { color } : undefined]}>{actual}</Text>
+        <Text style={[styles.charText, color ? { color } : undefined]}>{backFace}</Text>
       </Animated.View>
       <Animated.View style={[styles.charInner, frontStyle]}>
         <Text style={[styles.charText, color ? { color } : undefined]}>{masked}</Text>
@@ -185,16 +270,29 @@ function FlipChar({
 
 // ─── 16-digit card number ─────────────────────────────────────────────────────
 
-function FlipCardNumber({ fullNumber, revealed, color }: { fullNumber: string; revealed: boolean; color?: string }) {
+function FlipCardNumber({ fullNumber, revealed, color, looping = false, maskFirst12 = false }: { fullNumber: string; revealed: boolean; color?: string; looping?: boolean; maskFirst12?: boolean }) {
   const digits = fullNumber.replace(/\D/g, '').padEnd(16, '0');
   return (
     <View style={styles.flipRow}>
-      {Array.from({ length: 16 }, (_, i) => (
-        <React.Fragment key={i}>
-          {i > 0 && i % 4 === 0 && <View style={styles.groupGap} />}
-          <FlipChar masked="•" actual={digits[i] ?? '0'} revealed={i >= 12 || revealed} delay={i * 38} color={color} />
-        </React.Fragment>
-      ))}
+      {Array.from({ length: 16 }, (_, i) => {
+        const isLast4 = i >= 12;
+        const charRevealed = maskFirst12
+          ? isLast4 && revealed
+          : isLast4 || revealed;
+        return (
+          <React.Fragment key={i}>
+            {i > 0 && i % 4 === 0 && <View style={styles.groupGap} />}
+            <FlipChar
+              masked="•"
+              actual={!isLast4 && maskFirst12 ? '•' : digits[i] ?? '0'}
+              revealed={charRevealed}
+              delay={i * 38}
+              color={color}
+              looping={looping}
+            />
+          </React.Fragment>
+        );
+      })}
     </View>
   );
 }
@@ -207,6 +305,26 @@ function FlipCvv({ cvv, revealed, color }: { cvv: string; revealed: boolean; col
       {Array.from(cvv).map((digit, i) => (
         <FlipChar key={i} masked="•" actual={digit} revealed={revealed} delay={i * 70} color={color} />
       ))}
+    </View>
+  );
+}
+
+// ─── Expiry digits ───────────────────────────────────────────────────────────
+
+function FlipExpiry({ expiry, revealed, color, looping = false, baseDelay = 0 }: { expiry: string; revealed: boolean; color?: string; looping?: boolean; baseDelay?: number }) {
+  return (
+    <View style={styles.flipRow}>
+      {expiry.split('').map((ch, i) =>
+        ch === '/' ? (
+          <View key={i} style={styles.charCell}>
+            <View style={styles.charInner}>
+              <Text style={[styles.charText, color ? { color } : undefined]}>/</Text>
+            </View>
+          </View>
+        ) : (
+          <FlipChar key={i} masked="•" actual={ch} revealed={revealed} delay={baseDelay + i * 60} color={color} looping={looping} />
+        ),
+      )}
     </View>
   );
 }
@@ -303,6 +421,8 @@ const watermarkStyles = StyleSheet.create({
 
 // ─── Front face ──────────────────────────────────────────────────────────────
 
+
+
 export function CardFront({
   card,
   currency,
@@ -312,6 +432,7 @@ export function CardFront({
   onCopyCvv,
   copiedField,
   compact = false,
+  loading = false,
   width: overrideW,
 }: {
   card: Card;
@@ -323,6 +444,7 @@ export function CardFront({
   copiedField?: string | null;
   /** Stack-preview mode: hides EXPIRES (CVV is already gated by interactive). */
   compact?: boolean;
+  loading?: boolean;
   width?: number;
 }) {
   const isFrozen = card.frozen;
@@ -332,6 +454,8 @@ export function CardFront({
   const light = card.finish === 'metallic' ? false : isLightColor(card.color);
   const inverted = card.badgeTheme === 'inverted';
   const tc = cardTextColors(light);
+  const startedLoading = useRef(loading);
+  const useFlipLoading = startedLoading.current;
 
   return (
     <CardSurface card={card} compact={compact} width={overrideW}>
@@ -397,6 +521,10 @@ export function CardFront({
             </View>
           )}
         </Pressable>
+      ) : useFlipLoading ? (
+        <View style={styles.numRect}>
+          <FlipCardNumber fullNumber={card.fullNumber} revealed={!loading} color={tc.primary} looping={loading} maskFirst12 />
+        </View>
       ) : (
         <Text style={[styles.cardNumber, { color: tc.primary }]}>•••• •••• •••• {card.last4}</Text>
       )}
@@ -406,7 +534,11 @@ export function CardFront({
 
         <View>
           <Text style={[styles.fieldLabel, { color: tc.muted }]}>EXPIRES</Text>
-          <Text style={[styles.fieldValue, { color: tc.primary }]}>{card.expiry}</Text>
+          {useFlipLoading ? (
+            <FlipExpiry expiry={card.expiry} revealed={!loading} color={tc.primary} looping={loading} baseDelay={12 * 38} />
+          ) : (
+            <Text style={[styles.fieldValue, { color: tc.primary }]}>{card.expiry}</Text>
+          )}
         </View>
 
         {interactive && (

@@ -41,7 +41,7 @@ export function getFee(amount: number, fromCurrency: string): number {
 
 /** Estimated delivery time string. */
 export function getETA(fromCurrency: string, toCurrency: string): string {
-  if (fromCurrency === toCurrency) return 'Instantly';
+  if (fromCurrency === toCurrency) return 'Instant';
   const instant = ['USD', 'EUR', 'GBP', 'MXN'];
   if (instant.includes(fromCurrency) && instant.includes(toCurrency)) return 'Within minutes';
   return 'Within 1–2 hours';

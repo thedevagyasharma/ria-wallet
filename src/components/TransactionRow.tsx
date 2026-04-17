@@ -47,13 +47,13 @@ export default function TransactionRow({
       </View>
 
       <View style={styles.middle}>
-        <Text style={[styles.name, isFailed && styles.muted]} numberOfLines={1}>
-          {tx.recipientName}
-        </Text>
-        <View style={styles.meta}>
+        <View style={styles.nameRow}>
+          <Text style={[styles.name, isFailed && styles.muted]} numberOfLines={1}>
+            {tx.recipientName}
+          </Text>
           {showChip && <StatusChip status={tx.status} />}
-          <Text style={styles.metaText}>{date}</Text>
         </View>
+        <Text style={styles.metaText}>{date}</Text>
       </View>
 
       <Text style={[styles.amount, isFailed ? styles.muted : isCredit ? styles.credit : styles.debit]}>
@@ -92,8 +92,8 @@ const styles = StyleSheet.create({
   },
   muted: { color: colors.textMuted },
 
-  meta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  metaText: { fontSize: typography.xs, color: colors.textMuted },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  metaText: { fontSize: typography.xs, color: colors.textMuted, marginTop: 2 },
 
   amount: { fontSize: typography.base, fontWeight: typography.semibold },
   credit: { color: colors.success },

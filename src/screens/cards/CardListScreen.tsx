@@ -7,6 +7,7 @@ import {
   ScrollView,
   Pressable,
   Image,
+  Platform,
   Dimensions,
   ListRenderItemInfo,
   NativeSyntheticEvent,
@@ -27,6 +28,8 @@ import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ChevronLeft, Plus, Eye, EyeOff, Settings, KeyRound } from 'lucide-react-native';
+import AppleWalletBadge from '../../../assets/US-UK_Add_to_Apple_Wallet_RGB_101421.svg';
+import GoogleWalletBadge from '../../../assets/enUS_add_to_google_wallet_add-wallet-badge.png';
 
 import { colors, typography, spacing, radius } from '../../theme';
 import SecondaryButton from '../../components/SecondaryButton';
@@ -34,6 +37,7 @@ import PrimaryButton from '../../components/PrimaryButton';
 import FlatButton from '../../components/FlatButton';
 import CardTransactionRow from '../../components/CardTransactionRow';
 import ViewPinSheet from '../../components/ViewPinSheet';
+import BottomSheet from '../../components/BottomSheet';
 import { useCardStore } from '../../stores/useCardStore';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { getCurrency } from '../../data/currencies';
@@ -147,13 +151,15 @@ function ActionBtn({
   icon,
   label,
   onPress,
+  disabled,
 }: {
   icon: React.ReactNode;
   label: string;
   onPress: () => void;
+  disabled?: boolean;
 }) {
   return (
-    <Pressable onPress={onPress} style={styles.actionBtn}>
+    <Pressable onPress={onPress} disabled={disabled} style={[styles.actionBtn, disabled && { opacity: 0.4 }]}>
       {({ pressed }) => (
         <>
           <View style={[styles.actionCircle, pressed && styles.actionCirclePressed]}>{icon}</View>
@@ -247,7 +253,7 @@ function SpendingLimitsSection({
 export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
   const navigation = useNavigation<Nav>();
   const { walletId } = route.params;
-  const { cards } = useCardStore();
+  const { cards, justAddedCardId, clearJustAddedCardId } = useCardStore();
   const { wallets, transactions } = useWalletStore();
 
   const wallet = wallets.find((w) => w.id === walletId);
@@ -259,6 +265,18 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
   const [cvvRevealed, setCvvRevealed] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [showPin, setShowPin] = useState(false);
+  const [showWalletPrompt, setShowWalletPrompt] = useState(false);
+
+  const walletLabel = Platform.OS === 'ios' ? 'Apple Wallet' : 'Google Wallet';
+
+  useEffect(() => {
+    if (!justAddedCardId) return;
+    const timer = setTimeout(() => {
+      setShowWalletPrompt(true);
+      clearJustAddedCardId();
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [justAddedCardId, clearJustAddedCardId]);
 
   const scrollX = useSharedValue(0);
 
@@ -361,18 +379,20 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
         <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
           <ChevronLeft size={24} color={colors.textPrimary} strokeWidth={2} />
         </Pressable>
-        {currency ? (
-          <View style={styles.titleRow}>
-            <FlagIcon code={currency.flag} size={18} />
-            <Text style={styles.title}>{currency.code}</Text>
-          </View>
-        ) : (
-          <Text style={styles.title}>Cards</Text>
-        )}
+        <View style={styles.titleCenter}>
+          {currency ? (
+            <View style={styles.titleRow}>
+              <FlagIcon code={currency.flag} size={18} />
+              <Text style={styles.title}>{currency.code}</Text>
+            </View>
+          ) : (
+            <Text style={styles.title}>Cards</Text>
+          )}
+        </View>
         {walletCards.length > 0 ? (
           <SecondaryButton onPress={handleAddCard} style={styles.addBtn}>
             <Plus size={11} color={colors.textPrimary} strokeWidth={2.5} />
-            <Text style={styles.addBtnText}>Add card</Text>
+            <Text style={styles.addBtnText}>Card</Text>
           </SecondaryButton>
         ) : (
           <View style={styles.addBtn} />
@@ -453,8 +473,9 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
               onPress={handleToggleRevealCvv}
             />
             <ActionBtn
-              icon={<KeyRound size={22} color={colors.textSecondary} strokeWidth={1.8} />}
+              icon={<KeyRound size={22} color={activeCard?.type !== 'physical' ? colors.textMuted : colors.textSecondary} strokeWidth={1.8} />}
               label="View PIN"
+              disabled={activeCard?.type !== 'physical'}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setShowPin(true);
@@ -468,7 +489,7 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
           </View>
 
           {/* Spending limits */}
-          {activeCard && currency && (
+          {activeCard && activeCard.type !== 'single-use' && currency && (
             <SpendingLimitsSection
               card={activeCard}
               cardTxs={cardTxs}
@@ -506,6 +527,41 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
         pin={activeCard?.pin ?? '1234'}
         onClose={() => setShowPin(false)}
       />
+
+      <BottomSheet
+        visible={showWalletPrompt}
+        onClose={() => setShowWalletPrompt(false)}
+        swipeToDismiss
+      >
+        <View style={styles.walletPrompt}>
+          <Text style={styles.walletPromptTitle}>Add to {walletLabel}?</Text>
+          <Text style={styles.walletPromptBody}>
+            Use your card for contactless payments with {walletLabel}.
+          </Text>
+        </View>
+        <View style={styles.walletPromptActions}>
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowWalletPrompt(false);
+            }}
+            style={({ pressed }) => [styles.walletBadgeBtn, pressed && { opacity: 0.7 }]}
+          >
+            {Platform.OS === 'ios'
+              ? <AppleWalletBadge width={200} height={63} />
+              : <Image source={GoogleWalletBadge} style={styles.googleBadge} resizeMode="contain" />
+            }
+          </Pressable>
+          <FlatButton
+            onPress={() => setShowWalletPrompt(false)}
+            label="Not now"
+            style={styles.walletPromptDismiss}
+          />
+          <Text style={styles.walletPromptHint}>
+            You can always do this later in card settings.
+          </Text>
+        </View>
+      </BottomSheet>
     </SafeAreaView>
   );
 }
@@ -534,6 +590,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textPrimary,
     fontWeight: typography.semibold,
+  },
+  titleCenter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    pointerEvents: 'none',
   },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   title: {
@@ -722,5 +786,50 @@ const styles = StyleSheet.create({
   },
   emptyAddBtn: {
     paddingVertical: spacing.lg,
+  },
+
+  // ── Add to wallet prompt ──
+  walletPrompt: {
+    width: '100%',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  walletPromptTitle: {
+    fontSize: typography.xl,
+    color: colors.textPrimary,
+    fontWeight: typography.bold,
+    textAlign: 'center',
+  },
+  walletPromptBody: {
+    fontSize: typography.base,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 24,
+    paddingHorizontal: spacing.md,
+  },
+  walletPromptActions: {
+    width: '100%',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  walletBadgeBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleBadge: {
+    width: 200,
+    height: 63,
+  },
+  walletPromptDismiss: {
+    width: '100%',
+    paddingVertical: spacing.md,
+  },
+  walletPromptHint: {
+    fontSize: typography.xs,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.xs,
   },
 });

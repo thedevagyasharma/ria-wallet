@@ -21,6 +21,7 @@ import {
 
 import { colors, typography, spacing, radius } from '../../theme';
 import { alpha } from '../../utils/color';
+import Chip from '../../components/Chip';
 import { useWalletStore } from '../../stores/useWalletStore';
 import SetPrimarySheet from '../../components/SetPrimarySheet';
 import { getCurrency, formatAmount } from '../../data/currencies';
@@ -203,9 +204,7 @@ export default function WalletSettingsScreen() {
               </View>
             </View>
             {wallet.isPrimary ? (
-              <View style={[styles.primaryBadge, { backgroundColor: alpha(accent, 0.1), borderColor: alpha(accent, 0.25) }]}>
-                <Text style={[styles.primaryBadgeText, { color: accent }]}>Active</Text>
-              </View>
+              <Chip label="Active" color={accent} bg={alpha(accent, 0.1)} />
             ) : (
               <Text style={styles.rowAction}>Set</Text>
             )}
@@ -341,12 +340,4 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
 
-  // ── Primary badge ──
-  primaryBadge: {
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: radius.full,
-    borderWidth: 1,
-  },
-  primaryBadgeText: { fontSize: 11, fontWeight: typography.semibold },
 });

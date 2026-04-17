@@ -17,14 +17,14 @@ import { colors, typography, spacing, radius } from '../theme';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type StepStatus = 'done' | 'active' | 'failed' | 'pending';
-export type Step = { label: string; sub: string; status: StepStatus };
+export type Step = { label: string; sub: string; status: StepStatus; time?: string };
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
 export function DoneIcon() {
   return (
     <View style={iconStyles.done}>
-      <Check size={14} color="#fff" strokeWidth={2.5} />
+      <Check size={10} color="#fff" strokeWidth={3} />
     </View>
   );
 }
@@ -50,7 +50,7 @@ export function ActiveIcon() {
 export function FailedIcon() {
   return (
     <View style={iconStyles.failed}>
-      <X size={14} color="#fff" strokeWidth={2.5} />
+      <X size={10} color="#fff" strokeWidth={3} />
     </View>
   );
 }
@@ -59,25 +59,27 @@ export function PendingIcon() {
   return <View style={iconStyles.pending} />;
 }
 
+const ICON_SIZE = 20;
+
 const iconStyles = StyleSheet.create({
   done: {
-    width: 28, height: 28, borderRadius: radius.full,
+    width: ICON_SIZE, height: ICON_SIZE, borderRadius: radius.full,
     backgroundColor: colors.success,
     alignItems: 'center', justifyContent: 'center',
   },
-  activeWrap: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  activeWrap: { width: ICON_SIZE, height: ICON_SIZE, alignItems: 'center', justifyContent: 'center' },
   activeRing: {
-    position: 'absolute', width: 28, height: 28, borderRadius: radius.full,
+    position: 'absolute', width: ICON_SIZE, height: ICON_SIZE, borderRadius: radius.full,
     borderWidth: 2, borderColor: colors.brand,
   },
-  activeDot: { width: 12, height: 12, borderRadius: radius.full, backgroundColor: colors.brand },
+  activeDot: { width: 8, height: 8, borderRadius: radius.full, backgroundColor: colors.brand },
   failed: {
-    width: 28, height: 28, borderRadius: radius.full,
+    width: ICON_SIZE, height: ICON_SIZE, borderRadius: radius.full,
     backgroundColor: colors.failed,
     alignItems: 'center', justifyContent: 'center',
   },
   pending: {
-    width: 28, height: 28, borderRadius: radius.full,
+    width: ICON_SIZE, height: ICON_SIZE, borderRadius: radius.full,
     borderWidth: 2, borderColor: colors.border,
   },
 });
@@ -100,17 +102,24 @@ export function StepRow({ step, isLast }: { step: Step; isLast: boolean }) {
         {!isLast && <View style={[stepStyles.stepConnector, { backgroundColor: connectorColor }]} />}
       </View>
       <View style={stepStyles.stepBody}>
-        <Text style={[stepStyles.stepLabel, step.status === 'pending' && stepStyles.stepLabelMuted]}>
-          {step.label}
-        </Text>
-        <Text style={[
-          stepStyles.stepSub,
-          step.status === 'done'   && stepStyles.stepSubDone,
-          step.status === 'active' && stepStyles.stepSubActive,
-          step.status === 'failed' && stepStyles.stepSubFailed,
-        ]}>
-          {step.sub}
-        </Text>
+        <View style={stepStyles.stepTextWrap}>
+          <View style={stepStyles.stepLabelRow}>
+            <Text style={[stepStyles.stepLabel, step.status === 'pending' && stepStyles.stepLabelMuted]}>
+              {step.label}
+            </Text>
+            {step.time && (
+              <Text style={stepStyles.stepTime}>{step.time}</Text>
+            )}
+          </View>
+          <Text style={[
+            stepStyles.stepSub,
+            step.status === 'done'   && stepStyles.stepSubDone,
+            step.status === 'active' && stepStyles.stepSubActive,
+            step.status === 'failed' && stepStyles.stepSubFailed,
+          ]}>
+            {step.sub}
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -118,11 +127,14 @@ export function StepRow({ step, isLast }: { step: Step; isLast: boolean }) {
 
 const stepStyles = StyleSheet.create({
   stepRow: { flexDirection: 'row', gap: spacing.md },
-  stepIconCol: { alignItems: 'center', width: 28 },
-  stepConnector: { width: 2, flex: 1, minHeight: 20, marginVertical: 3 },
-  stepBody: { flex: 1, paddingBottom: spacing.lg, paddingTop: 3 },
-  stepLabel: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.medium },
+  stepIconCol: { alignItems: 'center', width: ICON_SIZE, paddingTop: 9 },
+  stepConnector: { width: 2, flex: 1, minHeight: 20, marginBottom: -9 },
+  stepBody: { flex: 1, paddingBottom: spacing.xl },
+  stepTextWrap: {},
+  stepLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  stepLabel: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.medium, flex: 1 },
   stepLabelMuted: { color: colors.textMuted },
+  stepTime: { fontSize: typography.xs, color: colors.textMuted, fontWeight: typography.medium },
   stepSub: { fontSize: typography.sm, color: colors.textSecondary, marginTop: 2 },
   stepSubDone:   { color: colors.success },
   stepSubActive: { color: colors.brand },

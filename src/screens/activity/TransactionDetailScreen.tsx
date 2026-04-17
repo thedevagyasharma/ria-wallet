@@ -7,25 +7,23 @@ import {
   Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ChevronLeft, ArrowUpRight, ArrowDownLeft, LifeBuoy } from 'lucide-react-native';
+import { X, LifeBuoy } from 'lucide-react-native';
+import PrimaryButton from '../../components/PrimaryButton';
 import SecondaryButton from '../../components/SecondaryButton';
 
 import { colors, typography, spacing, radius } from '../../theme';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useCardStore } from '../../stores/useCardStore';
-import { formatAmount } from '../../data/currencies';
-import { CATEGORY_META } from '../../utils/cardCategories';
-import type { Transaction } from '../../stores/types';
+import { getCurrency } from '../../data/currencies';
 import type { RootStackProps, RootStackParamList } from '../../navigation/types';
 import {
   StatusBadge,
-  RefCopyRow,
   TxSummaryCard,
   TxDetailsList,
   TxTimeline,
-  getTxRef,
   isCardTx,
   isIncoming,
   shouldShowTimeline,
@@ -33,10 +31,8 @@ import {
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
-
 export default function TransactionDetailScreen({ route }: RootStackProps<'TransactionDetail'>) {
-  const { txId } = route.params;
+  const { txId, mode = 'detail' } = route.params;
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
   const { transactions, wallets } = useWalletStore();
@@ -44,12 +40,18 @@ export default function TransactionDetailScreen({ route }: RootStackProps<'Trans
 
   const tx = transactions.find((t) => t.id === txId);
 
+  const isReceipt = mode === 'receipt';
+
+  const handleClose = () => {
+    navigation.goBack();
+  };
+
   if (!tx) {
     return (
       <View style={[styles.safe, { paddingTop: insets.top }]}>
         <View style={styles.navbar}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.navBackBtn}>
-            <ChevronLeft size={22} color={colors.textPrimary} strokeWidth={2} />
+          <Pressable onPress={handleClose} style={styles.navCloseBtn}>
+            <X size={20} color={colors.textPrimary} strokeWidth={2} />
           </Pressable>
         </View>
         <View style={styles.notFound}>
@@ -64,18 +66,26 @@ export default function TransactionDetailScreen({ route }: RootStackProps<'Trans
   const firstName = tx.recipientName.split(' ')[0];
   const incoming = isIncoming(tx);
   const isCard   = isCardTx(tx);
-  const formattedAmount = formatAmount(Math.abs(tx.amount), tx.currency);
+  const absAmount = Math.abs(tx.amount);
+  const heroSymbol = getCurrency(tx.currency).symbol;
+  const heroNumber = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  }).format(absAmount);
 
-  const heroLabel = isCard
-    ? tx.recipientName
-    : incoming ? `Received from ${tx.recipientName}` : `Sent to ${firstName}`;
+  const isInstant = tx.eta === 'Instant' || !tx.eta;
+  const timelineStatus = isReceipt
+    ? (isInstant ? 'completed' : 'pending')
+    : tx.status;
+  const badgeVariant = isReceipt
+    ? (isInstant ? 'completed' : 'inProgress')
+    : tx.status;
 
   return (
     <View style={[styles.safe, { paddingTop: insets.top }]}>
-      {/* ── Navbar ─────────────────────────────────────────────────── */}
+      {/* ── Navbar ── */}
       <View style={styles.navbar}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.navBackBtn} hitSlop={8}>
-          <ChevronLeft size={22} color={colors.textPrimary} strokeWidth={2} />
+        <Pressable onPress={handleClose} style={styles.navCloseBtn} hitSlop={8}>
+          <X size={20} color={colors.textPrimary} strokeWidth={2} />
         </Pressable>
         <Text style={styles.navTitle}>Transaction Details</Text>
         <View style={{ width: 36 }} />
@@ -85,26 +95,23 @@ export default function TransactionDetailScreen({ route }: RootStackProps<'Trans
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scroll,
-          { paddingBottom: 80 + insets.bottom + spacing.lg },
+          { paddingBottom: insets.bottom + spacing.xl },
         ]}
       >
-        {/* ── Hero ───────────────────────────────────────────────────── */}
+        {/* ── Hero ── */}
         <View style={styles.hero}>
-          <HeroAvatar tx={tx} />
+          <View style={styles.badgeWrap}>
+            <StatusBadge variant={badgeVariant} />
+          </View>
 
-          <Text style={styles.heroAmount}>
-            {incoming ? '+' : '−'}{formattedAmount}
-          </Text>
-          <Text style={styles.heroSub}>{heroLabel}</Text>
-
-          <StatusBadge variant={tx.status} />
-
-          <View style={styles.refWrap}>
-            <RefCopyRow refValue={getTxRef(tx)} />
+          <View style={styles.heroAmountRow}>
+            <Text style={styles.heroSymbol}>{heroSymbol}</Text>
+            <Text style={styles.heroAmount}>{heroNumber}</Text>
+            <Text style={styles.heroSymbolBalance}>{heroSymbol}</Text>
           </View>
         </View>
 
-        {/* ── Failed — refund notice ─────────────────────────────────── */}
+        {/* ── Failed — refund notice ── */}
         {tx.status === 'failed' && (
           <View style={styles.refundBanner}>
             <Text style={styles.refundText}>
@@ -113,63 +120,51 @@ export default function TransactionDetailScreen({ route }: RootStackProps<'Trans
           </View>
         )}
 
-        {/* ── Section: Summary (P2P with full breakdown) ────────────── */}
-        {!isCard && !incoming && tx.fee !== undefined && (
-          <View style={styles.summaryWrap}>
-            <TxSummaryCard tx={tx} />
-          </View>
-        )}
-
-        {/* ── Section: Details (flat per DECISIONS.md #144) ─────────── */}
-        <View style={[styles.section, !shouldShowTimeline(tx) && styles.sectionLast]}>
+        {/* ── Details ── */}
+        <View style={styles.section}>
           <Text style={styles.sectionLabel}>Details</Text>
           <TxDetailsList tx={tx} wallet={wallet} card={card} />
         </View>
 
-        {/* ── Section: Timeline (outgoing P2P only) ─────────────────── */}
+        {/* ── Summary (P2P outgoing with breakdown) ── */}
+        {!isCard && !incoming && tx.fee !== undefined && (
+          <View style={[styles.section, !shouldShowTimeline(tx) && styles.sectionLast]}>
+            <Text style={styles.sectionLabel}>Summary</Text>
+            <TxSummaryCard tx={tx} />
+          </View>
+        )}
+
+        {/* ── Timeline (outgoing P2P only) ── */}
         {shouldShowTimeline(tx) && (
           <View style={[styles.section, styles.sectionLast]}>
             <Text style={styles.sectionLabel}>Transfer status</Text>
-            <TxTimeline status={tx.status} firstName={firstName} />
+            <TxTimeline status={timelineStatus} firstName={firstName} txDate={tx.date} />
           </View>
         )}
+
+        {/* ── Actions ── */}
+        <View style={styles.actions}>
+          {isReceipt ? (
+            <PrimaryButton
+              onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+              label="Share receipt"
+              style={styles.actionBtn}
+            />
+          ) : (
+            !incoming && !isCard && (
+              <PrimaryButton
+                onPress={() => navigation.navigate('SendMoney', {})}
+                label="Send again"
+                style={styles.actionBtn}
+              />
+            )
+          )}
+          <SecondaryButton onPress={() => {}} style={styles.helpBtn}>
+            <LifeBuoy size={16} color={colors.textSecondary} strokeWidth={2} />
+            <Text style={styles.helpBtnText}>Get help with this transaction</Text>
+          </SecondaryButton>
+        </View>
       </ScrollView>
-
-      {/* ── Sticky footer — always available ───────────────────────── */}
-      <View style={[styles.stickyFooter, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
-        <SecondaryButton onPress={() => {}} style={styles.supportBtn}>
-          <LifeBuoy size={16} color={colors.textSecondary} strokeWidth={2} />
-          <Text style={styles.supportBtnText}>Get help with this transaction</Text>
-        </SecondaryButton>
-      </View>
-    </View>
-  );
-}
-
-// ─── Hero avatar (direction arrow for P2P, category icon for card) ────────────
-
-function HeroAvatar({ tx }: { tx: Transaction }) {
-  const incoming = isIncoming(tx);
-  const isCard   = isCardTx(tx);
-
-  if (isCard) {
-    const meta = CATEGORY_META[tx.category ?? 'other'];
-    const { Icon, iconColor, bgColor } = meta;
-    return (
-      <View style={[styles.heroAvatar, { backgroundColor: bgColor }]}>
-        <Icon size={24} color={iconColor} strokeWidth={2} />
-      </View>
-    );
-  }
-
-  return (
-    <View style={[
-      styles.heroAvatar,
-      { backgroundColor: incoming ? colors.successSubtle : colors.surface },
-    ]}>
-      {incoming
-        ? <ArrowDownLeft size={24} color={colors.success} strokeWidth={2} />
-        : <ArrowUpRight  size={24} color={colors.brand}   strokeWidth={2} />}
     </View>
   );
 }
@@ -182,15 +177,12 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
 
   navbar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: H_PAD,
-    paddingVertical: spacing.md,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: H_PAD, paddingVertical: spacing.md,
   },
-  navBackBtn: {
+  navCloseBtn: {
     width: 36, height: 36,
-    alignItems: 'center', justifyContent: 'center',
-    marginLeft: -6,
+    alignItems: 'center', justifyContent: 'center', marginLeft: -6,
   },
   navTitle: {
     flex: 1, textAlign: 'center',
@@ -199,82 +191,57 @@ const styles = StyleSheet.create({
 
   scroll: { paddingTop: spacing.sm },
 
-  // ── Hero ──
   hero: {
-    alignItems: 'center',
-    paddingHorizontal: H_PAD,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
-    gap: spacing.sm,
+    alignItems: 'center', paddingHorizontal: H_PAD,
+    paddingTop: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md,
   },
-  heroAvatar: {
-    width: 52, height: 52, borderRadius: radius.full,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: spacing.xs,
+  badgeWrap: { marginTop: -spacing.lg, marginBottom: spacing.sm },
+  heroAmountRow: { flexDirection: 'row', alignItems: 'flex-end' },
+  heroSymbol: {
+    fontSize: typography.lg, fontWeight: typography.bold,
+    color: colors.textSecondary, paddingBottom: 3, marginRight: 2,
+  },
+  heroSymbolBalance: {
+    fontSize: typography.lg, fontWeight: typography.bold,
+    opacity: 0, marginLeft: 2,
   },
   heroAmount: {
     fontSize: typography.xxl, fontWeight: typography.bold,
     color: colors.textPrimary, letterSpacing: -1,
   },
-  heroSub: { fontSize: typography.sm, color: colors.textSecondary },
 
-  refWrap: { alignSelf: 'stretch', marginTop: spacing.md },
-
-  // ── Summary (boxed — single summary artefact per DECISIONS.md #144) ──
-  summaryWrap: { paddingHorizontal: H_PAD, marginBottom: spacing.lg },
-
-  // ── Sections (flat per DECISIONS.md #144) ──
   section: {
-    paddingHorizontal: H_PAD,
-    paddingBottom: spacing.xl,
-    marginBottom: spacing.xl,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSubtle,
+    paddingHorizontal: H_PAD, paddingBottom: spacing.xl,
+    marginBottom: spacing.xl, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle,
   },
-  sectionLast: {
-    paddingBottom: 0,
-    marginBottom: spacing.lg,
-    borderBottomWidth: 0,
-  },
+  sectionLast: { paddingBottom: 0, marginBottom: spacing.lg, borderBottomWidth: 0 },
   sectionLabel: {
     fontSize: typography.xs, color: colors.textSecondary,
     fontWeight: typography.semibold, textTransform: 'uppercase', letterSpacing: 0.8,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.lg,
   },
 
-  // ── Failed refund banner ──
   refundBanner: {
     backgroundColor: colors.failedSubtle,
     borderRadius: radius.md, borderWidth: 1,
     borderColor: colors.failed + '33',
     paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    marginHorizontal: H_PAD,
-    marginBottom: spacing.md,
+    marginHorizontal: H_PAD, marginBottom: spacing.md,
   },
   refundText: { fontSize: typography.sm, color: colors.failed, lineHeight: 20 },
 
-  // ── Sticky footer ──
-  stickyFooter: {
-    paddingHorizontal: H_PAD,
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.bg,
+  actions: {
+    paddingHorizontal: H_PAD, paddingTop: spacing.md, gap: spacing.sm,
   },
-  supportBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
+  actionBtn: { paddingVertical: spacing.lg },
+  helpBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: spacing.sm, paddingVertical: spacing.lg,
   },
-  supportBtnText: {
-    fontSize: typography.base,
-    fontWeight: typography.medium,
-    color: colors.textSecondary,
+  helpBtnText: {
+    fontSize: typography.base, fontWeight: typography.medium, color: colors.textSecondary,
   },
 
-  // ── Not found ──
   notFound: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   notFoundText: { fontSize: typography.base, color: colors.textMuted },
 });

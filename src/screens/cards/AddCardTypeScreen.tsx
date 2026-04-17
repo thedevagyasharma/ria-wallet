@@ -6,6 +6,7 @@ import { useNavigation } from '@react-navigation/native';
 
 import { ChevronLeft, ChevronRight, Globe, CreditCard, Hash } from 'lucide-react-native';
 import { colors, typography, spacing, radius } from '../../theme';
+import Chip from '../../components/Chip';
 import type { RootStackProps } from '../../navigation/types';
 import type { CardType } from '../../stores/types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -103,9 +104,7 @@ export default function AddCardTypeScreen({ route }: RootStackProps<'AddCardType
                 <Text style={styles.tagline}>{opt.tagline}</Text>
               </View>
               {opt.fee && (
-                <View style={styles.feeBadge}>
-                  <Text style={styles.feeText}>{opt.fee}</Text>
-                </View>
+                <Chip label={opt.fee} color={colors.pending} bg={colors.pendingSubtle} size="sm" border={false} />
               )}
             </View>
             <View style={styles.bullets}>
@@ -159,13 +158,6 @@ const styles = StyleSheet.create({
   cardHeaderText: { flex: 1 },
   label: { fontSize: typography.md, color: colors.textPrimary, fontWeight: typography.semibold },
   tagline: { fontSize: typography.sm, color: colors.textSecondary, marginTop: 2 },
-  feeBadge: {
-    backgroundColor: colors.pendingSubtle,
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-  },
-  feeText: { fontSize: typography.xs, color: colors.pending, fontWeight: typography.medium },
 
   bullets: { gap: 6 },
   bulletRow: { flexDirection: 'row', gap: spacing.sm },

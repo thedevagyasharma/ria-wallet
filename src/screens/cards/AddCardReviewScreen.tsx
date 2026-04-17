@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -10,6 +10,7 @@ import Animated, {
   withSequence,
   withSpring,
   Easing,
+  runOnJS,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useNavigation, CommonActions } from '@react-navigation/native';
@@ -24,43 +25,103 @@ import { CardFront } from '../../components/CardFace';
 import type { RootStackProps, RootStackParamList } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+type Props = RootStackProps<'AddCardReview'> | RootStackProps<'SingleUseCreating'>;
 
-export default function AddCardReviewScreen({ route }: RootStackProps<'AddCardReview'>) {
+function isSingleUse(params: Props['route']['params']): params is { walletId: string } {
+  return 'walletId' in params && !('cardId' in params);
+}
+
+export default function AddCardReviewScreen({ route }: Props) {
   const navigation = useNavigation<Nav>();
-  const { cardId } = route.params;
-  const { cards } = useCardStore();
+  const singleUse = isSingleUse(route.params);
+  const { addCard, cards } = useCardStore();
   const { wallets } = useWalletStore();
   const navigated = useRef(false);
+  const cardIdRef = useRef<string | null>(
+    singleUse ? null : (route.params as { cardId: string }).cardId,
+  );
+  const walletIdRef = useRef<string>(
+    singleUse
+      ? (route.params as { walletId: string }).walletId
+      : cards.find((c) => c.id === (route.params as { cardId: string }).cardId)?.walletId ?? '',
+  );
 
-  const card = cards.find((c) => c.id === cardId);
-  const wallet = wallets.find((w) => w.id === card?.walletId);
-  const currency = wallet ? getCurrency(wallet.currency) : null;
+  useEffect(() => {
+    if (isSingleUse(route.params)) {
+      const networks = ['Visa', 'Mastercard'] as const;
+      const network = networks[Math.floor(Math.random() * networks.length)];
+      const last4 = String(Math.floor(1000 + Math.random() * 9000));
+      const prefix = network === 'Visa' ? '4' : '5';
+      const g1 = prefix + Math.random().toString().slice(2, 5);
+      const g2 = Math.random().toString().slice(2, 6);
+      const g3 = Math.random().toString().slice(2, 6);
+      const fullNumber = `${g1} ${g2} ${g3} ${last4}`;
+      const month = String(Math.floor(1 + Math.random() * 12)).padStart(2, '0');
+      const year = String(27 + Math.floor(Math.random() * 4));
+      const cardId = `card-${Date.now()}`;
+      cardIdRef.current = cardId;
+
+      addCard({
+        id: cardId,
+        walletId: route.params.walletId,
+        name: 'Single-use card',
+        color: '#f97316',
+        branded: false,
+        finish: 'plastic',
+        last4,
+        network,
+        cardholderName: 'Carlos Mendez',
+        expiry: `${month}/${year}`,
+        cvv: String(Math.floor(100 + Math.random() * 900)),
+        fullNumber,
+        frozen: false,
+        badgeTheme: 'default',
+        type: 'single-use',
+      });
+    }
+  }, []);
+
+  const card = cardIdRef.current ? cards.find((c) => c.id === cardIdRef.current) : null;
+  const wallet = wallets.find((w) => w.id === walletIdRef.current);
+  const currencyCode = wallet ? getCurrency(wallet.currency)?.code ?? 'USD' : 'USD';
+
+  const TOTAL_DURATION = 6000;
+  const steps = [
+    'Creating your card…',
+    'Setting up security…',
+    'Configuring limits…',
+    'Almost there…',
+  ];
+  const stepDurations = [1300, 1500, 1400, 1300];
+  const [stepIndex, setStepIndex] = useState(0);
+  const done = stepIndex >= steps.length;
 
   const cardProgress = useSharedValue(1);
   const cardOpacity = useSharedValue(0);
   const textOpacity = useSharedValue(0);
+  const stepOpacity = useSharedValue(1);
+  const barWidth = useSharedValue(0);
   const checkScale = useSharedValue(0);
   const checkOpacity = useSharedValue(0);
-  const creatingOpacity = useSharedValue(1);
 
   const navigateToCardList = () => {
-    if (navigated.current || !card) return;
+    if (navigated.current || !cardIdRef.current) return;
     navigated.current = true;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    useCardStore.getState().markJustAdded(card.id);
+    useCardStore.getState().markJustAdded(cardIdRef.current);
     navigation.dispatch(
       CommonActions.reset({
         index: 1,
         routes: [
           { name: 'Main' },
-          { name: 'CardList', params: { walletId: card.walletId } },
+          { name: 'CardList', params: { walletId: walletIdRef.current } },
         ],
       }),
     );
   };
 
   useEffect(() => {
-    // Phase 1: card materializes (0–500ms)
+    // Phase 1: card materializes
     cardOpacity.value = withTiming(1, { duration: 320, easing: Easing.out(Easing.cubic) });
     cardProgress.value = withDelay(
       80,
@@ -68,24 +129,50 @@ export default function AddCardReviewScreen({ route }: RootStackProps<'AddCardRe
     );
     textOpacity.value = withDelay(200, withTiming(1, { duration: 280 }));
 
-    // Phase 2: "Creating..." fades out, checkmark pops in (900ms)
-    creatingOpacity.value = withDelay(900, withTiming(0, { duration: 200 }));
-    checkOpacity.value = withDelay(1000, withTiming(1, { duration: 200 }));
-    checkScale.value = withDelay(
-      1000,
-      withSequence(
-        withSpring(1.15, { damping: 8, stiffness: 200, mass: 0.6 }),
-        withSpring(1, { damping: 12, stiffness: 180 }),
-      ),
+    // Progress bar fills across the full duration
+    const barDuration = TOTAL_DURATION - 500;
+    barWidth.value = withDelay(
+      500,
+      withTiming(1, { duration: barDuration, easing: Easing.out(Easing.quad) }),
     );
 
-    // Phase 3: navigate away (1700ms)
-    const timer = setTimeout(() => {
-      navigateToCardList();
-    }, 1700);
+    // Phase 2: cycle through processing steps
+    const stepTimers: ReturnType<typeof setTimeout>[] = [];
+    let elapsed = 500;
+    for (let i = 1; i <= steps.length; i++) {
+      elapsed += stepDurations[i - 1];
+      const fireAt = elapsed - 180;
+      stepTimers.push(
+        setTimeout(() => {
+          stepOpacity.value = withTiming(0, { duration: 180 }, () => {
+            runOnJS(setStepIndex)(i);
+          });
+        }, fireAt),
+      );
+    }
 
-    return () => clearTimeout(timer);
+    // Phase 3: checkmark + navigate
+    const navTimer = setTimeout(() => {
+      navigateToCardList();
+    }, TOTAL_DURATION + 2000);
+
+    return () => {
+      stepTimers.forEach(clearTimeout);
+      clearTimeout(navTimer);
+    };
   }, []);
+
+  useEffect(() => {
+    if (done) {
+      checkOpacity.value = withTiming(1, { duration: 200 });
+      checkScale.value = withSequence(
+        withSpring(1.15, { damping: 8, stiffness: 200, mass: 0.6 }),
+        withSpring(1, { damping: 12, stiffness: 180 }),
+      );
+    } else {
+      stepOpacity.value = withTiming(1, { duration: 180 });
+    }
+  }, [stepIndex]);
 
   const cardAnimStyle = useAnimatedStyle(() => ({
     opacity: cardOpacity.value,
@@ -100,16 +187,18 @@ export default function AddCardReviewScreen({ route }: RootStackProps<'AddCardRe
     transform: [{ translateY: cardProgress.value * 16 }],
   }));
 
-  const creatingStyle = useAnimatedStyle(() => ({
-    opacity: creatingOpacity.value,
+  const stepStyle = useAnimatedStyle(() => ({
+    opacity: stepOpacity.value,
+  }));
+
+  const barAnimStyle = useAnimatedStyle(() => ({
+    width: `${barWidth.value * 100}%` as any,
   }));
 
   const checkStyle = useAnimatedStyle(() => ({
     opacity: checkOpacity.value,
     transform: [{ scale: checkScale.value }],
   }));
-
-  if (!card || !currency) return null;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -121,14 +210,20 @@ export default function AddCardReviewScreen({ route }: RootStackProps<'AddCardRe
 
       <View style={styles.content}>
         <Animated.View style={[styles.cardWrap, cardAnimStyle]}>
-          <CardFront card={card} currency={currency.code} />
+          {card && <CardFront card={card} currency={currencyCode} loading={!done} />}
         </Animated.View>
 
         <Animated.View style={[styles.textWrap, textAnimStyle]}>
+          <View style={styles.barTrack}>
+            <Animated.View style={[styles.barFill, barAnimStyle]} />
+          </View>
+
           <View style={styles.statusRow}>
-            <Animated.View style={creatingStyle}>
-              <Text style={styles.creating}>Creating your card...</Text>
-            </Animated.View>
+            {!done && (
+              <Animated.View style={stepStyle}>
+                <Text style={styles.creating}>{steps[stepIndex]}</Text>
+              </Animated.View>
+            )}
             <Animated.View style={[styles.checkWrap, checkStyle]}>
               <View style={styles.checkCircle}>
                 <Check size={16} color="#fff" strokeWidth={2.5} />
@@ -155,7 +250,22 @@ const styles = StyleSheet.create({
 
   cardWrap: { marginBottom: spacing.sm },
 
-  textWrap: { alignItems: 'center' },
+  textWrap: { alignItems: 'center', width: '100%' },
+
+  barTrack: {
+    width: '60%',
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.surfaceHigh,
+    marginBottom: spacing.lg,
+    overflow: 'hidden',
+  },
+
+  barFill: {
+    height: '100%',
+    borderRadius: 2,
+    backgroundColor: colors.brand,
+  },
 
   statusRow: {
     height: 28,

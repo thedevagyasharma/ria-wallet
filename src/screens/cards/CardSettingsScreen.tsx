@@ -6,6 +6,8 @@ import {
   ScrollView,
   Pressable,
   Switch,
+  Image,
+  Platform,
   LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -36,6 +38,8 @@ import {
   Gauge,
   AlertTriangle,
 } from 'lucide-react-native';
+import AppleWalletBadge from '../../../assets/US-UK_Add_to_Apple_Wallet_RGB_101421.svg';
+import GoogleWalletBadge from '../../../assets/enUS_add_to_google_wallet_add-wallet-badge.png';
 import PrimaryButton from '../../components/PrimaryButton';
 import SecondaryButton from '../../components/SecondaryButton';
 import DestructiveButton from '../../components/DestructiveButton';
@@ -540,10 +544,19 @@ export default function CardSettingsScreen({ route }: RootStackProps<'CardSettin
             />
             <Animated.View style={[styles.frostOverlay, frostStyle]} pointerEvents="none" />
           </View>
+          <Pressable
+            onPress={() => { Haptics.selectionAsync(); }}
+            style={({ pressed }) => [styles.walletBadgeRow, pressed && { opacity: 0.7 }]}
+          >
+            {Platform.OS === 'ios'
+              ? <AppleWalletBadge width={160} height={50} />
+              : <Image source={GoogleWalletBadge} style={styles.googleBadge} resizeMode="contain" />
+            }
+          </Pressable>
         </View>
 
         {/* Card settings */}
-        <View style={styles.section}>
+        {card.type !== 'single-use' && <View style={styles.section}>
           <Text style={styles.sectionTitle}>Card settings</Text>
           <SettingsRow
             icon={<Snowflake size={17} color={colors.textSecondary} strokeWidth={1.8} />}
@@ -554,6 +567,7 @@ export default function CardSettingsScreen({ route }: RootStackProps<'CardSettin
                 : (card.frozen ? 'Card is frozen' : 'Card is active')
             }
             isToggle
+            isLast={card.type !== 'physical'}
             toggleValue={card.frozen}
             toggleDisabled={freezeProcessing || isExpired}
             onToggle={() => {
@@ -561,41 +575,43 @@ export default function CardSettingsScreen({ route }: RootStackProps<'CardSettin
               setShowFreezeConfirm(true);
             }}
           />
-          <SettingsRow
-            icon={
-              onlineEnabled
-                ? <Globe size={17} color={colors.textSecondary} strokeWidth={1.8} />
-                : <WifiOff size={17} color={colors.textMuted} strokeWidth={1.8} />
-            }
-            label="Online transactions"
-            sublabel={onlineEnabled ? 'Card can be used online' : 'Blocked for online use'}
-            isToggle
-            toggleValue={onlineEnabled}
-            onToggle={handleOnlineTransactionsToggle}
-          />
           {card.type === 'physical' && (
-            <SettingsRow
-              icon={<Nfc size={17} color={contactlessEnabled ? colors.textSecondary : colors.textMuted} strokeWidth={1.8} />}
-              label="Contactless payments"
-              sublabel={contactlessEnabled ? 'Tap to pay enabled' : 'Tap to pay disabled'}
-              isToggle
-              toggleValue={contactlessEnabled}
-              onToggle={(v) => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setContactless(card.id, v);
-              }}
-            />
+            <>
+              <SettingsRow
+                icon={
+                  onlineEnabled
+                    ? <Globe size={17} color={colors.textSecondary} strokeWidth={1.8} />
+                    : <WifiOff size={17} color={colors.textMuted} strokeWidth={1.8} />
+                }
+                label="Online transactions"
+                sublabel={onlineEnabled ? 'Card can be used online' : 'Blocked for online use'}
+                isToggle
+                toggleValue={onlineEnabled}
+                onToggle={handleOnlineTransactionsToggle}
+              />
+              <SettingsRow
+                icon={<Nfc size={17} color={contactlessEnabled ? colors.textSecondary : colors.textMuted} strokeWidth={1.8} />}
+                label="Contactless payments"
+                sublabel={contactlessEnabled ? 'Tap to pay enabled' : 'Tap to pay disabled'}
+                isToggle
+                toggleValue={contactlessEnabled}
+                onToggle={(v) => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setContactless(card.id, v);
+                }}
+              />
+              <SettingsRow
+                icon={<KeyRound size={17} color={colors.textSecondary} strokeWidth={1.8} />}
+                label="Change PIN"
+                onPress={() => { Haptics.selectionAsync(); setShowChangePin(true); }}
+                isLast
+              />
+            </>
           )}
-          <SettingsRow
-            icon={<KeyRound size={17} color={colors.textSecondary} strokeWidth={1.8} />}
-            label="Change PIN"
-            onPress={() => { Haptics.selectionAsync(); setShowChangePin(true); }}
-            isLast
-          />
-        </View>
+        </View>}
 
         {/* Spending */}
-        <View
+        {card.type !== 'single-use' && <View
           style={styles.section}
           onLayout={(e: LayoutChangeEvent) => setLimitsY(e.nativeEvent.layout.y)}
         >
@@ -603,17 +619,29 @@ export default function CardSettingsScreen({ route }: RootStackProps<'CardSettin
           {(['daily', 'weekly', 'monthly'] as LimitPeriod[]).map((p, i) => {
             const lim = spendingLimits[p];
             return (
-              <SettingsRow
-                key={p}
-                icon={<Gauge size={17} color={colors.textSecondary} strokeWidth={1.8} />}
-                label={PERIOD_LABELS[p]}
-                value={lim != null ? `${currency.symbol}${lim.toLocaleString()}${PERIOD_UNITS[p]}` : 'Not set'}
-                onPress={() => { Haptics.selectionAsync(); setEditingLimit(p); }}
-                isLast={i === 2}
-              />
+              <React.Fragment key={p}>
+                <Pressable
+                  onPress={() => { Haptics.selectionAsync(); setEditingLimit(p); }}
+                  style={({ pressed }) => [styles.infoRow, pressed && { opacity: 0.6 }]}
+                >
+                  <View style={styles.infoLabelGroup}>
+                    <View style={styles.infoIconWrap}>
+                      <Gauge size={17} color={colors.textSecondary} strokeWidth={1.8} />
+                    </View>
+                    <Text style={styles.infoLabel}>{PERIOD_LABELS[p]}</Text>
+                  </View>
+                  <View style={styles.settingsRowRight}>
+                    <Text style={[styles.infoValue, lim == null && { color: colors.textMuted }]}>
+                      {lim != null ? `${currency.symbol}${lim.toLocaleString()}${PERIOD_UNITS[p]}` : 'Not set'}
+                    </Text>
+                    <ChevronRight size={16} color={colors.textMuted} strokeWidth={2} />
+                  </View>
+                </Pressable>
+                {i < 2 && <View style={styles.infoDivider} />}
+              </React.Fragment>
             );
           })}
-        </View>
+        </View>}
 
         {/* Card info */}
         <View style={styles.section}>
@@ -1111,5 +1139,16 @@ const styles = StyleSheet.create({
   limitSaveBtn: {
     width: '100%',
     paddingVertical: spacing.lg,
+  },
+
+  // ── Digital wallet badge ──
+  walletBadgeRow: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+  },
+  googleBadge: {
+    width: 160,
+    height: 50,
   },
 });

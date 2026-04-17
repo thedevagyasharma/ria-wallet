@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
+  LayoutAnimation,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -26,6 +27,7 @@ import Animated, {
   runOnJS,
   Easing,
   interpolateColor,
+  FadeIn,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
@@ -38,18 +40,21 @@ import PrimaryButton from '../../components/PrimaryButton';
 import SecondaryButton from '../../components/SecondaryButton';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { getCurrency, formatAmount } from '../../data/currencies';
+import FlatButton from '../../components/FlatButton';
 import FlagIcon from '../../components/FlagIcon';
 import Avatar from '../../components/Avatar';
+import { CHIP_SIZES } from '../../components/Chip';
 import { MOCK_CONTACTS } from '../../data/mockData';
 import { getRate, getFee, getETA } from '../../data/exchangeRates';
 import type { RootStackProps, RootStackParamList } from '../../navigation/types';
 import type { Contact, Transaction } from '../../stores/types';
-import { SendSuccessContent } from './SendSuccessScreen';
 import { getInitials } from '../../utils/strings';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Phase = 'idle' | 'processing' | 'success' | 'viewTransfer' | 'failed' | 'retryReady';
 type Outcome = 'success' | 'failure';
+
+const CHIP_MD = CHIP_SIZES.md;
 
 // ─── Primary receive currency per recipient country ───────────────────────────
 
@@ -287,26 +292,30 @@ function DrumChip({ label, isActive, isDisabled, onPress, index, animKey }: {
 
 // ─── Confirmation breakdown row ───────────────────────────────────────────────
 
-function Row({ label, value, flagCode }: { label: string; value: string; flagCode?: string }) {
+function Row({ label, value, flagCode, bold, struck }: { label: string; value: string; flagCode?: string; bold?: boolean; struck?: boolean }) {
   return (
     <View style={rowStyles.row}>
-      <Text style={rowStyles.label}>{label}</Text>
+      <Text style={[rowStyles.label, bold && rowStyles.boldLabel, struck && rowStyles.struckLabel]}>{label}</Text>
       {flagCode ? (
         <View style={rowStyles.valueWithFlag}>
           <FlagIcon code={flagCode} size={14} />
-          <Text style={rowStyles.value}>{value}</Text>
+          <Text style={[rowStyles.value, bold && rowStyles.boldValue, struck && rowStyles.struckValue]}>{value}</Text>
         </View>
       ) : (
-        <Text style={rowStyles.value}>{value}</Text>
+        <Text style={[rowStyles.value, bold && rowStyles.boldValue, struck && rowStyles.struckValue]}>{value}</Text>
       )}
     </View>
   );
 }
 
 const rowStyles = StyleSheet.create({
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.md },
   label: { fontSize: typography.base, color: colors.textSecondary },
-  value: { fontSize: typography.base, color: colors.textPrimary },
+  value: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.semibold },
+  boldLabel: { color: colors.textPrimary, fontWeight: typography.semibold },
+  boldValue: { fontSize: typography.lg, fontWeight: typography.bold, letterSpacing: -0.5 },
+  struckLabel: { color: colors.textMuted },
+  struckValue: { color: colors.textMuted, textDecorationLine: 'line-through' as const },
   valueWithFlag: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 });
 
@@ -426,7 +435,7 @@ function MorphButton({
             <View style={[morphStyles.textClip, { flex: 1 }]}>
               <Animated.View style={textAnimStyle}>
                 <Text style={[morphStyles.textAction, { textAlign: 'center' as const }]}>
-                  {display === 'viewTransfer' ? 'View transfer' : 'Try again'}
+                  {display === 'viewTransfer' ? 'View details' : 'Try again'}
                 </Text>
               </Animated.View>
             </View>
@@ -467,11 +476,11 @@ const morphStyles = StyleSheet.create({
     elevation: 3,
   },
   pressable: {
-    paddingVertical: spacing.lg,
+    paddingVertical: 13,
     paddingHorizontal: spacing.xl,
   },
   pressablePressed: { transform: [{ scale: 0.98 }] },
-  spread: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  spread: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: SLOT_H },
   slotRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   iconClip: { width: 22, height: SLOT_H, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   textClip: { height: SLOT_H, overflow: 'hidden', justifyContent: 'center' },
@@ -481,6 +490,110 @@ const morphStyles = StyleSheet.create({
   textSuccess:     { fontSize: typography.md, color: colors.success,         fontWeight: typography.bold },
   textFailed:      { fontSize: typography.md, color: colors.failed,          fontWeight: typography.bold },
 });
+
+// ─── Confirm hero with morphing chip ─────────────────────────────────────────
+
+type ChipState = 'eta' | 'success' | 'failed';
+
+function chipStateForPhase(phase: Phase): ChipState {
+  if (phase === 'success' || phase === 'viewTransfer') return 'success';
+  if (phase === 'failed' || phase === 'retryReady') return 'failed';
+  return 'eta';
+}
+
+const CHIP_COLORS: Record<ChipState, { bg: string; border: string; text: string }> = {
+  eta:     { bg: colors.brandSubtle,   border: colors.brand,   text: colors.brand   },
+  success: { bg: colors.successSubtle, border: colors.success, text: colors.success },
+  failed:  { bg: colors.failedSubtle,  border: colors.failed,  text: colors.failed  },
+};
+
+
+function successLabel(eta: string): string {
+  if (eta === 'Instant') return 'COMPLETE';
+  return 'SUBMITTED';
+}
+
+const CHIP_SLOT = 18;
+
+const CHIP_COLOR_MAP: Record<ChipState, [string, string, string]> = {
+  eta:     [colors.brandSubtle,   colors.brand,   colors.brand],
+  success: [colors.successSubtle, colors.success, colors.success],
+  failed:  [colors.failedSubtle,  colors.failed,  colors.failed],
+};
+
+function chipText(state: ChipState, eta: string): string {
+  if (state === 'eta') return eta;
+  if (state === 'success') return successLabel(eta);
+  return 'FAILED';
+}
+
+function ConfirmHero({ phase, label, amount, currencyCode, eta }: {
+  phase: Phase; label: string; amount: string; currencyCode: string; eta: string;
+}) {
+  const [displayState, setDisplayState] = useState<ChipState>('eta');
+
+  const swapDisplay = useCallback((next: ChipState) => {
+    LayoutAnimation.configureNext(LayoutAnimation.create(200, LayoutAnimation.Types.easeOut, LayoutAnimation.Properties.scaleX));
+    setDisplayState(next);
+  }, []);
+
+  const colorProgress = useSharedValue(0);
+  const contentY = useSharedValue(0);
+
+  useEffect(() => {
+    const next = chipStateForPhase(phase);
+    if (next === displayState) return;
+
+    const nextIdx = next === 'eta' ? 0 : next === 'success' ? 1 : 2;
+    colorProgress.value = withTiming(nextIdx, { duration: 280, easing: Easing.out(Easing.cubic) });
+
+    contentY.value = withTiming(-CHIP_SLOT, { duration: 110, easing: Easing.in(Easing.quad) }, (done) => {
+      if (!done) return;
+      runOnJS(swapDisplay)(next);
+      contentY.value = CHIP_SLOT;
+      contentY.value = withTiming(0, { duration: 170, easing: Easing.out(Easing.cubic) });
+    });
+  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const bgColors   = [CHIP_COLOR_MAP.eta[0], CHIP_COLOR_MAP.success[0], CHIP_COLOR_MAP.failed[0]];
+  const bordColors = [CHIP_COLOR_MAP.eta[1], CHIP_COLOR_MAP.success[1], CHIP_COLOR_MAP.failed[1]];
+
+  const chipAnimStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(colorProgress.value, [0, 1, 2], bgColors),
+    borderColor: interpolateColor(colorProgress.value, [0, 1, 2], bordColors),
+  }));
+
+  const contentAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: contentY.value }],
+  }));
+
+  const textColor = CHIP_COLOR_MAP[displayState][2];
+
+  return (
+    <View style={styles.confirmHero}>
+      <Animated.View style={[styles.heroChip, chipAnimStyle]}>
+        <View style={styles.heroChipClip}>
+          <Animated.View style={[styles.heroChipContent, contentAnimStyle]}>
+            {displayState === 'eta' && <Zap size={11} color={textColor} strokeWidth={2.5} />}
+            <Text style={[styles.heroChipText, { color: textColor }]}>
+              {chipText(displayState, eta)}
+            </Text>
+          </Animated.View>
+        </View>
+      </Animated.View>
+
+      <Text style={styles.confirmHeroLabel}>{label}</Text>
+      <View style={styles.confirmHeroAmountRow}>
+        <Text style={styles.confirmHeroAmount}>{amount}</Text>
+        <Text style={styles.confirmHeroAmountCode}>{currencyCode}</Text>
+      </View>
+
+      {(phase === 'failed' || phase === 'retryReady') && (
+        <Text style={styles.failureSub}>No funds were deducted from your wallet.</Text>
+      )}
+    </View>
+  );
+}
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
@@ -533,9 +646,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
   const [phase, setPhase] = useState<Phase>('idle');
   const [protoOutcome, setProtoOutcome] = useState<Outcome>('success');
   const [protoDelay, setProtoDelay] = useState(1000);
-  const successParamsRef = useRef<RootStackParamList['SendSuccess'] | null>(null);
-  const [successBgParams, setSuccessBgParams] = useState<RootStackParamList['SendSuccess'] | null>(null);
-  const [showSuccessBg, setShowSuccessBg] = useState(false);
+  const successParamsRef = useRef<{ txId: string } | null>(null);
 
   // Derived values
   const sendWallet = wallets.find((w) => w.id === sendWalletId) ?? wallets[0];
@@ -574,7 +685,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
       : '';
 
   // Confirm step derived values
-  const eta = selectedContact ? getETA(sendWallet.currency, receiveCurrency) : 'Instantly';
+  const eta = selectedContact ? getETA(sendWallet.currency, receiveCurrency) : 'Instant';
   const converted = sendAmountNum * rate;
   const convertedFormatted = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(converted);
 
@@ -586,14 +697,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
   // ── Entry + dismiss animations ──
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
   const insets = useSafeAreaInsets();
-  const enterY = useSharedValue(screenHeight);
   const dismissX = useSharedValue(0);
-  const dismissStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: enterY.value }, { translateX: dismissX.value }],
-  }));
-  useEffect(() => {
-    enterY.value = withTiming(0, { duration: 380, easing: Easing.out(Easing.cubic) });
-  }, [enterY]);
 
   useEffect(() => {
     if (step === 'amount') {
@@ -636,27 +740,15 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
     });
   }, [phase, confirmSlideX, screenWidth]);
 
-  const doNavigateSuccess = useCallback(() => {
+  const handleViewTransfer = useCallback(() => {
     if (!successParamsRef.current) return;
-    navigation.dispatch(CommonActions.reset({
-      index: 1,
-      routes: [{ name: 'Main' }, { name: 'SendSuccess', params: successParamsRef.current }],
-    }));
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    navigation.replace('TransactionDetail', { ...successParamsRef.current, mode: 'receipt' });
   }, [navigation]);
 
-  const handleViewTransfer = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    enterY.value = withTiming(screenHeight, { duration: 320, easing: Easing.in(Easing.cubic) },
-      (done) => { if (done) runOnJS(doNavigateSuccess)(); });
-  }, [enterY, screenHeight, doNavigateSuccess]);
-
-  const popToTop = useCallback(() => navigation.popToTop(), [navigation]);
   const handleCloseToWallets = useCallback(() => {
-    // Hide the tracking screen bg so native transparency reveals wallets behind
-    setShowSuccessBg(false);
-    enterY.value = withTiming(screenHeight, { duration: 320, easing: Easing.in(Easing.cubic) },
-      (done) => { if (done) runOnJS(popToTop)(); });
-  }, [enterY, screenHeight, popToTop]);
+    navigation.goBack();
+  }, [navigation]);
 
   const handleConfirm = useCallback(() => {
     if (!selectedContact) return;
@@ -687,17 +779,15 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
       deductBalance(sendWalletId, total);
       addTransaction(tx);
       successParamsRef.current = { txId: tx.id };
-      setSuccessBgParams({ txId: tx.id });
-      setShowSuccessBg(true);
     }
     setPhase('processing');
     setTimeout(() => {
       if (capturedOutcome === 'success') {
         setPhase('success');
-        setTimeout(() => setPhase('viewTransfer'), 2000);
+        setTimeout(() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setPhase('viewTransfer'); }, 2000);
       } else {
         setPhase('failed');
-        setTimeout(() => setPhase('retryReady'), 2000);
+        setTimeout(() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setPhase('retryReady'); }, 2000);
       }
     }, protoDelay);
   }, [selectedContact, total, sendWallet, protoOutcome, protoDelay, sendWalletId, deductBalance, addTransaction, sendAmountNum, converted, receiveCurrency, eta]);
@@ -909,16 +999,9 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
   return (
     <GestureDetector gesture={panGesture}>
       <View style={{ flex: 1 }}>
-        {/* Tracking screen background — only shown when revealing on "View transfer".
-            All other dismiss paths let native modal transparency show wallets behind. */}
-        {showSuccessBg && successBgParams && (
-          <View style={StyleSheet.absoluteFill}>
-            <SendSuccessContent params={successBgParams} animated={false} />
-          </View>
-        )}
 
         {/* Modal foreground — slides up on enter, slides down on View Transfer */}
-        <Animated.View style={[{ flex: 1, overflow: 'hidden' }, dismissStyle]}>
+        <View style={{ flex: 1, overflow: 'hidden' }}>
           {/* Horizontal step row (recipient + amount) */}
           <Animated.View style={[{ flex: 1, flexDirection: 'row' as const, width: screenWidth * 2 }, stepRowAnim]}>
             <View style={{ width: screenWidth, flex: 1 }}>
@@ -1001,7 +1084,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                   {filteredContacts.length === 0 ? (
                     !looksLikePhone(contactQuery) && (
                       <View style={styles.emptyState}>
-                        <Text style={styles.emptyIcon}>🔎</Text>
+                        <Search size={36} color={colors.textMuted} strokeWidth={1.5} />
                         <Text style={styles.emptyText}>No contacts found for "{contactQuery}"</Text>
                       </View>
                     )
@@ -1350,32 +1433,18 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
 
               {/* ScrollView with confirmation breakdown */}
               <ScrollView contentContainerStyle={styles.confirmScroll} showsVerticalScrollIndicator={false} scrollEnabled={phase === 'idle' || phase === 'failed'}>
-                {/* Hero — failed state replaces the amount display */}
-                {phase === 'failed' || phase === 'retryReady' ? (
-                  <View style={styles.failureBanner}>
-                    <View style={styles.failureIconWrap}>
-                      <X size={22} color={colors.failed} strokeWidth={2.5} />
-                    </View>
-                    <Text style={styles.failureTitle}>Transfer failed</Text>
-                    <Text style={styles.failureSub}>No funds were deducted from your wallet.</Text>
-                  </View>
-                ) : (
-                  <View style={styles.confirmHero}>
-                    {selectedContact && <FlagIcon code={selectedContact.flag} size={48} style={styles.confirmHeroFlag} />}
-                    <Text style={styles.confirmHeroLabel}>{selectedContact?.name.split(' ')[0]} receives</Text>
-                    <View style={styles.confirmHeroAmountRow}>
-                      <Text style={styles.confirmHeroAmount}>{getCurrency(receiveCurrency).symbol}{convertedFormatted}</Text>
-                      <Text style={styles.confirmHeroAmountCode}>{receiveCurrency}</Text>
-                    </View>
-                    <View style={styles.etaChip}>
-                      <Zap size={12} color={colors.success} strokeWidth={2.5} />
-                      <Text style={styles.etaText}>{eta}</Text>
-                    </View>
-                  </View>
-                )}
+                {/* Hero */}
+                <ConfirmHero
+                  phase={phase}
+                  label={`${selectedContact?.name.split(' ')[0]} receives`}
+                  amount={`${getCurrency(receiveCurrency).symbol}${convertedFormatted}`}
+                  currencyCode={receiveCurrency}
+                  eta={eta}
+                />
 
-                {/* Recipient card */}
-                <View style={styles.card}>
+                {/* Recipient */}
+                <View style={styles.confirmSection}>
+                  <Text style={styles.confirmSectionLabel}>Recipient</Text>
                   <View style={styles.recipientRow}>
                     {selectedContact && <Avatar name={selectedContact.name} size="lg" />}
                     <View style={{ flex: 1 }}>
@@ -1385,19 +1454,17 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                   </View>
                 </View>
 
-                {/* Breakdown card */}
-                <View style={styles.card}>
+                {/* Details */}
+                <View style={styles.confirmSection}>
+                  <Text style={styles.confirmSectionLabel}>Details</Text>
                   <Row label="From wallet" value={sendCurrency.code} flagCode={sendCurrency.flag} />
-                  <View style={styles.divider} />
+                  <View style={styles.confirmDivider} />
                   <Row label="You send" value={formatAmount(sendAmountNum, sendWallet.currency)} />
-                  <View style={styles.divider} />
+                  <View style={styles.confirmDivider} />
                   <Row label="Transfer fee" value={formatAmount(fee, sendWallet.currency)} />
-                  <View style={styles.totalDivider} />
-                  <View style={styles.totalRow}>
-                    <Text style={styles.totalLabel}>Total deducted</Text>
-                    <Text style={styles.totalValue}>{formatAmount(total, sendWallet.currency)}</Text>
-                  </View>
-                  <View style={styles.divider} />
+                  <View style={styles.confirmDivider} />
+                  <Row label="Total deducted" value={formatAmount(total, sendWallet.currency)} bold struck={phase === 'failed' || phase === 'retryReady'} />
+                  <View style={styles.confirmDivider} />
                   <View style={styles.rateFootnote}>
                     <Text style={styles.rateFootnoteText}>1 {sendCurrency.code} = {rate.toFixed(4)} {receiveCurrency}</Text>
                   </View>
@@ -1426,10 +1493,15 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
               {/* Footer */}
               <View style={[styles.confirmFooter, { paddingBottom: Math.max(insets.bottom, 16) + 14 }]}>
                 <MorphButton phase={phase} onConfirm={handleConfirm} onViewTransfer={handleViewTransfer} onRetry={() => setPhase('idle')} total={total} currency={sendWallet.currency} />
+                {(phase === 'viewTransfer' || phase === 'retryReady') && (
+                  <Animated.View entering={FadeIn.duration(300).delay(200)}>
+                    <FlatButton onPress={handleCloseToWallets} label={phase === 'viewTransfer' ? 'Done' : 'Close'} style={styles.exitBtn} />
+                  </Animated.View>
+                )}
               </View>
             </View>
           </Animated.View>
-        </Animated.View>
+        </View>
       </View>
     </GestureDetector>
   );
@@ -1626,7 +1698,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xs,
   },
   reviewBtn: {
-    paddingVertical: 13,
+    paddingVertical: spacing.lg,
     alignItems: 'center',
   },
   // ── Contact picker (step 1) ──
@@ -1690,7 +1762,6 @@ const styles = StyleSheet.create({
   },
 
   emptyState: { alignItems: 'center', paddingTop: spacing.xxxl, gap: spacing.md },
-  emptyIcon: { fontSize: 36 },
   emptyText: { fontSize: typography.base, color: colors.textSecondary, textAlign: 'center' },
 
   // ── Wallet dropdown modal ──
@@ -1743,47 +1814,29 @@ const styles = StyleSheet.create({
   dropdownBalance: { fontSize: typography.sm, color: colors.textSecondary, fontWeight: typography.regular },
 
   // ── Confirm step ──
-  confirmScroll: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xl },
-  confirmHero: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.xs },
-  confirmHeroFlag: { marginBottom: spacing.xs },
+  confirmScroll: { paddingBottom: spacing.xl, paddingTop: spacing.sm },
+  confirmHero: { alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.xl, gap: spacing.xs },
   confirmHeroLabel: { fontSize: typography.sm, color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 1, fontWeight: typography.semibold },
   confirmHeroAmountRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, marginTop: spacing.xs },
   confirmHeroAmount: { fontSize: typography.hero, color: colors.textPrimary, fontWeight: typography.bold, letterSpacing: -2 },
   confirmHeroAmountCode: { fontSize: typography.lg, color: colors.textSecondary, fontWeight: typography.semibold, paddingBottom: 6 },
-  etaChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.successSubtle, borderRadius: radius.full, paddingHorizontal: spacing.md, paddingVertical: 5, borderWidth: 1, borderColor: colors.success, marginTop: spacing.sm },
-  etaText: { fontSize: typography.xs, color: colors.success, fontWeight: typography.semibold },
-  card: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden', marginBottom: spacing.md },
-  recipientRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg },
+  heroChip: { borderRadius: radius.full, paddingHorizontal: CHIP_MD.paddingHorizontal, paddingVertical: CHIP_MD.paddingVertical, borderWidth: 1, marginBottom: spacing.sm, overflow: 'hidden', alignItems: 'center' },
+  heroChipClip: { height: CHIP_SLOT, overflow: 'hidden', justifyContent: 'center' },
+  heroChipContent: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  heroChipText: { fontSize: CHIP_MD.fontSize, fontWeight: CHIP_MD.fontWeight },
+  confirmSection: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xl, marginBottom: spacing.xl, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle },
+  confirmSectionLabel: { fontSize: typography.xs, color: colors.textSecondary, fontWeight: typography.semibold, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: spacing.lg },
+  recipientRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   confirmRecipientName: { fontSize: typography.md, color: colors.textPrimary, fontWeight: typography.semibold },
   confirmRecipientPhone: { fontSize: typography.sm, color: colors.textSecondary, marginTop: 2 },
-  divider: { height: 1, backgroundColor: colors.borderSubtle },
-  totalDivider: { height: 2, backgroundColor: colors.border },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, backgroundColor: colors.surfaceHigh },
-  totalLabel: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.semibold },
-  totalValue: { fontSize: typography.lg, color: colors.textPrimary, fontWeight: typography.bold, letterSpacing: -0.5 },
-  rateFootnote: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, alignItems: 'center' },
+  confirmDivider: { height: 1, backgroundColor: colors.borderSubtle },
+  rateFootnote: { paddingVertical: spacing.sm, alignItems: 'center' },
   rateFootnoteText: { fontSize: typography.xs, color: colors.textMuted, fontWeight: typography.medium },
   editBtn: { alignSelf: 'center', paddingVertical: spacing.sm, paddingHorizontal: spacing.lg, marginTop: spacing.xs },
   editBtnText: { fontSize: typography.sm, color: colors.textSecondary },
-  protoWrap: { marginTop: spacing.xxl, paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.borderSubtle, gap: spacing.sm },
+  protoWrap: { marginTop: spacing.xxl, paddingTop: spacing.lg, paddingHorizontal: spacing.xl, borderTopWidth: 1, borderTopColor: colors.borderSubtle, gap: spacing.sm },
   protoTitle: { fontSize: typography.xs, color: colors.textSecondary, fontWeight: typography.semibold, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: spacing.xs },
   confirmFooter: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm },
-  failureBanner: {
-    alignItems: 'center',
-    paddingVertical: spacing.xl,
-    gap: spacing.sm,
-  },
-  failureIconWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: radius.full,
-    backgroundColor: colors.failedSubtle,
-    borderWidth: 1,
-    borderColor: colors.failed,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.xs,
-  },
-  failureTitle: { fontSize: typography.xl, color: colors.textPrimary, fontWeight: typography.bold },
+  exitBtn: { alignSelf: 'center' as const, marginTop: spacing.sm, paddingVertical: spacing.md, paddingHorizontal: spacing.xl },
   failureSub: { fontSize: typography.sm, color: colors.textSecondary, textAlign: 'center' },
 });

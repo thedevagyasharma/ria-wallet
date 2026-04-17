@@ -29,11 +29,9 @@ export type RootStackParamList = {
   WalletSettings: { walletId: string };
   // Activity
   Activity: { walletId: string };
-  TransactionDetail: { txId: string };
+  TransactionDetail: { txId: string; mode?: 'detail' | 'receipt' };
   // Send money
   SendMoney: { walletId?: string };
-  SendSuccess: { txId: string };
-  SendError: { reason: 'insufficient_funds' | 'transfer_failed' };
 };
 
 export type RootStackProps<T extends keyof RootStackParamList> =

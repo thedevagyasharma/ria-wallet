@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,8 @@ import Animated, {
   withTiming,
   interpolateColor,
   LinearTransition,
+  FadeIn,
+  FadeOut,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Search, ArrowUpRight, ArrowDownLeft, ChevronLeft, ChevronDown, CreditCard, Check, X, type LucideIcon } from 'lucide-react-native';
@@ -127,6 +129,8 @@ function FilterChip({
   activeColor,
   disabled = false,
   showChevron = true,
+  entering,
+  exiting,
   onPress,
 }: {
   label: string;
@@ -135,11 +139,15 @@ function FilterChip({
   active: boolean;
   activeColor: string;
   disabled?: boolean;
-  /** Trailing chevron-down to signal the chip opens a picker. */
   showChevron?: boolean;
+  entering?: Parameters<typeof Animated.View>[0]['entering'];
+  exiting?: Parameters<typeof Animated.View>[0]['exiting'];
   onPress: () => void;
 }) {
-  const activeTextColor = textOn(activeColor);
+  const lastActiveColor = useRef(activeColor);
+  if (active) lastActiveColor.current = activeColor;
+  const resolvedColor = active ? activeColor : lastActiveColor.current;
+  const resolvedTextColor = textOn(resolvedColor);
 
   const progress = useSharedValue(active ? 1 : 0);
   useEffect(() => {
@@ -147,35 +155,35 @@ function FilterChip({
   }, [active, progress]);
 
   const containerStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(progress.value, [0, 1], [colors.surface, activeColor]),
-    borderColor:     interpolateColor(progress.value, [0, 1], [colors.border,  activeColor]),
+    backgroundColor: interpolateColor(progress.value, [0, 1], [colors.surface, resolvedColor]),
+    borderColor:     interpolateColor(progress.value, [0, 1], [colors.border,  resolvedColor]),
   }));
   const textStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(progress.value, [0, 1], [colors.textSecondary, activeTextColor]),
+    color: interpolateColor(progress.value, [0, 1], [colors.textSecondary, resolvedTextColor]),
   }));
 
-  // Icon color snaps (lucide Icons don't take animated props cleanly). The
-  // container/text fade masks this — icons are small relative to the chip.
-  const iconColor = active ? activeTextColor : colors.textMuted;
+  const iconColor = active ? resolvedTextColor : colors.textMuted;
 
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={({ pressed }) => [
-        disabled && styles.chipDisabled,
-        pressed && !disabled && { opacity: 0.7 },
-      ]}
-    >
-      <Animated.View style={[styles.chip, containerStyle]}>
-        {flagCode && <FlagIcon code={flagCode} size={14} />}
-        {Icon && <Icon size={14} color={active ? activeTextColor : colors.textSecondary} strokeWidth={2} />}
-        <Animated.Text style={[styles.chipLabel, textStyle]}>{label}</Animated.Text>
-        {showChevron && (
-          <ChevronDown size={14} color={iconColor} strokeWidth={2} style={styles.chipChevron} />
-        )}
-      </Animated.View>
-    </Pressable>
+    <Animated.View layout={LinearTransition.duration(240)} entering={entering} exiting={exiting}>
+      <Pressable
+        onPress={onPress}
+        disabled={disabled}
+        style={({ pressed }) => [
+          disabled && styles.chipDisabled,
+          pressed && !disabled && { opacity: 0.7 },
+        ]}
+      >
+        <Animated.View style={[styles.chip, containerStyle]} layout={LinearTransition.duration(240)}>
+          {flagCode && <FlagIcon code={flagCode} size={14} />}
+          {Icon && <Icon size={14} color={active ? resolvedTextColor : colors.textSecondary} strokeWidth={2} />}
+          <Animated.Text style={[styles.chipLabel, textStyle]}>{label}</Animated.Text>
+          {showChevron && (
+            <ChevronDown size={14} color={iconColor} strokeWidth={2} style={styles.chipChevron} />
+          )}
+        </Animated.View>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -224,7 +232,7 @@ function OptionChip({
         pressed && !disabled && { opacity: 0.7 },
       ]}
     >
-      <Animated.View style={[styles.optionChip, containerStyle]}>
+      <Animated.View style={[styles.optionChip, containerStyle]} layout={LinearTransition.duration(240)}>
         {flagCode && <FlagIcon code={flagCode} size={14} />}
         {Icon && <Icon size={14} color={iconColor} strokeWidth={2} />}
         <Animated.Text style={[styles.optionChipLabel, textStyle]}>{label}</Animated.Text>
@@ -911,6 +919,17 @@ export default function UnifiedActivityScreen() {
               onPress={() => { Haptics.selectionAsync(); setWalletPickerVisible(true); }}
             />
           )}
+          {activeWalletId && availableCards.length > 0 && (
+            <FilterChip
+              label={cardChipLabel}
+              icon={CreditCard}
+              active={selectedCardIds.size > 0}
+              activeColor={activeWalletAccent}
+              entering={FadeIn.duration(220)}
+              exiting={FadeOut.duration(160)}
+              onPress={() => { Haptics.selectionAsync(); setCardPickerVisible(true); }}
+            />
+          )}
           <FilterChip
             label={typeChipLabel}
             active={direction !== 'all'}
@@ -937,15 +956,6 @@ export default function UnifiedActivityScreen() {
             disabled={direction === 'receive'}
             onPress={() => { Haptics.selectionAsync(); setCategoryPickerVisible(true); }}
           />
-          {activeWalletId && availableCards.length > 0 && (
-            <FilterChip
-              label={cardChipLabel}
-              icon={CreditCard}
-              active={selectedCardIds.size > 0}
-              activeColor={activeWalletAccent}
-              onPress={() => { Haptics.selectionAsync(); setCardPickerVisible(true); }}
-            />
-          )}
           {hasAnyFilter && (
             <FilterChip
               label="Clear"
@@ -1087,6 +1097,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+    overflow: 'hidden',
   },
   chipLabel: {
     fontSize: typography.sm,

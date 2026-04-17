@@ -16,6 +16,7 @@ import { ChevronLeft, Search } from 'lucide-react-native';
 import { colors, typography, spacing, radius } from '../../theme';
 import { CURRENCIES } from '../../data/currencies';
 import FlagIcon from '../../components/FlagIcon';
+import Chip from '../../components/Chip';
 import { useWalletStore } from '../../stores/useWalletStore';
 import type { RootStackParamList } from '../../navigation/types';
 
@@ -97,9 +98,7 @@ export default function CurrencyPickerScreen() {
                 </Text>
               </View>
               {owned && (
-                <View style={styles.ownedBadge}>
-                  <Text style={styles.ownedBadgeText}>Added</Text>
-                </View>
+                <Chip label="Added" color={colors.textMuted} bg={colors.surfaceHigh} size="sm" border={false} />
               )}
             </Pressable>
           );
@@ -165,11 +164,4 @@ const styles = StyleSheet.create({
   rowCode: { fontSize: typography.sm, color: colors.textSecondary, marginTop: 2 },
   textDisabled: { color: colors.textMuted },
 
-  ownedBadge: {
-    backgroundColor: colors.surfaceHigh,
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-  },
-  ownedBadgeText: { fontSize: typography.xs, color: colors.textMuted, fontWeight: typography.medium },
 });
