@@ -18,7 +18,7 @@ export type RootStackParamList = {
   WalletReview: { currency: string };
   WalletSuccess: { currency: string; walletId: string };
   // Card flows
-  CardList: { walletId: string };
+  CardList: { walletId: string; initialCardIndex?: number };
   CardSettings: { cardId: string; scrollTo?: 'limits' };
   AddCardType: { walletId: string };
   AddCardName: { walletId: string; cardType: string };
@@ -31,7 +31,9 @@ export type RootStackParamList = {
   Activity: { walletId: string };
   TransactionDetail: { txId: string; mode?: 'detail' | 'receipt' };
   // Send money
-  SendMoney: { walletId?: string };
+  SendMoney: { walletId?: string; contactName?: string; prefillSendAmount?: number };
+  // Receive money
+  ReceiveMoney: { walletId: string };
 };
 
 export type RootStackProps<T extends keyof RootStackParamList> =

@@ -33,7 +33,8 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { useNavigation, CommonActions } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ChevronLeft, ChevronDown, Search, X, ArrowUpDown, Check, Phone, Zap, Pen, RefreshCw } from 'lucide-react-native';
+import { ChevronLeft, ChevronDown, Search, X, ArrowUpDown, Check, Phone, Zap, Pen, RefreshCw, ScanLine } from 'lucide-react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 
 import { colors, typography, spacing, radius } from '../../theme';
 import PrimaryButton from '../../components/PrimaryButton';
@@ -107,6 +108,10 @@ const RECEIVE_CURRENCIES_BY_ISO: Record<string, string[]> = {
 
 function getPrimaryCurrency(flag: string): string {
   return PRIMARY_CURRENCY_BY_ISO[flag] ?? 'USD';
+}
+
+function getCurrencyFlag(code: string): string | undefined {
+  return Object.entries(PRIMARY_CURRENCY_BY_ISO).find(([, c]) => c === code)?.[0];
 }
 
 function getReceiveCurrencies(flag: string): string[] {
@@ -602,16 +607,25 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
   const { wallets, deductBalance, addTransaction } = useWalletStore();
 
   const primaryWallet = wallets.find((w) => w.isPrimary) ?? wallets[0];
+  const prefillContact = route.params?.contactName
+    ? MOCK_CONTACTS.find((c) => c.name === route.params.contactName) ?? null
+    : null;
+  const prefillAmount = route.params?.prefillSendAmount;
+
   const [sendWalletId, setSendWalletId] = useState(route.params?.walletId ?? primaryWallet.id);
-  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
-  const [receiveCurrency, setReceiveCurrency] = useState('MXN');
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(prefillContact);
+  const [receiveCurrency, setReceiveCurrency] = useState(
+    prefillContact ? getPrimaryCurrency(prefillContact.flag) : 'MXN',
+  );
 
   // Step: recipient picker first, then amount entry, then confirm overlay
-  const [step, setStep] = useState<'recipient' | 'amount' | 'confirm'>('recipient');
+  const [step, setStep] = useState<'recipient' | 'amount' | 'confirm'>(prefillContact ? 'amount' : 'recipient');
 
   // Dual-field editing
   const [activeField, setActiveField] = useState<'send' | 'receive'>('send');
-  const [sendRaw, setSendRaw] = useState('');
+  const [sendRaw, setSendRaw] = useState(
+    prefillContact && prefillAmount && prefillAmount > 0 ? prefillAmount.toFixed(2) : '',
+  );
   const [receiveRaw, setReceiveRaw] = useState('');
 
   const sendInputRef = useRef<TextInput>(null);
@@ -636,6 +650,9 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
   const [showWalletDropdown, setShowWalletDropdown] = useState(false);
   const [showReceiveDropdown, setShowReceiveDropdown] = useState(false);
   const [contactQuery, setContactQuery] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const scanLock = useRef(false);
 
   const receiveCurrencies = useMemo(
     () => (selectedContact ? getReceiveCurrencies(selectedContact.flag) : ['USD']),
@@ -747,8 +764,12 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
   }, [navigation]);
 
   const handleCloseToWallets = useCallback(() => {
-    navigation.goBack();
-  }, [navigation]);
+    if (prefillContact) {
+      navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: 'Main' }] }));
+    } else {
+      navigation.goBack();
+    }
+  }, [navigation, prefillContact]);
 
   const handleConfirm = useCallback(() => {
     if (!selectedContact) return;
@@ -826,7 +847,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
       }),
   [step, dismissX, screenWidth, finishDismiss]
   );
-  const stepX = useSharedValue(0);
+  const stepX = useSharedValue(prefillContact ? -screenWidth : 0);
   const goToStep = useCallback((s: 'recipient' | 'amount') => {
     setStep(s);
     stepX.value = withTiming(s === 'amount' ? -screenWidth : 0, { duration: 280, easing: Easing.out(Easing.cubic) });
@@ -993,10 +1014,53 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
     goToStep('recipient');
   }, [selectedContact, goToStep]);
 
+  const handleOpenScanner = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (!cameraPermission?.granted) {
+      const result = await requestCameraPermission();
+      if (!result.granted) return;
+    }
+    scanLock.current = false;
+    setScannerOpen(true);
+  }, [cameraPermission, requestCameraPermission]);
+
+  const handleBarcodeScan = useCallback(({ data }: { data: string }) => {
+    if (scanLock.current) return;
+    scanLock.current = true;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setScannerOpen(false);
+    try {
+      const url = new URL(data);
+      if (url.protocol !== 'ria:') return;
+      const p = url.searchParams;
+      const name = p.get('name') ?? '';
+      const phone = p.get('phone') ?? '';
+      const flag = p.get('currency') ? (getCurrencyFlag(p.get('currency')!) ?? 'US') : 'US';
+      const scanned: Contact = {
+        id: `qr-${phone}`,
+        name: name || phone,
+        phone,
+        flag,
+        lastSentCurrency: p.get('currency') ?? 'USD',
+        lastSentAmount: 0,
+      };
+      handleSelectContact(scanned);
+      const prefill = parseFloat(p.get('amount') ?? '');
+      if (prefill > 0) {
+        setReceiveCurrency(p.get('currency') ?? getPrimaryCurrency(flag));
+        setActiveField('receive');
+        setReceiveRaw(prefill.toFixed(2));
+      }
+    } catch {
+      // not a valid ria:// URI — ignore
+    }
+  }, [handleSelectContact]);
+
   const recentContacts = MOCK_CONTACTS.slice(0, 4);
 
   // ══ Render ════════════════════════════════════════════════════════════════════
   return (
+    <>
     <GestureDetector gesture={panGesture}>
       <View style={{ flex: 1 }}>
 
@@ -1019,23 +1083,28 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                   <View style={styles.backBtn} />
                 </View>
 
-                <View style={styles.searchWrap}>
-                  <Search size={16} color={colors.textMuted} strokeWidth={2} />
-                  <TextInput
-                    style={styles.searchInput}
-                    value={contactQuery}
-                    onChangeText={setContactQuery}
-                    placeholder="Name or phone number…"
-                    placeholderTextColor={colors.textMuted}
-                    autoFocus={false}
-                    autoCorrect={false}
-                    autoCapitalize="none"
-                  />
-                  {contactQuery.length > 0 && (
-                    <Pressable onPress={() => setContactQuery('')} hitSlop={8}>
-                      <X size={14} color={colors.textMuted} strokeWidth={2} />
-                    </Pressable>
-                  )}
+                <View style={styles.searchRow}>
+                  <View style={[styles.searchWrap, { flex: 1, marginHorizontal: 0, marginBottom: 0 }]}>
+                    <Search size={16} color={colors.textMuted} strokeWidth={2} />
+                    <TextInput
+                      style={styles.searchInput}
+                      value={contactQuery}
+                      onChangeText={setContactQuery}
+                      placeholder="Name or phone number…"
+                      placeholderTextColor={colors.textMuted}
+                      autoFocus={false}
+                      autoCorrect={false}
+                      autoCapitalize="none"
+                    />
+                    {contactQuery.length > 0 && (
+                      <Pressable onPress={() => setContactQuery('')} hitSlop={8}>
+                        <X size={14} color={colors.textMuted} strokeWidth={2} />
+                      </Pressable>
+                    )}
+                  </View>
+                  <Pressable onPress={handleOpenScanner} style={styles.scanBtn}>
+                    <ScanLine size={20} color={colors.textPrimary} strokeWidth={1.8} />
+                  </Pressable>
                 </View>
 
                 <ScrollView
@@ -1379,6 +1448,9 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                     <Pressable style={styles.dropdownPanel} onPress={() => {}}>
                       <View style={styles.dropdownHandle} />
                       <Text style={styles.dropdownTitle}>Receive currency</Text>
+                      <Text style={styles.dropdownHelper}>
+                        {selectedContact?.name.split(' ')[0]} can only receive the following currencies
+                      </Text>
                       {receiveCurrencies.map((code, i) => {
                         const cur = getCurrency(code);
                         const active = code === receiveCurrency;
@@ -1504,6 +1576,26 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
         </View>
       </View>
     </GestureDetector>
+
+    {/* QR Scanner modal */}
+    <Modal visible={scannerOpen} animationType="slide" onRequestClose={() => setScannerOpen(false)}>
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <CameraView
+          style={{ flex: 1 }}
+          facing="back"
+          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+          onBarcodeScanned={handleBarcodeScan}
+        />
+        <View style={[styles.scannerOverlay, { paddingTop: insets.top + spacing.md, paddingBottom: Math.max(insets.bottom, spacing.xl) }]}>
+          <Pressable onPress={() => setScannerOpen(false)} style={styles.scannerClose}>
+            <X size={24} color="#fff" strokeWidth={2} />
+          </Pressable>
+          <View style={styles.scannerReticle} />
+          <Text style={styles.scannerHint}>Point at a Ria QR code</Text>
+        </View>
+      </View>
+    </Modal>
+    </>
   );
 }
 
@@ -1702,13 +1794,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   // ── Contact picker (step 1) ──
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginHorizontal: spacing.xl,
+    marginBottom: spacing.md,
+  },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surface,
     marginHorizontal: spacing.xl,
     marginBottom: spacing.md,
-    borderRadius: radius.lg,
+    borderRadius: radius.full,
     borderWidth: 1,
     borderColor: colors.border,
     paddingHorizontal: spacing.md,
@@ -1716,6 +1815,47 @@ const styles = StyleSheet.create({
     height: 44,
   },
   searchInput: { flex: 1, color: colors.textPrimary, fontSize: typography.base },
+  scanBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // ── QR Scanner ──
+  scannerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  scannerClose: {
+    alignSelf: 'flex-start',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scannerReticle: {
+    width: 220,
+    height: 220,
+    borderRadius: radius.xl,
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.7)',
+  },
+  scannerHint: {
+    fontSize: typography.base,
+    color: '#fff',
+    fontWeight: typography.medium,
+    textAlign: 'center',
+    marginBottom: spacing.xxxl,
+  },
 
   contactScrollContent: {
     paddingBottom: spacing.xxxl,
@@ -1748,6 +1888,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     gap: spacing.md,
   },
+  contactAvatar: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: colors.border, alignItems: 'center' as const, justifyContent: 'center' as const },
   phoneAvatar: { backgroundColor: colors.brandSubtle, borderColor: colors.brandLight },
   contactInfo: { flex: 1 },
   contactName: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.medium },
@@ -1786,12 +1927,20 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   dropdownTitle: {
-    fontSize: typography.sm,
+    fontSize: typography.xs,
     color: colors.textSecondary,
-    fontWeight: typography.medium,
+    fontWeight: typography.semibold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.sm,
     paddingTop: spacing.xs,
+  },
+  dropdownHelper: {
+    fontSize: typography.sm,
+    color: colors.textSecondary,
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.lg,
   },
   dropdownRow: {
     flexDirection: 'row',

@@ -7,6 +7,7 @@ import Animated, {
   Easing,
   type SharedValue,
 } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 import { colors, typography, radius } from '../theme';
 import { alpha } from '../utils/color';
 import { CardFront, MoreCardsPlaceholder, CARD_HEIGHT, STACK_V_OFFSET } from './CardFace';
@@ -81,6 +82,7 @@ export default function CardStackPreview({ cards, accent, onPress, showHeader = 
   const containerH = CARD_HEIGHT + STACK_V_OFFSET * Math.max(0, totalSlots - 1);
 
   const handlePressIn = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     pressProgress.value = withTiming(1, { duration: PRESS_IN_MS, easing: Easing.out(Easing.cubic) });
   };
 

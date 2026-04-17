@@ -5,6 +5,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { Wallet2, Clock, ArrowUpRight, CreditCard, UserCircle } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { RootStackParamList } from './types';
@@ -24,6 +25,9 @@ import TransactionDetailScreen from '../screens/activity/TransactionDetailScreen
 
 // Send screens
 import SendMoneyScreen from '../screens/send/SendMoneyScreen';
+
+// Receive screens
+import ReceiveMoneyScreen from '../screens/receive/ReceiveMoneyScreen';
 
 // Card screens
 import AllCardsScreen from '../screens/cards/AllCardsScreen';
@@ -53,8 +57,12 @@ function TabItem({ label, Icon, active, onPress }: {
   onPress: () => void;
 }) {
   const color = active ? colors.brand : colors.textMuted;
+  const handlePress = () => {
+    Haptics.selectionAsync();
+    onPress();
+  };
   return (
-    <Pressable onPress={onPress} style={styles.tabItem}>
+    <Pressable onPress={handlePress} style={styles.tabItem}>
       <Icon size={22} color={color} strokeWidth={1.8} />
       <Text style={[styles.tabLabel, { color }]}>{label}</Text>
     </Pressable>
@@ -63,9 +71,13 @@ function TabItem({ label, Icon, active, onPress }: {
 
 // Branded Send FAB
 function SendCTAButton({ onPress }: { onPress?: () => void }) {
+  const handlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onPress?.();
+  };
   return (
     <View style={styles.sendBtnOverlay} pointerEvents="box-none">
-    <Pressable onPress={onPress} style={styles.sendBtn}>
+    <Pressable onPress={handlePress} style={styles.sendBtn}>
       {({ pressed }) => (
         <>
           <View style={[styles.sendCircle, pressed && styles.sendCirclePressed]}>
@@ -170,6 +182,7 @@ export default function RootNavigator() {
         {/* Send money — fullScreenModal slides up/down natively, keeps Main composited.
          * "View transfer" replaces SendMoney with TransactionDetail (receipt mode). */}
         <Stack.Screen name="SendMoney" component={SendMoneyScreen} />
+        <Stack.Screen name="ReceiveMoney" component={ReceiveMoneyScreen} />
 
         {/* Card flows */}
         <Stack.Screen name="CardList" component={CardListScreen} />

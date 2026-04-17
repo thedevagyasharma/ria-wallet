@@ -6,6 +6,7 @@ import {
   ViewStyle,
   StyleProp,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { colors, typography } from '../theme';
 
 type Props = {
@@ -17,9 +18,14 @@ type Props = {
 };
 
 export default function FlatButton({ onPress, style, disabled, label, children }: Props) {
+  const handlePress = () => {
+    Haptics.selectionAsync();
+    onPress?.();
+  };
+
   return (
     <Pressable
-      onPress={onPress}
+      onPress={handlePress}
       disabled={disabled}
       style={({ pressed }) => [
         styles.base,

@@ -20,16 +20,27 @@ import {
   FileText,
   Shield,
   ArrowUpRight,
+  Search,
+  Globe,
 } from 'lucide-react-native';
 
 import { colors, typography, spacing, radius } from '../../theme';
 import { alpha } from '../../utils/color';
 import { useWalletStore } from '../../stores/useWalletStore';
 import SetPrimarySheet from '../../components/SetPrimarySheet';
-import { usePrefsStore } from '../../stores/usePrefsStore';
+import { usePrefsStore, type Discoverability } from '../../stores/usePrefsStore';
 import { getCurrency } from '../../data/currencies';
+import { MOCK_PROFILE } from '../../data/mockData';
 import FlatButton from '../../components/FlatButton';
 import FlagIcon from '../../components/FlagIcon';
+import BottomSheet from '../../components/BottomSheet';
+
+const DISCOVERABILITY_LABELS: Record<Discoverability, string> = {
+  everyone: 'Everyone',
+  contacts: 'Contacts only',
+  nobody: 'Nobody',
+};
+const DISCOVERABILITY_OPTIONS: Discoverability[] = ['everyone', 'contacts', 'nobody'];
 
 const H_PAD = 24;
 
@@ -77,7 +88,7 @@ function Row({
         {toggle ? (
           <Switch
             value={toggleValue}
-            onValueChange={onPress}
+            onValueChange={() => { Haptics.selectionAsync(); onPress?.(); }}
             trackColor={{ false: colors.border, true: colors.brand }}
             thumbColor="#fff"
           />
@@ -156,10 +167,13 @@ function WalletRow({
 
 export default function ProfileScreen() {
   const { wallets, setPrimary } = useWalletStore();
-  const { hideBalances, appLockEnabled, defaultSendCurrency, toggleHideBalances, toggleAppLock } =
-    usePrefsStore();
+  const {
+    hideBalances, appLockEnabled, defaultSendCurrency, toggleHideBalances, toggleAppLock,
+    discoverability, setDiscoverability, hiddenCurrencies, toggleCurrencyVisibility,
+  } = usePrefsStore();
 
   const [primarySheet, setPrimarySheet] = useState<{ id: string; label: string } | null>(null);
+  const [discoverSheet, setDiscoverSheet] = useState(false);
 
   function handleSetPrimary(id: string, label: string) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -199,9 +213,9 @@ export default function ProfileScreen() {
         {/* ── User block ──────────────────────────────────────────────────── */}
         <View style={styles.userBlock}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>CM</Text>
+            <Text style={styles.avatarText}>{MOCK_PROFILE.name.split(' ').map(w => w[0]).join('')}</Text>
           </View>
-          <Text style={styles.userName}>Carlos Mendez</Text>
+          <Text style={styles.userName}>{MOCK_PROFILE.name}</Text>
           <Text style={styles.userSub}>Member since Jan 2024</Text>
         </View>
 
@@ -258,6 +272,50 @@ export default function ProfileScreen() {
           />
         </View>
 
+        {/* ── Privacy ──────────────────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <SectionLabel label="Privacy" />
+          <Row
+            icon={<Search size={18} color={colors.textSecondary} strokeWidth={1.8} />}
+            label="Who can find me"
+            value={DISCOVERABILITY_LABELS[discoverability]}
+            onPress={() => setDiscoverSheet(true)}
+          />
+          <View style={styles.currencyVisHeader}>
+            <Globe size={18} color={colors.textSecondary} strokeWidth={1.8} />
+            <Text style={styles.rowLabel}>Visible currencies</Text>
+          </View>
+          <Text style={styles.currencyVisHint}>Choose which currencies others can see you receive</Text>
+          <View style={styles.currencyVisRows}>
+            {wallets.map((w, i) => {
+              const cur = getCurrency(w.currency);
+              const hidden = hiddenCurrencies.includes(w.currency);
+              return (
+                <React.Fragment key={w.id}>
+                  <View style={styles.walletRow}>
+                    <View style={styles.walletRowLeft}>
+                      <View style={styles.walletFlagSlot}>
+                        <FlagIcon code={cur.flag} size={18} />
+                      </View>
+                      <Text style={styles.walletLabel}>{cur.code}</Text>
+                    </View>
+                    <Switch
+                      value={!hidden}
+                      onValueChange={() => {
+                        Haptics.selectionAsync();
+                        toggleCurrencyVisibility(w.currency);
+                      }}
+                      trackColor={{ false: colors.border, true: colors.brand }}
+                      thumbColor="#fff"
+                    />
+                  </View>
+                  {i < wallets.length - 1 && <View style={styles.rowDivider} />}
+                </React.Fragment>
+              );
+            })}
+          </View>
+        </View>
+
         {/* ── Support ─────────────────────────────────────────────────────── */}
         <View style={[styles.section, styles.sectionLast]}>
           <SectionLabel label="Support" />
@@ -281,6 +339,34 @@ export default function ProfileScreen() {
 
         <Text style={styles.version}>Ria Wallet v1.0.0</Text>
       </ScrollView>
+
+      <BottomSheet visible={discoverSheet} onClose={() => setDiscoverSheet(false)}>
+        <View style={styles.discoverSheet}>
+          <Text style={styles.discoverTitle}>Who can find me</Text>
+          {DISCOVERABILITY_OPTIONS.map((opt) => (
+            <Pressable
+              key={opt}
+              onPress={() => {
+                Haptics.selectionAsync();
+                setDiscoverability(opt);
+                setDiscoverSheet(false);
+              }}
+              style={({ pressed }) => [
+                styles.discoverOption,
+                discoverability === opt && styles.discoverOptionActive,
+                pressed && { opacity: 0.6 },
+              ]}
+            >
+              <Text style={[
+                styles.discoverOptionText,
+                discoverability === opt && styles.discoverOptionTextActive,
+              ]}>
+                {DISCOVERABILITY_LABELS[opt]}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </BottomSheet>
 
       <SetPrimarySheet
         visible={primarySheet !== null}
@@ -399,6 +485,50 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   setPrimaryText: { fontSize: 11, color: colors.textSecondary, fontWeight: typography.medium },
+
+  // ── Privacy ──
+  currencyVisHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingTop: spacing.lg,
+  },
+  currencyVisHint: {
+    fontSize: typography.xs,
+    color: colors.textMuted,
+    marginTop: 4,
+    marginBottom: spacing.xs,
+    marginLeft: 22 + spacing.md,
+  },
+  currencyVisRows: {
+    marginLeft: 22 + spacing.md,
+  },
+
+  // ── Discoverability sheet ──
+  discoverSheet: { width: '100%', gap: spacing.xs },
+  discoverTitle: {
+    fontSize: typography.lg,
+    fontWeight: typography.bold,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  discoverOption: {
+    paddingVertical: 14,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+  },
+  discoverOptionActive: {
+    backgroundColor: alpha(colors.brand, 0.08),
+  },
+  discoverOptionText: {
+    fontSize: typography.base,
+    color: colors.textSecondary,
+    fontWeight: typography.medium,
+  },
+  discoverOptionTextActive: {
+    color: colors.brand,
+    fontWeight: typography.semibold,
+  },
 
   // ── Footer ──
   version: {

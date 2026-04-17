@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -252,7 +252,7 @@ function SpendingLimitsSection({
 
 export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
   const navigation = useNavigation<Nav>();
-  const { walletId } = route.params;
+  const { walletId, initialCardIndex = 0 } = route.params;
   const { cards, justAddedCardId, clearJustAddedCardId } = useCardStore();
   const { wallets, transactions } = useWalletStore();
 
@@ -260,7 +260,7 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
   const currency = wallet ? getCurrency(wallet.currency) : null;
   const walletCards = cards.filter((c) => c.walletId === walletId);
 
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeIndex, setActiveIndex] = useState(Math.max(0, Math.min(initialCardIndex, walletCards.length - 1)));
   const [numberRevealed, setNumberRevealed] = useState(false);
   const [cvvRevealed, setCvvRevealed] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -279,6 +279,7 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
   }, [justAddedCardId, clearJustAddedCardId]);
 
   const scrollX = useSharedValue(0);
+  const carouselRef = useRef<FlatList<Card>>(null);
 
   const handleCarouselScroll = useAnimatedScrollHandler({
     onScroll: (e) => { scrollX.value = e.contentOffset.x; },
@@ -306,6 +307,17 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
       240,
       withTiming(0, { duration: 380, easing: Easing.out(Easing.cubic) }),
     );
+  }, []);
+
+  useEffect(() => {
+    if (initialCardIndex > 0 && walletCards.length > 1) {
+      setTimeout(() => {
+        carouselRef.current?.scrollToOffset({
+          offset: Math.min(initialCardIndex, walletCards.length - 1) * SNAP,
+          animated: false,
+        });
+      }, 50);
+    }
   }, []);
 
   const activeCard = walletCards[activeIndex] ?? null;
@@ -426,6 +438,7 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
         >
           {/* Card carousel with peek */}
           <AnimatedFlatList
+            ref={carouselRef as any}
             data={walletCards}
             keyExtractor={(c) => c.id}
             renderItem={renderCard}

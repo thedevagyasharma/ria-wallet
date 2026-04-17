@@ -21,6 +21,7 @@ import { colors, typography, spacing, radius } from '../../theme';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useCardStore } from '../../stores/useCardStore';
 import { getCurrency } from '../../data/currencies';
+import { MOCK_PROFILE } from '../../data/mockData';
 import { CardFront } from '../../components/CardFace';
 import type { RootStackProps, RootStackParamList } from '../../navigation/types';
 
@@ -70,7 +71,7 @@ export default function AddCardReviewScreen({ route }: Props) {
         finish: 'plastic',
         last4,
         network,
-        cardholderName: 'Carlos Mendez',
+        cardholderName: MOCK_PROFILE.name,
         expiry: `${month}/${year}`,
         cvv: String(Math.floor(100 + Math.random() * 900)),
         fullNumber,
@@ -164,6 +165,7 @@ export default function AddCardReviewScreen({ route }: Props) {
 
   useEffect(() => {
     if (done) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       checkOpacity.value = withTiming(1, { duration: 200 });
       checkScale.value = withSequence(
         withSpring(1.15, { damping: 8, stiffness: 200, mass: 0.6 }),

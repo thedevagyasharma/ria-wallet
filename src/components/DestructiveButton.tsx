@@ -8,6 +8,7 @@ import {
   StyleProp,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import { colors, typography } from '../theme';
 
 type Props = {
@@ -19,9 +20,14 @@ type Props = {
 };
 
 export default function DestructiveButton({ onPress, style, disabled, label, children }: Props) {
+  const handlePress = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    onPress?.();
+  };
+
   return (
     <Pressable
-      onPress={onPress}
+      onPress={handlePress}
       disabled={disabled}
       style={({ pressed }) => [
         styles.base,

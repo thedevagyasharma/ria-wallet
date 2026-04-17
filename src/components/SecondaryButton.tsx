@@ -8,6 +8,7 @@ import {
   StyleProp,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import { colors, radius, typography } from '../theme';
 
 type Props = {
@@ -20,9 +21,14 @@ type Props = {
 };
 
 export default function SecondaryButton({ onPress, style, disabled, shape = 'pill', label, children }: Props) {
+  const handlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onPress?.();
+  };
+
   return (
     <Pressable
-      onPress={onPress}
+      onPress={handlePress}
       disabled={disabled}
       style={({ pressed }) => [
         styles.base,

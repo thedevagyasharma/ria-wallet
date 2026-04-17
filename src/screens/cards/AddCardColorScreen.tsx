@@ -9,6 +9,7 @@ import { colors, typography, spacing, radius } from '../../theme';
 import PrimaryButton from '../../components/PrimaryButton';
 import { CardFront } from '../../components/CardFace';
 import { useCardStore } from '../../stores/useCardStore';
+import { MOCK_PROFILE } from '../../data/mockData';
 import type { RootStackProps, RootStackParamList } from '../../navigation/types';
 import type { Card, CardType, CardFinish } from '../../stores/types'; // CardFinish used for RIA_PALETTE finish field
 
@@ -115,7 +116,7 @@ export default function AddCardColorScreen({ route }: RootStackProps<'AddCardCol
       finish,
       last4,
       network,
-      cardholderName: 'Carlos Mendez',
+      cardholderName: MOCK_PROFILE.name,
       expiry: `${month}/${year}`,
       cvv: String(Math.floor(100 + Math.random() * 900)),
       fullNumber,

@@ -153,8 +153,12 @@ export default function TransactionDetailScreen({ route }: RootStackProps<'Trans
           ) : (
             !incoming && !isCard && (
               <PrimaryButton
-                onPress={() => navigation.navigate('SendMoney', {})}
-                label="Send again"
+                onPress={() => navigation.navigate('SendMoney', {
+                  walletId: tx.walletId,
+                  contactName: tx.recipientName,
+                  prefillSendAmount: Math.abs(tx.amount) - (tx.fee ?? 0),
+                })}
+                label="Repeat transfer"
                 style={styles.actionBtn}
               />
             )

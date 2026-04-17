@@ -1,5 +1,10 @@
 import type { Wallet, Card, Transaction, Contact } from '../stores/types';
 
+export const MOCK_PROFILE = {
+  name: 'Carlos Mendez',
+  phone: '+1 312 555 0147',
+};
+
 export const MOCK_CARDS: Card[] = [
   {
     id: 'card-1',
@@ -9,7 +14,7 @@ export const MOCK_CARDS: Card[] = [
     badgeTheme: 'inverted',
     last4: '4242',
     network: 'Visa',
-    cardholderName: 'Carlos Mendez',
+    cardholderName: MOCK_PROFILE.name,
     expiry: '09/28',
     cvv: '372',
     fullNumber: '4242 4242 4242 4242',
@@ -25,7 +30,7 @@ export const MOCK_CARDS: Card[] = [
     badgeTheme: 'inverted',
     last4: '8891',
     network: 'Mastercard',
-    cardholderName: 'Carlos Mendez',
+    cardholderName: MOCK_PROFILE.name,
     expiry: '03/27',
     cvv: '104',
     fullNumber: '5555 5555 5555 8891',
@@ -40,7 +45,7 @@ export const MOCK_CARDS: Card[] = [
     badgeTheme: 'inverted',
     last4: '3317',
     network: 'Visa',
-    cardholderName: 'Carlos Mendez',
+    cardholderName: MOCK_PROFILE.name,
     expiry: '11/26',
     cvv: '881',
     fullNumber: '4111 1111 1111 3317',
@@ -330,12 +335,12 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     rate: 17.15,
     eta: 'Within minutes',
   },
-  // USD — incoming from Jose
+  // USD — incoming from David
   {
     id: 'tx-p2p-2',
     walletId: 'wallet-usd',
     type: 'receive',
-    recipientName: 'Jose Ramirez',
+    recipientName: 'David Okonkwo',
     amount: 75.50,
     currency: 'USD',
     date: new Date('2026-04-14T16:40:00'),
@@ -347,7 +352,7 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     id: 'tx-p2p-3',
     walletId: 'wallet-usd',
     type: 'send',
-    recipientName: 'Elena Vargas',
+    recipientName: 'Priya Sharma',
     amount: -52.99,
     currency: 'USD',
     date: new Date('2026-04-16T17:05:00'),
@@ -365,7 +370,7 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     id: 'tx-p2p-4',
     walletId: 'wallet-mxn',
     type: 'send',
-    recipientName: 'Ana Torres',
+    recipientName: 'Fatima Al-Rashid',
     amount: -2551.28,
     currency: 'MXN',
     date: new Date('2026-04-12T09:30:00'),
@@ -395,7 +400,7 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     id: 'tx-p2p-6',
     walletId: 'wallet-php',
     type: 'send',
-    recipientName: 'Lola Reyes',
+    recipientName: 'Grace Dela Cruz',
     amount: -3169.83,
     currency: 'PHP',
     date: new Date('2026-04-13T11:00:00'),
@@ -413,7 +418,7 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     id: 'tx-p2p-7',
     walletId: 'wallet-php',
     type: 'send',
-    recipientName: 'Lola Reyes',
+    recipientName: 'Grace Dela Cruz',
     amount: -5169.83,
     currency: 'PHP',
     date: new Date('2026-04-11T08:45:00'),
@@ -431,7 +436,7 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     id: 'tx-p2p-8',
     walletId: 'wallet-php',
     type: 'receive',
-    recipientName: 'Jose Ramirez',
+    recipientName: 'David Okonkwo',
     amount: 2000.00,
     currency: 'PHP',
     date: new Date('2026-04-09T15:30:00'),
@@ -529,7 +534,7 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     id: 'tx-8',
     walletId: 'wallet-php',
     type: 'send',
-    recipientName: 'Lola Reyes',
+    recipientName: 'Grace Dela Cruz',
     amount: -3000,
     currency: 'PHP',
     date: new Date('2025-04-02T13:00:00'),
@@ -627,7 +632,7 @@ export const MOCK_TRANSACTIONS: Transaction[] = [
     id: 'tx-16',
     walletId: 'wallet-php',
     type: 'send',
-    recipientName: 'Lola Reyes',
+    recipientName: 'Grace Dela Cruz',
     amount: -2500,
     currency: 'PHP',
     date: new Date('2025-02-14T13:00:00'),
@@ -671,10 +676,10 @@ export const MOCK_WALLETS: Wallet[] = [
 ];
 
 export const MOCK_CONTACTS: Contact[] = [
-  { id: 'c-1', name: 'Maria Mendez',   phone: '+52 555 123 4567', flag: 'MX', lastSentCurrency: 'USD', lastSentAmount: 120 },
-  { id: 'c-2', name: 'Jose Ramirez',   phone: '+1 415 987 6543',  flag: 'US', lastSentCurrency: 'USD', lastSentAmount: 75.50 },
-  { id: 'c-3', name: 'Ana Torres',     phone: '+52 555 876 5432', flag: 'MX', lastSentCurrency: 'MXN', lastSentAmount: 2500 },
-  { id: 'c-4', name: 'Luis Herrera',   phone: '+1 213 456 7890',  flag: 'US', lastSentCurrency: 'USD', lastSentAmount: 200 },
-  { id: 'c-5', name: 'Elena Vargas',   phone: '+52 555 234 5678', flag: 'MX', lastSentCurrency: 'USD', lastSentAmount: 50 },
-  { id: 'c-6', name: 'Lola Reyes',     phone: '+63 917 555 1234', flag: 'PH', lastSentCurrency: 'PHP', lastSentAmount: 3000 },
+  { id: 'c-1', name: 'Maria Mendez',     phone: '+52 555 123 4567', flag: 'MX', lastSentCurrency: 'USD', lastSentAmount: 120 },
+  { id: 'c-2', name: 'David Okonkwo',   phone: '+1 415 987 6543',  flag: 'US', lastSentCurrency: 'USD', lastSentAmount: 75.50 },
+  { id: 'c-3', name: 'Fatima Al-Rashid', phone: '+52 555 876 5432', flag: 'MX', lastSentCurrency: 'MXN', lastSentAmount: 2500 },
+  { id: 'c-4', name: 'Wei Chen',        phone: '+1 213 456 7890',  flag: 'US', lastSentCurrency: 'USD', lastSentAmount: 200 },
+  { id: 'c-5', name: 'Priya Sharma',    phone: '+52 555 234 5678', flag: 'MX', lastSentCurrency: 'USD', lastSentAmount: 50 },
+  { id: 'c-6', name: 'Grace Dela Cruz', phone: '+63 917 555 1234', flag: 'PH', lastSentCurrency: 'PHP', lastSentAmount: 3000 },
 ];

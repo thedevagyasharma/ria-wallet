@@ -167,7 +167,7 @@ function FilterChip({
   return (
     <Animated.View layout={LinearTransition.duration(240)} entering={entering} exiting={exiting}>
       <Pressable
-        onPress={onPress}
+        onPress={() => { Haptics.selectionAsync(); onPress(); }}
         disabled={disabled}
         style={({ pressed }) => [
           disabled && styles.chipDisabled,
@@ -225,7 +225,7 @@ function OptionChip({
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => { Haptics.selectionAsync(); onPress(); }}
       disabled={disabled}
       style={({ pressed }) => [
         disabled && styles.optionChipDisabled,

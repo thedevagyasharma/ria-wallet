@@ -21,7 +21,6 @@ import {
   FlatList,
   ScrollView,
   Dimensions,
-  Animated as RNAnimated,
   InteractionManager,
   ListRenderItemInfo,
   NativeSyntheticEvent,
@@ -29,6 +28,7 @@ import {
 } from 'react-native';
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<Wallet>);
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
@@ -48,10 +48,11 @@ import { useWalletStore } from '../../stores/useWalletStore';
 import { useCardStore } from '../../stores/useCardStore';
 import { usePrefsStore } from '../../stores/usePrefsStore';
 import { getCurrency, formatAmount } from '../../data/currencies';
+import { MOCK_PROFILE } from '../../data/mockData';
 import SecondaryButton from '../../components/SecondaryButton';
 import ActivityItem from '../../components/ActivityItem';
 import FlatButton from '../../components/FlatButton';
-import { CardFront, MoreCardsPlaceholder, CARD_HEIGHT, STACK_V_OFFSET } from '../../components/CardFace';
+import { CardFront, CARD_HEIGHT, STACK_V_OFFSET } from '../../components/CardFace';
 import FlagIcon from '../../components/FlagIcon';
 import type { RootStackParamList } from '../../navigation/types';
 import { useTabScrollReset } from '../../navigation/TabScrollContext';
@@ -343,83 +344,82 @@ function ActionBtn({
 }
 
 // ─── Animated card stack ─────────────────────────────────────────────────────
-//
-// Purely scrollX-driven: no state, no timers, no data swapping.
-// One AnimatedCardStack is rendered per wallet, all absolutely layered.
-//
-// t = |scrollX/W - walletIndex|  →  0 when this wallet is centred, 0.5 at the
-//                                    midpoint between this wallet and the next
-// p = clamp(t * 2, 0, 1)         →  stagger progress: 0 = full stagger,
-//                                    1 = fully collapsed & transparent
-//
-// As p → 1: cards slide to ty=0, scale to 1:1, opacity to 0.
-// As p → 0: cards spring to staggered positions, natural scale, opacity 1.
-//
-// The incoming wallet's stack is always rendered at ty=0 underneath the
-// outgoing one, so at the swap point (p=1, opacity=0) the new front card is
-// already present — no JS race, no flash.
 
-const CARD_SLOTS = 3;
+const SPREAD_V_OFFSET = CARD_HEIGHT - 40;
+const SPREAD_DRAG_DIST = 140;
 
-// Stable empty fallback for wallets with no cards — avoids allocating a fresh
-// [] reference each render, which would bust AnimatedCardStack's memo.
 const EMPTY_CARDS: Card[] = [];
 
+// ─── Per-card animated slot ──────────────────────────────────────────────────
 
-// Total visual slots: real cards (capped at CARD_SLOTS) + 1 if there's overflow.
-// The overflow slot is a "+N more" placeholder peeking out at the back of the stack.
-function visibleSlots(cardCount: number): number {
-  const real = Math.min(cardCount, CARD_SLOTS);
-  return real + (cardCount > CARD_SLOTS ? 1 : 0);
-}
+const AnimatedCardSlot = React.memo(function AnimatedCardSlot({
+  card, index, totalCards, walletIndex, scrollX, spreadProgress,
+  entranceProgress, isEntranceTarget,
+}: {
+  card: Card;
+  index: number;
+  totalCards: number;
+  walletIndex: number;
+  scrollX: SharedValue<number>;
+  spreadProgress: SharedValue<number>;
+  entranceProgress: SharedValue<number>;
+  isEntranceTarget: boolean;
+}) {
+  const animStyle = useAnimatedStyle(() => {
+    const st = scrollX.value / W - walletIndex;
+    const visible = st > -0.5 && st < 0.5;
+    const p = Math.min(Math.abs(st) * 2, 1);
+    const sp = spreadProgress.value;
+    const n = totalCards;
 
-// Container height for n visible cards
-function stackH(n: number): number {
-  return n <= 1 ? CARD_HEIGHT : CARD_HEIGHT + STACK_V_OFFSET * (n - 1);
-}
+    const stackOff = (n - 1 - index) * STACK_V_OFFSET;
+    const spreadOff = (n - 1 - index) * SPREAD_V_OFFSET;
+    const baseY = stackOff + sp * (spreadOff - stackOff);
 
-// translateY for slot i in an n-card stack (front card = largest offset = bottom)
-// Must be a worklet — called from useAnimatedStyle callbacks on the UI thread.
-function slotTargetY(i: number, n: number): number {
-  'worklet';
-  return n <= 1 ? 0 : (n - 1 - i) * STACK_V_OFFSET;
-}
+    const shrink = 0.01 * Math.min(index, 6) * (1 - sp);
+    const baseScale = 1 - shrink * (1 - p);
 
-// Press feedback — mirrored in CardStackPreview so motion is identical across both entry points.
-const PRESS_LIFT      = 6;
-const PRESS_SCALE     = 0.025;
-const PRESS_DEPTH     = [1, 0.55, 0.25];
-const PRESS_IN_MS     = 140;
-const PRESS_OUT_MS    = 180;
+    const ev = isEntranceTarget ? entranceProgress.value : 0;
 
-// Memoized so a parent re-render (e.g. setCurrentIndex fired inside the
-// justAddedCardId effect) doesn't recreate this component's useAnimatedStyle
-// closures mid-entrance — Reanimated rebinding those worklets in the middle of
-// a withTiming causes a visible frame drop during the land-in settle.
-const AnimatedCardStack = React.memo(function AnimatedCardStack({ walletIndex, cards, accent, onPress, scrollX, playEntrance, onEntranceComplete }: {
+    const tiltDeg = sp * (2 + index * 1.2);
+
+    return {
+      opacity: visible ? 1 : 0,
+      transform: [
+        { perspective: 800 },
+        { translateY: baseY * (1 - p) - ev * 40 },
+        { rotateX: `${-tiltDeg}deg` },
+        { scale: baseScale * (1 + ev * 0.06) },
+      ],
+    };
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.cardSlot,
+        index === 0 && styles.cardSlotFrontShadow,
+        { zIndex: totalCards - index },
+        animStyle,
+      ]}
+    >
+      <CardFront card={card} compact />
+    </Animated.View>
+  );
+});
+
+// ─── Card stack container ───────────────────────────────────────────────────
+
+const AnimatedCardStack = React.memo(function AnimatedCardStack({ walletIndex, cards, accent, onPressCard, scrollX, spreadProgress, playEntrance, onEntranceComplete }: {
   walletIndex: number;
   cards: Card[];
   accent: string;
-  onPress: () => void;
+  onPressCard: (index: number) => void;
   scrollX: SharedValue<number>;
+  spreadProgress: SharedValue<number>;
   playEntrance?: boolean;
   onEntranceComplete?: () => void;
 }) {
-  // realN  = real cards rendered (capped at CARD_SLOTS)
-  // overflow = remaining count shown in the "+N more" placeholder
-  // slotN  = total visual slots (real + placeholder if any) — drives stagger geometry
-  const realN = Math.min(cards.length, CARD_SLOTS);
-  const overflow = Math.max(0, cards.length - CARD_SLOTS);
-  const slotN = realN + (overflow > 0 ? 1 : 0);
-
-  const pressProgress = useSharedValue(0);
-
-  // Land-in animation for a newly-added card. Slot 0 starts lifted & scaled up
-  // (card arriving from above), and the settle starts once all concurrent
-  // native work (stack pop, tab slide, balance-drum animations) has finished —
-  // otherwise the settle drops frames as Reanimated's UI thread competes with
-  // that work. InteractionManager.runAfterInteractions is the mechanism RN
-  // provides for exactly this "wait until things quiet down" case.
   const entranceProgress = useSharedValue(playEntrance ? 1 : 0);
   useEffect(() => {
     if (!playEntrance) return;
@@ -436,128 +436,44 @@ const AnimatedCardStack = React.memo(function AnimatedCardStack({ walletIndex, c
     return () => task.cancel?.();
   }, [playEntrance]);
 
-  // st = signed distance from this wallet's centre in wallet-widths.
-  // visible = this stack's active region: hard-cut at ±0.5, no scroll-linked fade.
-  // p  = stagger progress: 0 = fully staggered, 1 = fully collapsed.
-  // pp = press progress scaled by the slot's depth multiplier (front moves most).
-
-  // Slot 0 — front card (or empty-state placeholder when slotN=0).
-  // entranceProgress adds a lift+upscale on top of the resting transform so the
-  // newly-added card appears "arriving from above" before it settles into place.
-  const as0 = useAnimatedStyle(() => {
+  const emptyStyle = useAnimatedStyle(() => {
     const st = scrollX.value / W - walletIndex;
     const visible = st > -0.5 && st < 0.5;
-    const p = Math.min(Math.abs(st) * 2, 1);
-    const pp = pressProgress.value * PRESS_DEPTH[0];
-    const ev = entranceProgress.value;
-    return {
-      opacity: visible ? 1 : 0,
-      transform: [
-        { translateY: (slotN > 0 ? slotTargetY(0, slotN) : 0) * (1 - p) - pp * PRESS_LIFT - ev * 40 },
-        { scale: (1 + pp * PRESS_SCALE) * (1 + ev * 0.06) },
-      ],
-    };
+    return { opacity: visible ? 1 : 0 };
   });
 
-  // Slot 1
-  const as1 = useAnimatedStyle(() => {
-    if (slotN <= 1) return { opacity: 0, transform: [{ translateY: 0 }, { scale: 1 }] };
-    const st = scrollX.value / W - walletIndex;
-    const visible = st > -0.5 && st < 0.5;
-    const p = Math.min(Math.abs(st) * 2, 1);
-    const pp = pressProgress.value * PRESS_DEPTH[1];
-    return {
-      opacity: visible ? 1 : 0,
-      transform: [
-        { translateY: slotTargetY(1, slotN) * (1 - p) - pp * PRESS_LIFT },
-        { scale: (1 - 0.02 * (1 - p)) * (1 + pp * PRESS_SCALE) },
-      ],
-    };
-  });
-
-  // Slot 2
-  const as2 = useAnimatedStyle(() => {
-    if (slotN <= 2) return { opacity: 0, transform: [{ translateY: 0 }, { scale: 1 }] };
-    const st = scrollX.value / W - walletIndex;
-    const visible = st > -0.5 && st < 0.5;
-    const p = Math.min(Math.abs(st) * 2, 1);
-    const pp = pressProgress.value * PRESS_DEPTH[2];
-    return {
-      opacity: visible ? 1 : 0,
-      transform: [
-        { translateY: slotTargetY(2, slotN) * (1 - p) - pp * PRESS_LIFT },
-        { scale: (1 - 0.04 * (1 - p)) * (1 + pp * PRESS_SCALE) },
-      ],
-    };
-  });
-
-  // Slot 3 — "+N more" placeholder. Only renders when overflow > 0.
-  // Press depth = 0 so it stays static while real cards lift — reads as a backplate.
-  const as3 = useAnimatedStyle(() => {
-    if (slotN <= 3) return { opacity: 0, transform: [{ translateY: 0 }, { scale: 1 }] };
-    const st = scrollX.value / W - walletIndex;
-    const visible = st > -0.5 && st < 0.5;
-    const p = Math.min(Math.abs(st) * 2, 1);
-    return {
-      opacity: visible ? 1 : 0,
-      transform: [
-        { translateY: slotTargetY(3, slotN) * (1 - p) },
-        { scale: 1 - 0.06 * (1 - p) },
-      ],
-    };
-  });
-
-  const handlePressIn = () => {
-    pressProgress.value = withTiming(1, { duration: PRESS_IN_MS, easing: Easing.out(Easing.cubic) });
-  };
-
-  const handlePressOut = () => {
-    pressProgress.value = withTiming(0, { duration: PRESS_OUT_MS, easing: Easing.out(Easing.cubic) });
-  };
-
-  return (
-    <Pressable
-      onPressIn={handlePressIn}
-      onPress={onPress}
-      onPressOut={handlePressOut}
-      pressRetentionOffset={{ top: 40, left: 40, right: 40, bottom: 40 }}
-      style={StyleSheet.absoluteFill}
-    >
-      {realN === 0 ? (
-        <Animated.View style={[{ position: 'absolute', left: 0, right: 0, top: 0, height: CARD_HEIGHT }, as0]}>
+  if (cards.length === 0) {
+    return (
+      <Animated.View style={[{ position: 'absolute', left: 0, right: 0, top: 0, height: CARD_HEIGHT }, emptyStyle]}>
+        <Pressable
+          onPress={() => onPressCard(-1)}
+          pressRetentionOffset={{ top: 40, left: 40, right: 40, bottom: 40 }}
+          style={{ flex: 1 }}
+        >
           <View style={[styles.cardEmpty, { borderColor: alpha(accent, 0.25), backgroundColor: alpha(accent, 0.04) }]}>
             <Text style={[styles.cardEmptyText, { color: accent }]}>+ Add your first card</Text>
           </View>
-        </Animated.View>
-      ) : (
-        <>
-          {cards.slice(0, realN).map((card, idx) => {
-            const animStyle = idx === 0 ? as0 : idx === 1 ? as1 : as2;
-            return (
-              <Animated.View
-                key={card.id}
-                style={[
-                  styles.cardSlot,
-                  idx === 0 && styles.cardSlotFrontShadow,
-                  { zIndex: slotN - idx },
-                  animStyle,
-                ]}
-              >
-                <CardFront card={card} compact />
-              </Animated.View>
-            );
-          })}
-          {overflow > 0 && (
-            <Animated.View
-              key="more-placeholder"
-              style={[styles.cardSlot, { zIndex: slotN - 3 }, as3]}
-            >
-              <MoreCardsPlaceholder count={overflow} />
-            </Animated.View>
-          )}
-        </>
-      )}
-    </Pressable>
+        </Pressable>
+      </Animated.View>
+    );
+  }
+
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      {cards.map((card, idx) => (
+        <AnimatedCardSlot
+          key={card.id}
+          card={card}
+          index={idx}
+          totalCards={cards.length}
+          walletIndex={walletIndex}
+          scrollX={scrollX}
+          spreadProgress={spreadProgress}
+          entranceProgress={entranceProgress}
+          isEntranceTarget={idx === 0 && !!playEntrance}
+        />
+      ))}
+    </View>
   );
 });
 
@@ -679,9 +595,16 @@ export default function WalletsScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [justAddedCardId]);
 
+  const spreadProgress = useSharedValue(0);
+  const spreadStart = useSharedValue(0);
+  const startTouchY = useSharedValue(0);
+  const startTapLocalY = useSharedValue(0);
+  const hasMoved = useSharedValue(false);
+
   const active      = wallets[currentIndex] ?? wallets[0];
   const activeCards = active ? getWalletCards(active.id) : [];
   const accent      = walletAccent(active?.currency ?? 'USD', active?.accentColor);
+  const activeCardCount = useSharedValue(activeCards.length);
 
   // active-wallet ref: lets tap handlers read the current wallet without
   // listing `active` in their deps — keeps their references stable across
@@ -704,35 +627,30 @@ export default function WalletsScreen() {
     .sort((a, b) => b.date.getTime() - a.date.getTime());
   const previewTxs = walletTxs.slice(0, MAX_PREVIEW_TXS);
 
-  // Card stack container height — RNAnimated.Value drives layout so the ScrollView
-  // sees the change and the activity section moves smoothly.
-  //
-  // The height is updated exactly once per wallet switch, at the midpoint where
-  // all cards are fully collapsed (p=1). At that instant the change is invisible,
-  // so the new wallet's full height is "reserved" before the cards begin to
-  // unstagger — no overflow, no jitter, no per-frame bridge calls.
-  const cardStackHeightAnim = useRef(
-    new RNAnimated.Value(stackH(visibleSlots(activeCards.length)))
-  ).current;
-
-  // Keep height in sync when cards are added/removed on the active wallet.
   useEffect(() => {
-    cardStackHeightAnim.setValue(stackH(visibleSlots(activeCards.length)));
+    activeCardCount.value = activeCards.length;
   }, [activeCards.length]);
 
-  // JS-thread side-effects: state updates + haptics (called via runOnJS)
+  const cardStackAnimStyle = useAnimatedStyle(() => {
+    const n = activeCardCount.value;
+    const sp = spreadProgress.value;
+    const vOff = STACK_V_OFFSET + sp * (SPREAD_V_OFFSET - STACK_V_OFFSET);
+    return { height: n <= 1 ? CARD_HEIGHT : CARD_HEIGHT + vOff * (n - 1) };
+  });
+
   const handleScrollJS = useCallback((x: number) => {
     const nearest = Math.max(0, Math.min(Math.round(x / W), wallets.length - 1));
     if (nearest !== pendingIdx.current) {
       pendingIdx.current = nearest;
-      // Reserve the new wallet's full stack height now — cards are fully collapsed
-      // at the midpoint so this setValue is invisible to the user.
-      cardStackHeightAnim.setValue(stackH(visibleSlots(getWalletCards(wallets[nearest].id).length)));
+      activeCardCount.value = getWalletCards(wallets[nearest].id).length;
       setCurrentIndex(nearest);
       setActiveWallet(wallets[nearest].id);
       Haptics.selectionAsync();
+      if (spreadProgress.value > 0) {
+        spreadProgress.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.cubic) });
+      }
     }
-  }, [wallets, setActiveWallet, getWalletCards, cardStackHeightAnim]);
+  }, [wallets, setActiveWallet, getWalletCards]);
 
   // UI-thread handler — scrollX updated here so animated children (symbols,
   // gradients, dots) track the finger with zero JS-thread lag.
@@ -748,6 +666,7 @@ export default function WalletsScreen() {
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const idx = Math.round(e.nativeEvent.contentOffset.x / W);
       const clamped = Math.max(0, Math.min(idx, wallets.length - 1));
+      if (clamped !== pendingIdx.current) Haptics.selectionAsync();
       pendingIdx.current = clamped;
       setCurrentIndex(clamped);
       setActiveWallet(wallets[clamped].id);
@@ -768,9 +687,68 @@ export default function WalletsScreen() {
   const handleSend       = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); const w = activeRef.current; if (w) navigation.navigate('SendMoney', { walletId: w.id }); }, [navigation]);
   const handleCards      = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);  const w = activeRef.current; if (!w) return; const hasCards = useCardStore.getState().cards.some((c) => c.walletId === w.id); navigation.navigate(hasCards ? 'CardList' : 'AddCardType', { walletId: w.id }); }, [navigation]);
   const handleCustomize  = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);  const w = activeRef.current; if (w) navigation.navigate('WalletSettings', { walletId: w.id }); }, [navigation]);
+  const handleReceive    = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); const w = activeRef.current; if (w) navigation.navigate('ReceiveMoney', { walletId: w.id }); }, [navigation]);
   const handleStub       = useCallback(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), []);
   const handleAddWallet  = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); navigation.navigate('CurrencyPicker'); }, [navigation]);
   const handleSeeAll     = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); const w = activeRef.current; if (w) navigation.navigate('Activity', { walletId: w.id }); }, [navigation]);
+
+  const handleCardTapAtY = useCallback((tapY: number) => {
+    const w = activeRef.current;
+    if (!w) return;
+    const wCards = getWalletCards(w.id);
+    if (wCards.length === 0) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      navigation.navigate('AddCardType', { walletId: w.id });
+      return;
+    }
+    const sp = spreadProgress.value;
+    const n = wCards.length;
+    const vOff = STACK_V_OFFSET + sp * (SPREAD_V_OFFSET - STACK_V_OFFSET);
+    let tappedIndex = n - 1;
+    for (let i = 0; i < n; i++) {
+      if (tapY >= (n - 1 - i) * vOff) { tappedIndex = i; break; }
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    spreadProgress.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.cubic) });
+    navigation.navigate('CardList', { walletId: w.id, initialCardIndex: tappedIndex });
+  }, [navigation, getWalletCards]);
+
+  const cardPanGesture = useMemo(() =>
+    Gesture.Pan()
+      .manualActivation(true)
+      .onTouchesDown((e) => {
+        startTouchY.value = e.allTouches[0].absoluteY;
+        startTapLocalY.value = e.allTouches[0].y;
+        hasMoved.value = false;
+      })
+      .onTouchesMove((e, state) => {
+        const dy = e.allTouches[0].absoluteY - startTouchY.value;
+        if (Math.abs(dy) > 8) hasMoved.value = true;
+        const isSpread = spreadProgress.value > 0.5;
+        if (!isSpread && dy > 14) state.activate();
+        else if (isSpread && dy < -14) state.activate();
+        else if (Math.abs(dy) > 24) state.fail();
+      })
+      .onTouchesUp((_, state) => {
+        if (!hasMoved.value) {
+          runOnJS(handleCardTapAtY)(startTapLocalY.value);
+        }
+        state.fail();
+      })
+      .onStart(() => { spreadStart.value = spreadProgress.value; })
+      .onUpdate((e) => {
+        const newSp = spreadStart.value + e.translationY / SPREAD_DRAG_DIST;
+        spreadProgress.value = Math.max(0, Math.min(1, newSp));
+      })
+      .onEnd((e) => {
+        let target: number;
+        if (e.velocityY > 500) target = 1;
+        else if (e.velocityY < -500) target = 0;
+        else target = spreadProgress.value > 0.5 ? 1 : 0;
+        spreadProgress.value = withSpring(target, { damping: 22, stiffness: 200 });
+      }),
+    [handleCardTapAtY],
+  );
 
   // Interpolation ranges — stable as long as wallets list doesn't change
   const accentInputRange = wallets.map((_, i) => i * W);
@@ -805,7 +783,7 @@ export default function WalletsScreen() {
         <View style={styles.greetingRow}>
           <View>
             <Text style={styles.greetingLabel}>Good morning</Text>
-            <Text style={styles.greetingName}>Carlos Mendez</Text>
+            <Text style={styles.greetingName}>{MOCK_PROFILE.name}</Text>
           </View>
           <View style={styles.greetingRight}>
             <SecondaryButton onPress={handleAddWallet} style={styles.addBtn}>
@@ -886,7 +864,7 @@ export default function WalletsScreen() {
         {/* ── Actions ───────────────────────────────────────────────────── */}
         <View style={styles.actions}>
           <ActionBtn icon={<ArrowUpRight      size={22} color={iconAccent} strokeWidth={1.8} />} label="Send"      onPress={handleSend}      circleStyle={animatedCircleStyle} />
-          <ActionBtn icon={<ArrowDownLeft    size={22} color={iconAccent} strokeWidth={1.8} />} label="Receive"   onPress={handleStub}      circleStyle={animatedCircleStyle} />
+          <ActionBtn icon={<ArrowDownLeft    size={22} color={iconAccent} strokeWidth={1.8} />} label="Receive"   onPress={handleReceive}   circleStyle={animatedCircleStyle} />
           <ActionBtn icon={<Plus             size={22} color={iconAccent} strokeWidth={1.8} />} label="Add"       onPress={handleStub}      circleStyle={animatedCircleStyle} />
           <ActionBtn icon={<SlidersHorizontal size={22} color={iconAccent} strokeWidth={1.8} />} label="Customize" onPress={handleCustomize} circleStyle={animatedCircleStyle} />
         </View>
@@ -904,29 +882,31 @@ export default function WalletsScreen() {
               </Text>
             </Pressable>
           </View>
-          {/* One stack per wallet, all absolutely layered — scrollX drives each one */}
-          <RNAnimated.View style={{ height: cardStackHeightAnim, position: 'relative' }}>
-            {wallets.map((wallet, i) => (
-              <View
-                key={wallet.id}
-                style={StyleSheet.absoluteFill}
-                pointerEvents={i === currentIndex ? 'box-none' : 'none'}
-              >
-                <AnimatedCardStack
-                  walletIndex={i}
-                  cards={cardsByWalletId[wallet.id] ?? EMPTY_CARDS}
-                  accent={walletAccent(wallet.currency, wallet.accentColor)}
-                  onPress={handleCards}
-                  scrollX={scrollX}
-                  playEntrance={
-                    justAddedCardId != null &&
-                    (cardsByWalletId[wallet.id] ?? EMPTY_CARDS)[0]?.id === justAddedCardId
-                  }
-                  onEntranceComplete={clearJustAddedCardId}
-                />
-              </View>
-            ))}
-          </RNAnimated.View>
+          <GestureDetector gesture={cardPanGesture}>
+            <Animated.View style={[{ position: 'relative' }, cardStackAnimStyle]}>
+              {wallets.map((wallet, i) => (
+                <View
+                  key={wallet.id}
+                  style={StyleSheet.absoluteFill}
+                  pointerEvents={i === currentIndex ? 'box-none' : 'none'}
+                >
+                  <AnimatedCardStack
+                    walletIndex={i}
+                    cards={cardsByWalletId[wallet.id] ?? EMPTY_CARDS}
+                    accent={walletAccent(wallet.currency, wallet.accentColor)}
+                    onPressCard={handleCardTapAtY}
+                    scrollX={scrollX}
+                    spreadProgress={spreadProgress}
+                    playEntrance={
+                      justAddedCardId != null &&
+                      (cardsByWalletId[wallet.id] ?? EMPTY_CARDS)[0]?.id === justAddedCardId
+                    }
+                    onEntranceComplete={clearJustAddedCardId}
+                  />
+                </View>
+              ))}
+            </Animated.View>
+          </GestureDetector>
         </View>
 
         {/* ── Activity ──────────────────────────────────────────────────── */}

@@ -1947,3 +1947,61 @@ The old stub `CardListScreen.tsx` (which returned `null`) was deleted to free th
 **Decision:** The "Reason" row in TxDetailsList uses a vertical stack layout (label on top, value below) instead of the standard side-by-side row.
 
 **Why:** Failure reasons can be long and multi-line. Side-by-side layout caused the value to crowd into the label.
+
+---
+
+### 191. Wallet privacy settings — discoverability and currency visibility
+
+**Decision:** Two account-level privacy controls, housed in ProfileScreen under a new "Privacy" section:
+
+1. **Discoverability** — who can find the user by search: everyone / contacts only / nobody (default: contacts only).
+2. **Receivable currency visibility** — per-currency toggle controlling which currencies are announced publicly to senders. Newly added currencies default to hidden.
+
+**Why:** Remittance users may not want to broadcast every currency they hold. Closed-by-default fits the banking-grade trust model. Kept scope tight — no transaction visibility, read receipts, online status, or request permissions (none of those features exist in the app).
+
+### 192. Privacy settings live in ProfileScreen, not wallet-level settings
+
+**Decision:** Privacy controls are added as a new section in ProfileScreen rather than in WalletSettings or a new screen from the quick action bar.
+
+**Why:** These are account-level settings, not wallet-level. The "Customize" quick action on WalletsScreen stays focused on per-wallet appearance (rename, accent color, set primary). ProfileScreen already groups preferences, security, and support — privacy is a natural peer section.
+
+
+---
+
+### 193. QR scanner button on Send recipient picker
+
+**Decision:** Add a circle scan button (`ScanLine` icon) next to the search bar on the Send flow's recipient step. Tapping opens a full-screen `expo-camera` scanner that reads `ria://pay?` QR codes and auto-selects the scanned contact.
+
+**Why:** QR is the fastest way to pick a recipient in person — avoids typos in phone numbers and skips the search/scroll step entirely. The circle sits beside the (now fully rounded) search bar so it's discoverable without cluttering the contact list.
+
+---
+
+### 194. Receive Money screen — QR + currency picker + share/copy
+
+**Decision:** New `ReceiveMoneyScreen` shows a QR code encoding the user's wallet info (`ria://pay?name=...&phone=...&currency=...`), a currency picker to choose which wallet to receive into, and action circles for Copy QR / Share / Copy link. No amount request feature — cut for complexity.
+
+**Why:** The amount request flow (live-updating QR on keystroke, keyboard covering the screen, confirm-then-apply flow) added UX friction without clear value for a remittance app. The core use case — "show QR, let sender scan" — is served by the simpler screen. Currency picker uses the same dropdown pattern as the send flow for consistency.
+
+---
+
+### 195. Receive screen is a normal page, not a modal
+
+**Decision:** `ReceiveMoneyScreen` navigates with `slide_from_right` (default) instead of `slide_from_bottom` modal presentation.
+
+**Why:** Modal presentation wasted vertical space at the top and fought with keyboard interactions. A normal page slide matches Send and other detail screens.
+
+---
+
+### 196. Centralize mock profile data in MOCK_PROFILE
+
+**Decision:** Created `MOCK_PROFILE` in `mockData.ts` with `{ name, phone }` and replaced all 7+ hardcoded "Carlos Mendez" references across WalletsScreen, ProfileScreen, AddCardReviewScreen, AddCardColorScreen, and mock card data.
+
+**Why:** The name was duplicated as a raw string in 4 screens plus mock data. Single source of truth means renaming the prototype user requires one edit instead of a find-and-replace across the codebase.
+
+---
+
+### 197. Card stack scroll-to-spread + per-card navigation
+
+**Decision:** Replaced the fixed 3-slot AnimatedCardStack (with "+N more" placeholder) with a dynamic per-card system. All wallet cards now render in the stack. A pan gesture on the card area lets users drag down to spread cards apart (STACK_V_OFFSET 56 → SPREAD_V_OFFSET 88) and drag up to collapse. Each card is individually tappable — navigates to CardListScreen with `initialCardIndex` so the carousel opens scrolled to that card. Auto-collapses on wallet switch. Removed CARD_SLOTS cap, MoreCardsPlaceholder usage, and the 4 hardcoded animated-style slots in favor of a memoized AnimatedCardSlot component per card.
+
+**Reason:** The old single-Pressable stack didn't match the mental model of browsing a card collection. Users couldn't see or select specific cards without navigating to the full card list first. The new interaction mirrors Apple Wallet's scroll-to-fan pattern adapted to our embedded layout.

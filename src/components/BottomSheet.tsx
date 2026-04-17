@@ -10,6 +10,7 @@ import Animated, {
   Easing,
   runOnJS,
 } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 import { colors, radius, spacing } from '../theme';
 
 type Props = {
@@ -61,6 +62,7 @@ export default function BottomSheet({ visible, onClose, children, gap = 0, fullH
     })
     .onEnd((e) => {
       if (dragY.value > 100 || e.velocityY > 600) {
+        runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
         overlayOpacity.value = withTiming(0, { duration: 200 });
         sheetY.value = withTiming(
           SCREEN_H,
@@ -87,7 +89,7 @@ export default function BottomSheet({ visible, onClose, children, gap = 0, fullH
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose}>
       <Animated.View style={[styles.overlay, overlayStyle]} pointerEvents="box-none">
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onClose(); }} />
         <Animated.View
           style={[
             styles.sheet,
