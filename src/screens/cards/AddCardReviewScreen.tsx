@@ -71,7 +71,7 @@ export default function AddCardReviewScreen({ route }: RootStackProps<'AddCardRe
   const wallet = wallets.find((w) => w.id === card?.walletId);
   const currency = wallet ? getCurrency(wallet.currency) : null;
 
-  // Intro animation — matches WalletCardListScreen's card settle so the user
+  // Intro animation — matches CardListScreen's card settle so the user
   // sees the same language when a new card first lands.
   const introProgress = useSharedValue(1);
   const opacity = useSharedValue(0);
@@ -118,15 +118,13 @@ export default function AddCardReviewScreen({ route }: RootStackProps<'AddCardRe
   const handleViewDetails = () => {
     if (!card) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // Rebuild the stack so back from CardDetail lands on the wallet's card list,
-    // not the add-card flow the user just finished.
+    useCardStore.getState().markJustAdded(card.id);
     navigation.dispatch(
       CommonActions.reset({
-        index: 2,
+        index: 1,
         routes: [
           { name: 'Main' },
-          { name: 'WalletCardList', params: { walletId: card.walletId } },
-          { name: 'CardDetail', params: { cardId: card.id } },
+          { name: 'CardList', params: { walletId: card.walletId } },
         ],
       }),
     );
@@ -155,7 +153,7 @@ export default function AddCardReviewScreen({ route }: RootStackProps<'AddCardRe
 
       {/* Prototype-only control: replay the entrance animation without
           re-running the entire add-card flow. Matches the "⚙ Prototype"
-          section + segmented-control visual language on CardDetail /
+          section + segmented-control visual language on CardSettings /
           Confirmation. Stripped from production builds. */}
       {__DEV__ && (
         <View style={styles.protoWrap}>
@@ -223,7 +221,7 @@ const styles = StyleSheet.create({
   walletBtnPressed: { opacity: 0.82 },
 
   // Prototype section — mirrors protoWrap/protoTitle + segActive styling from
-  // CardDetail / Confirmation so it reads as the same dev surface. Floated
+  // CardSettings / Confirmation so it reads as the same dev surface. Floated
   // top-right because this screen has no scrollable area to host it inline.
   protoWrap: {
     position: 'absolute',

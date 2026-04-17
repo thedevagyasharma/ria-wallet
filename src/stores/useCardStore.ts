@@ -17,6 +17,7 @@ type CardStore = {
   toggleFreeze: (cardId: string) => void;
   changePin: (cardId: string, pin: string) => void;
   setOnlineTransactions: (cardId: string, value: boolean) => void;
+  setContactless: (cardId: string, value: boolean) => void;
   setSpendingLimit: (cardId: string, period: 'daily' | 'weekly' | 'monthly', limit: number | null) => void;
   replaceSpendingLimits: (cardId: string, limits: { daily?: number; weekly?: number; monthly?: number }) => void;
   getWalletCards: (walletId: string) => Card[];
@@ -30,7 +31,7 @@ export const useCardStore = create<CardStore>((set, get) => ({
   justAddedCardId: null,
 
   // Prepend so the newest card sits at index 0 — front of the stack preview
-  // and first card in the WalletCardList carousel. Matches newest-first
+  // and first card in the CardList carousel. Matches newest-first
   // ordering used across the app (activity, etc.).
   addCard: (card) =>
     set((state) => ({ cards: [card, ...state.cards] })),
@@ -56,6 +57,11 @@ export const useCardStore = create<CardStore>((set, get) => ({
   setOnlineTransactions: (cardId, value) =>
     set((state) => ({
       cards: state.cards.map((c) => c.id === cardId ? { ...c, onlineTransactions: value } : c),
+    })),
+
+  setContactless: (cardId, value) =>
+    set((state) => ({
+      cards: state.cards.map((c) => c.id === cardId ? { ...c, contactless: value } : c),
     })),
 
   setSpendingLimit: (cardId, period, limit) =>

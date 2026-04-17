@@ -6,6 +6,7 @@ import Animated, {
   useAnimatedReaction,
   withTiming,
   withDelay,
+  withSpring,
   Easing,
   interpolateColor,
   runOnJS,
@@ -213,9 +214,32 @@ function FlipBalance({ real, revealed }: { real: string; revealed: boolean }) {
 // ─── Wallet item — pure display, no animation state ──────────────────────────
 // Balance lives at the screen level so one element drives the flip.
 
-function WalletItem({ wallet }: { wallet: Wallet }) {
+function WalletItem({ wallet, justCreated }: { wallet: Wallet; justCreated?: boolean }) {
   const currency = getCurrency(wallet.currency);
   const accent   = walletAccent(wallet.currency, wallet.accentColor);
+
+  // "Wallet Created" chip — kept mounted on every non-primary wallet so its
+  // footprint reserves the same vertical space as the Primary chip. Visibility
+  // is driven purely by opacity + scale transforms (layout-free) so flipping
+  // justCreated never shifts the rows below it.
+  //
+  // Entry: ~450ms delay (lets the carousel scroll settle first) → spring scale
+  // 0.5 → 1 with a small overshoot + timing opacity fade-in. Exit: timed fade;
+  // scale stays at 1 so the chip doesn't shrink on the way out.
+  const chipOpacity = useSharedValue(0);
+  const chipScale   = useSharedValue(0.5);
+  useEffect(() => {
+    if (justCreated) {
+      chipOpacity.value = withDelay(450, withTiming(1, { duration: 280, easing: Easing.out(Easing.cubic) }));
+      chipScale.value   = withDelay(450, withSpring(1, { damping: 9, stiffness: 170, mass: 0.7 }));
+    } else {
+      chipOpacity.value = withTiming(0, { duration: 280, easing: Easing.out(Easing.cubic) });
+    }
+  }, [justCreated]);
+  const chipStyle = useAnimatedStyle(() => ({
+    opacity: chipOpacity.value,
+    transform: [{ scale: chipScale.value }],
+  }));
 
   return (
     <View style={styles.walletItem}>
@@ -227,7 +251,18 @@ function WalletItem({ wallet }: { wallet: Wallet }) {
           <Text style={[styles.primaryChipText, { color: accent }]}>Primary</Text>
         </View>
       ) : (
-        <View style={styles.primaryChipPlaceholder} />
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.primaryChip,
+            styles.justCreatedChip,
+            chipStyle,
+          ]}
+        >
+          <Text style={[styles.primaryChipText, { color: colors.brand }]}>
+            Wallet Created
+          </Text>
+        </Animated.View>
       )}
 
       <View style={styles.currencyRow}>
@@ -530,13 +565,24 @@ const AnimatedCardStack = React.memo(function AnimatedCardStack({ walletIndex, c
 
 export default function WalletsScreen() {
   const navigation = useNavigation<Nav>();
-  const { wallets, transactions, setActiveWallet } = useWalletStore();
+  const {
+    wallets,
+    transactions,
+    setActiveWallet,
+    justAddedWalletId,
+    clearJustAddedWalletId,
+  } = useWalletStore();
   const { cards, getWalletCards, justAddedCardId, clearJustAddedCardId } = useCardStore();
   const { hideBalances, toggleHideBalances } = usePrefsStore();
 
-  // Initial wallet: prefer the one containing the just-added card so the
-  // land-in animation plays where the user lands. Otherwise, primary wallet.
+  // Initial wallet: prefer just-added wallet, then just-added card's wallet,
+  // then primary. Covers first-mount-after-create cases where the store
+  // already holds the signal by the time this component initialises.
   const initialIdx = (() => {
+    if (justAddedWalletId) {
+      const idx = wallets.findIndex((w) => w.id === justAddedWalletId);
+      if (idx >= 0) return idx;
+    }
     if (justAddedCardId) {
       const card = cards.find((c) => c.id === justAddedCardId);
       const idx = card ? wallets.findIndex((w) => w.id === card.walletId) : -1;
@@ -557,6 +603,11 @@ export default function WalletsScreen() {
   // when a new card is added.
   const cardSectionY = useRef(0);
 
+  // One-shot spotlight on the just-created wallet's carousel item. Kept in
+  // local state because the store signal is cleared immediately after the
+  // scroll effect runs — we need our own timer to hold the chip visible.
+  const [highlightWalletId, setHighlightWalletId] = useState<string | null>(null);
+
   useEffect(() => {
     if (scrollReset > 0) scrollRef.current?.scrollTo({ y: 0, animated: true });
   }, [scrollReset]);
@@ -571,6 +622,36 @@ export default function WalletsScreen() {
     // Only runs on mount — intentionally empty deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // React to a new justAddedWalletId (common case: user was on Wallets,
+  // created a wallet, tapped Done on WalletSuccess). Snap the page to top
+  // and slide the carousel to the new wallet with animation so the user
+  // sees their new wallet arrive as the success screen fades away.
+  useEffect(() => {
+    if (!justAddedWalletId) return;
+    const idx = wallets.findIndex((w) => w.id === justAddedWalletId);
+    if (idx < 0) {
+      clearJustAddedWalletId();
+      return;
+    }
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+    flatListRef.current?.scrollToOffset({ offset: idx * W, animated: true });
+    pendingIdx.current = idx;
+    setCurrentIndex(idx);
+    setActiveWallet(wallets[idx].id);
+    scrollX.value = idx * W;
+    setHighlightWalletId(justAddedWalletId);
+    clearJustAddedWalletId();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [justAddedWalletId]);
+
+  // Dismiss the "Just created" chip after a beat — long enough to register,
+  // short enough not to linger past the moment the user scans the screen.
+  useEffect(() => {
+    if (!highlightWalletId) return;
+    const t = setTimeout(() => setHighlightWalletId(null), 3200);
+    return () => clearTimeout(t);
+  }, [highlightWalletId]);
 
   // React to a new justAddedCardId while mounted (common case: user was on
   // Wallets, added a card, tapped Done). Snap both scrolls (vertical page and
@@ -675,15 +756,17 @@ export default function WalletsScreen() {
   );
 
   const renderWallet = useCallback(
-    ({ item }: ListRenderItemInfo<Wallet>) => <WalletItem wallet={item} />,
-    [],
+    ({ item }: ListRenderItemInfo<Wallet>) => (
+      <WalletItem wallet={item} justCreated={item.id === highlightWalletId} />
+    ),
+    [highlightWalletId],
   );
 
   // All tap handlers read the active wallet from activeRef so they don't
   // re-derive when currentIndex changes — reference-stable handlers let
   // memoized children skip re-renders on scroll / wallet switch.
   const handleSend       = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); const w = activeRef.current; if (w) navigation.navigate('SendMoney', { walletId: w.id }); }, [navigation]);
-  const handleCards      = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);  const w = activeRef.current; if (w) navigation.navigate('WalletCardList', { walletId: w.id }); }, [navigation]);
+  const handleCards      = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);  const w = activeRef.current; if (!w) return; const hasCards = useCardStore.getState().cards.some((c) => c.walletId === w.id); navigation.navigate(hasCards ? 'CardList' : 'AddCardType', { walletId: w.id }); }, [navigation]);
   const handleCustomize  = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);  const w = activeRef.current; if (w) navigation.navigate('WalletSettings', { walletId: w.id }); }, [navigation]);
   const handleStub       = useCallback(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), []);
   const handleAddWallet  = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); navigation.navigate('CurrencyPicker'); }, [navigation]);
@@ -848,7 +931,7 @@ export default function WalletsScreen() {
 
         {/* ── Activity ──────────────────────────────────────────────────── */}
         <View style={styles.activityHead}>
-          <Text style={styles.activityLabel}>Activity</Text>
+          <Text style={styles.activityLabel}>Recent activity</Text>
         </View>
 
         {walletTxs.length === 0 ? (
@@ -862,7 +945,6 @@ export default function WalletsScreen() {
               <ActivityItem
                 key={tx.id}
                 tx={tx}
-                wallets={wallets}
                 onPress={() => navigation.navigate('TransactionDetail', { txId: tx.id })}
               />
             ))}
@@ -958,9 +1040,14 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     marginBottom: 10,
   },
-  primaryChipPlaceholder: {
-    height: 22,
-    marginBottom: 10,
+  justCreatedChip: {
+    backgroundColor: alpha(colors.brand, 0.12),
+    borderColor: alpha(colors.brand, 0.34),
+    shadowColor: colors.brand,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
+    elevation: 2,
   },
   primaryChipText: { fontSize: 10, fontWeight: typography.semibold, letterSpacing: 0.2 },
   currencyRow: {

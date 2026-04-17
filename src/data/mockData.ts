@@ -52,7 +52,7 @@ export const MOCK_CARDS: Card[] = [
 
 export const MOCK_TRANSACTIONS: Transaction[] = [
   // April 2026 — current-period card spend, seeded to fill the SpendingLimits bars
-  // on WalletCardListScreen. Totals are tuned against the limits on card-1 and
+  // on CardListScreen. Totals are tuned against the limits on card-1 and
   // card-3 to demonstrate normal / approaching / over-limit bar states.
   //
   // card-1 (USD) limits 100 / 400 / 1200  → today 61.73, week 311.73, month 984.73

@@ -5,51 +5,61 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
   withDelay,
   withTiming,
+  Easing,
   interpolate,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
-import PrimaryButton from '../../components/PrimaryButton';
+import SecondaryButton from '../../components/SecondaryButton';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { colors, typography, spacing, radius } from '../../theme';
+import { colors, typography, spacing } from '../../theme';
 import { getCurrency } from '../../data/currencies';
 import FlagIcon from '../../components/FlagIcon';
+import { useWalletStore } from '../../stores/useWalletStore';
 import type { RootStackParamList, RootStackProps } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export default function WalletSuccessScreen({ route }: RootStackProps<'WalletSuccess'>) {
   const navigation = useNavigation<Nav>();
-  const { currency: code } = route.params;
+  const { currency: code, walletId } = route.params;
   const currency = getCurrency(code);
+  const markJustAddedWallet = useWalletStore((s) => s.markJustAddedWallet);
 
-  const scale = useSharedValue(0.4);
-  const opacity = useSharedValue(0);
-  const checkScale = useSharedValue(0);
-  const subtitleOpacity = useSharedValue(0);
+  // Gentle fade + rise — no spring/bounce.
+  const flagProgress = useSharedValue(0);
+  const titleProgress = useSharedValue(0);
+  const subtitleProgress = useSharedValue(0);
 
   useEffect(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    scale.value = withSpring(1, { damping: 12, stiffness: 180 });
-    opacity.value = withTiming(1, { duration: 300 });
-    checkScale.value = withDelay(200, withSpring(1, { damping: 10, stiffness: 200 }));
-    subtitleOpacity.value = withDelay(400, withTiming(1, { duration: 400 }));
+    const ease = Easing.out(Easing.cubic);
+    flagProgress.value = withTiming(1, { duration: 420, easing: ease });
+    titleProgress.value = withDelay(120, withTiming(1, { duration: 420, easing: ease }));
+    subtitleProgress.value = withDelay(260, withTiming(1, { duration: 420, easing: ease }));
   }, []);
 
-  const circleStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-    opacity: opacity.value,
+  const flagStyle = useAnimatedStyle(() => ({
+    opacity: flagProgress.value,
+    transform: [{ translateY: interpolate(flagProgress.value, [0, 1], [8, 0]) }],
+  }));
+  const titleStyle = useAnimatedStyle(() => ({
+    opacity: titleProgress.value,
+    transform: [{ translateY: interpolate(titleProgress.value, [0, 1], [10, 0]) }],
+  }));
+  const subtitleStyle = useAnimatedStyle(() => ({
+    opacity: subtitleProgress.value,
+    transform: [{ translateY: interpolate(subtitleProgress.value, [0, 1], [10, 0]) }],
   }));
 
-  const subtitleStyle = useAnimatedStyle(() => ({
-    opacity: subtitleOpacity.value,
-    transform: [{ translateY: interpolate(subtitleOpacity.value, [0, 1], [12, 0]) }],
-  }));
+  const handleDone = () => {
+    markJustAddedWallet(walletId);
+    navigation.popToTop();
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -59,21 +69,21 @@ export default function WalletSuccessScreen({ route }: RootStackProps<'WalletSuc
         style={StyleSheet.absoluteFill}
       />
       <View style={styles.content}>
-        <Animated.View style={[styles.circle, circleStyle]}>
-          <FlagIcon code={currency.flag} size={56} />
+        <Animated.View style={flagStyle}>
+          <FlagIcon code={currency.flag} size={72} />
         </Animated.View>
 
-        <Text style={styles.title}>Wallet created!</Text>
+        <Animated.Text style={[styles.title, titleStyle]}>
+          {code} Wallet Created.
+        </Animated.Text>
 
         <Animated.Text style={[styles.subtitle, subtitleStyle]}>
-          Your {currency.name} ({code}) wallet is ready to use.
+          Your {currency.name} wallet is ready to use.
         </Animated.Text>
       </View>
 
       <View style={styles.footer}>
-        <PrimaryButton onPress={() => navigation.popToTop()} style={styles.doneBtn}>
-          <Text style={styles.doneBtnText}>Done</Text>
-        </PrimaryButton>
+        <SecondaryButton onPress={handleDone} style={styles.doneBtn} label="Done" />
       </View>
     </SafeAreaView>
   );
@@ -88,18 +98,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     gap: spacing.lg,
   },
-  circle: {
-    width: 120,
-    height: 120,
-    borderRadius: radius.full,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
-  },
-  flag: {},
   title: {
     fontSize: typography.xxl,
     color: colors.textPrimary,
@@ -119,7 +117,5 @@ const styles = StyleSheet.create({
   },
   doneBtn: {
     paddingVertical: spacing.lg,
-    alignItems: 'center',
   },
-  doneBtnText: { fontSize: typography.md, color: '#441306', fontWeight: typography.bold },
 });

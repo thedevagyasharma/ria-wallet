@@ -36,7 +36,7 @@ export default function AllCardsScreen() {
 
   const handlePress = useCallback((walletId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    navigation.navigate('WalletCardList', { walletId });
+    navigation.navigate('CardList', { walletId });
   }, [navigation]);
 
   return (
@@ -47,7 +47,6 @@ export default function AllCardsScreen() {
 
       {allEmpty ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>💳</Text>
           <Text style={styles.emptyTitle}>No cards yet</Text>
           <Text style={styles.emptySub}>Add a card from any wallet to get started.</Text>
         </View>
@@ -152,7 +151,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     marginTop: -spacing.xxxl,
   },
-  emptyIcon: { fontSize: 48, marginBottom: spacing.md },
   emptyTitle: { fontSize: typography.xl, color: colors.textPrimary, fontWeight: typography.bold },
   emptySub: { fontSize: typography.base, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 },
 });

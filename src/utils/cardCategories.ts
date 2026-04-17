@@ -13,7 +13,7 @@ export type CategoryMeta = {
 };
 
 export const CATEGORY_META: Record<CardCategory, CategoryMeta> = {
-  groceries:     { label: 'Groceries',     Icon: ShoppingCart,    iconColor: '#16a34a', bgColor: '#dcfce7' },
+  groceries:     { label: 'Groceries',     Icon: ShoppingCart,    iconColor: '#0d9488', bgColor: '#ccfbf1' },
   fuel:          { label: 'Fuel',          Icon: Fuel,            iconColor: '#d97706', bgColor: '#fef3c7' },
   coffee:        { label: 'Coffee',        Icon: Coffee,          iconColor: '#92400e', bgColor: '#fef3c7' },
   streaming:     { label: 'Streaming',     Icon: Tv,              iconColor: '#9333ea', bgColor: '#f3e8ff' },

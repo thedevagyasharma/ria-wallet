@@ -20,7 +20,7 @@ type BadgeTheme = 'default' | 'inverted';
 const RIA_PALETTE = [
   { label: 'Classic', hex: '#f97316', finish: 'plastic'  as CardFinish, badgeTheme: 'default'  as BadgeTheme },
   { label: 'Metal',   hex: '#71717a', finish: 'metallic' as CardFinish, badgeTheme: 'inverted' as BadgeTheme },
-  { label: 'Green',   hex: '#14532d', finish: 'plastic'  as CardFinish, badgeTheme: 'inverted' as BadgeTheme },
+  { label: 'Matcha',  hex: '#CDE896', finish: 'plastic'  as CardFinish, badgeTheme: 'default'  as BadgeTheme },
   { label: 'Black',   hex: '#09090b', finish: 'plastic'  as CardFinish, badgeTheme: 'inverted' as BadgeTheme },
 ];
 
@@ -52,6 +52,9 @@ export default function AddCardColorScreen({ route }: RootStackProps<'AddCardCol
   const [selectedSolid, setSelectedSolid] = useState<string | null>(null);  // null = Ria active
   const [previewFrozen, setPreviewFrozen] = useState(false);
   const [previewExpired, setPreviewExpired] = useState(false);
+  const defaultNetwork = cardType === 'physical' ? 'Mastercard' : 'Visa';
+  const [networkOverride, setNetworkOverride] = useState<string | null>(null);
+  const network = (networkOverride ?? defaultNetwork) as 'Visa' | 'Mastercard';
 
   const branded = selectedSolid === null;
   const selectedColor = branded ? RIA_PALETTE[selectedRia].hex : selectedSolid!;
@@ -68,7 +71,7 @@ export default function AddCardColorScreen({ route }: RootStackProps<'AddCardCol
     branded,
     finish,
     last4: '0000',
-    network: 'Visa',
+    network,
     cardholderName: 'YOUR NAME',
     expiry: 'MM/YY',
     cvv: '000',
@@ -93,8 +96,6 @@ export default function AddCardColorScreen({ route }: RootStackProps<'AddCardCol
   const handleAddCard = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    const networks = ['Visa', 'Mastercard'] as const;
-    const network = networks[Math.floor(Math.random() * networks.length)];
     const last4 = String(Math.floor(1000 + Math.random() * 9000));
     const prefix = network === 'Visa' ? '4' : '5';
     const g1 = prefix + Math.random().toString().slice(2, 5);
@@ -183,6 +184,15 @@ export default function AddCardColorScreen({ route }: RootStackProps<'AddCardCol
         {/* Prototype controls */}
         <View style={styles.protoWrap}>
           <Text style={styles.protoTitle}>⚙  Prototype</Text>
+          <SegControl
+            label="Network"
+            value={network}
+            onChange={(v) => setNetworkOverride(v === defaultNetwork ? null : v)}
+            options={[
+              { label: 'Visa',       value: 'Visa'       },
+              { label: 'Mastercard', value: 'Mastercard' },
+            ]}
+          />
           <SegControl
             label="Card status"
             value={previewExpired ? 'expired' : previewFrozen ? 'frozen' : 'active'}

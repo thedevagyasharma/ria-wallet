@@ -1480,7 +1480,7 @@ Inside `AnimatedCardStack`, a new `entranceProgress` shared value starts at 1, t
 
 1. **Section wrapper carries horizontal padding + edge-to-edge bottom hairline.** `styles.section` is `{ paddingHorizontal: 24, paddingBottom: spacing.lg, marginBottom: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }`. `styles.sectionLast` zeros the border and extends `marginBottom` to `spacing.xxxl`. The ScrollView's `contentContainerStyle` has **no** horizontal padding — it lives on the section so the bottom hairline reaches both screen edges. This matches `WalletsScreen`'s existing pattern for its top/bottom header and footer hairlines.
 2. **Rows have no internal `paddingHorizontal`.** They inherit 24px from the section wrapper, so section label, row icon, and row value share the same left edge. Row `paddingVertical` is standardised at `spacing.lg` (16px). Icon column is a fixed 22px wrap with `spacing.md` (12) gap, so labels always start at 34px regardless of row type. Icons unified at 17px / `colors.textSecondary`.
-3. **Inter-row dividers inset to match the label.** Row components render as Fragments — `<>Pressable + {!last && <View style={styles.rowDivider} />}</>` — with `rowDivider: { height: 1, backgroundColor: colors.borderSubtle, marginLeft: 22 + spacing.md }`. The row's previous `borderBottomWidth` is removed entirely.
+3. **Inter-row dividers span the full section width.** Row components render as Fragments — `<>Pressable + {!last && <View style={styles.rowDivider} />}</>` — with `rowDivider: { height: 1, backgroundColor: colors.borderSubtle }`. The divider runs under the icon column edge-to-edge within the section's 24px gutter; the row's previous `borderBottomWidth` is removed entirely.
 
 Applied to: `CardDetailScreen` (Card settings, Spending limits, Card info, Danger zone — 4 sections; InfoRow gets a `infoIconWrap` matching settingsRowIcon), `ProfileScreen` (Wallets, Preferences, Security, Support — 4 sections; both `Row` and `WalletRow` converted to Fragment-with-divider), `WalletSettingsScreen` (Wallet name, Accent color, Wallet options — 3 sections; the palette-header inner divider is removed since the grid below provides its own visual weight), `TransactionDetailScreen` (Details, Transfer status — 2 sections; scroll loses its `paddingHorizontal`, hero + `refundBanner` gain their own — refundBanner via `marginHorizontal: 24` since it's a contained notice element, not a settings group).
 
@@ -1488,9 +1488,19 @@ Applied to: `CardDetailScreen` (Card settings, Spending limits, Card info, Dange
 
 **Why section padding moved from ScrollView to the section wrapper:** If `paddingHorizontal` stays on `contentContainerStyle`, any bottom border on a child renders inset from the screen edges by that padding. `WalletsScreen` already demonstrated the fix — put horizontal padding on each direct child individually, and full-width rules are free. Adopting the same pattern keeps "section boundary = edge-to-edge hairline" consistent across every settings-adjacent screen.
 
-**Why inset dividers inside a section, full-width between sections:** Two different jobs. Intra-section dividers separate items that belong together — insetting them past the icon column lets the left icon "run" read as a visual thread linking the rows. Inter-section dividers separate unrelated groups — a full-width rule makes the break unambiguous and matches the existing `WalletsScreen` convention. The two behaviours together let whitespace and hairlines carry the grouping without any background colour.
+**Why all dividers run edge-to-edge:** An earlier version of this rule inset intra-section dividers past the icon column to let the left icon "run" read as a visual thread. In practice the indent added fussy hairline stubs that competed with the section's bottom border instead of reinforcing it, and it misaligned the moment a row used a differently-sized leading element (the profile wallet row's flag is 27px wide, not 22). Collapsing to a single edge-to-edge rule everywhere — intra- and inter-section — is cleaner, matches modern iOS list styling, and removes the coupling between divider inset and icon-column width. Grouping is carried by the section label, the bottom hairline, and the `marginBottom: spacing.lg` gap; the intra-section rule is now a pure separator without decorative indent.
 
 **Why icon sizing unified at 17px:** Previously `InfoRow` used 14px/`textMuted` icons while `SettingsRow` used 17px/`textSecondary`. Inside a gray container the size difference was absorbed by the card framing; once the container was removed, the mismatch stood out and the smaller icons looked accidentally faded. Unifying to 17px / `textSecondary` in a 22px column with `spacing.md` gap means every row on every settings screen has the same label start position and the same icon weight.
+
+### 145. Frame-drop mitigations for the land-in animation
+
+**Decision:** The land-in settle (#141) on `WalletsScreen` drops visible frames when it overlaps with other work, so three compounding mitigations are applied:
+
+1. **Snap, don't animate, the supporting scrolls.** Both the vertical `ScrollView.scrollTo({ y })` (bringing the card section into view) and the horizontal `FlatList.scrollToOffset({ offset })` (moving to the target wallet's page) are called with `animated: false`. `scrollX.value` is then set directly to `idx * W` so the Reanimated stacks see the new position immediately. The snap happens while `AddCardReview`'s stack-pop transition is still playing, so the user never sees the jump — but the JS thread avoids 350ms of `onScroll` events firing `handleScrollJS` → state-update → re-render at 60Hz.
+2. **Memoize `AnimatedCardStack` with stable props.** `AnimatedCardStack` is wrapped in `React.memo`. The parent's `justAddedCardId` effect fires both the scroll snap AND `setCurrentIndex`/`setActiveWallet` — which triggers a *second* render cycle after the child's `useEffect` has already started the entrance. To stop that second render from rebuilding `useAnimatedStyle` closures mid-animation, every prop is reference-stable: `cards` comes from a `useMemo`'d `cardsByWalletId` map keyed on `[wallets, cards]`, `onPress` (`handleCards`) reads the active wallet via an `activeRef` instead of listing `active` in its `useCallback` deps, and a module-level `EMPTY_CARDS: Card[] = []` is used as the no-cards fallback so wallets with zero cards don't allocate a fresh `[]` per render. With stable props, `React.memo` short-circuits the second render and Reanimated doesn't rebind worklets mid-settle.
+3. **Defer the withTiming via `InteractionManager.runAfterInteractions`.** Setting `entranceProgress = 1` (the lift) fires immediately so the card is visible at its start position during the stack pop, but the settle's `withTiming(0, …)` is wrapped in `InteractionManager.runAfterInteractions(() => { … })` with a cleanup that cancels the task on unmount. RN registers the native-stack pop as an "interaction," so the settle only begins once it completes — the withTiming has the UI thread largely to itself and doesn't lose frames to the transition.
+
+**Why:** The land-in settle runs concurrently with up to three other animated systems — the native stack pop, the `useTabStore`-driven tab slide, and FlipBalance's per-digit drum (`BalanceDrumChar` × ~15, each with its own `withTiming`) — plus JS-thread work from `setCurrentIndex`/`setActiveWallet` triggering re-renders. Individually each is cheap; together they oversubscribe the UI thread and produce visible hitches on a 540ms settle. Each mitigation targets a different bottleneck: (1) cuts JS-thread scroll-event chatter, (2) stops React's second-render cycle from invalidating Reanimated worklet closures, (3) lets the native pop finish before the settle starts. The one remaining known source of contention is the balance drum when the new card belongs to a non-current wallet (`setCurrentIndex` triggers `real` prop changes that spin up ~15 concurrent `withTiming`s) — that's out of scope here and would need a `skipAnimation` prop plumbed through `FlipBalance`/`BalanceDrumChar` if it becomes necessary.
 
 **What stays boxed:** `refundBanner` in `TransactionDetailScreen` keeps its `borderRadius` + tinted background because it is a notice element, not a settings group — its purpose is to visually interrupt the flow with a warning, which requires a contained shape. It just gains `marginHorizontal: 24` to replace the padding it used to inherit from the ScrollView. Similarly, transaction summary cards in `SendMoneyScreen`, `SendSuccessScreen`, and `ConfirmationScreen` keep their card treatment — they're single summary artefacts, not repeated settings rows.
 
@@ -1542,3 +1552,298 @@ Applied to: `CardDetailScreen` (Card settings, Spending limits, Card info, Dange
 **Why:** the flat-settings conversion in decision 144 removed the visual weight of gray containers without compensating the surrounding whitespace. With the containers gone, the same margins that felt balanced inside a boxed layout read as cramped on open ground — sections and their labels ran into each other. Bumping vertical rhythm by one step restores the legibility the boxed layout had for free.
 
 **Why asymmetric hero padding:** a symmetric `paddingVertical: spacing.xl` put 24px above the avatar, which duplicated the visual weight of the navbar sitting just above. Dropping the top padding to `spacing.md` while keeping `spacing.xl` at the bottom pulls the hero closer to the navbar (where it belongs — they're both "this screen is about this transaction") and preserves the breathing room above the first section.
+
+### 148. Spending limits visual reinforcement on WalletCardListScreen
+
+**Decision:** `WalletCardListScreen` renders a `Spending limits` section between the quick-actions row and the Activity list for the *active* card in the carousel. The section only appears when the card has at least one `spendingLimits` period configured — cards with no limits set stay clean and don't show an empty block. For each configured period (`daily` / `weekly` / `monthly`), a row shows the period label, `currency X of Y` spend amount, a thin progress bar, and a sub-line with either `Z remaining` or `Z over limit`. The section's top-right affordance is an `Edit  →` FlatButton styled identically to the `N cards  →` label on AllCardsScreen (`typography.sm` semibold brand orange, trailing arrow) — familiar affordance, no icon needed.
+
+**Why:** limits set in `CardDetailScreen`'s settings were previously invisible everywhere else. A user who sets a $100 daily cap gets no feedback on "am I near it?" unless they navigate back into settings. The carousel is where the user spends time with their card day-to-day, so surfacing usage there closes the loop between setting the limit and acting on it. Only showing the section when limits exist keeps the screen uncluttered for cards that don't need that signal (e.g. a dedicated subscriptions card where the single recurring charge is the whole story).
+
+**Why calendar-based periods (not rolling 24h / 7d / 30d):** users read their own spending through a calendar lens — "how much did I spend today?", "what's my week looking like?". Rolling windows are how the card network enforces limits internally, but a rolling 24-hour window means a Friday-night-dinner purchase keeps counting against "today" until Saturday night, which doesn't match how the user thinks about their day. Daily = since midnight, weekly = since Monday 00:00, monthly = since the 1st at 00:00. Computed client-side from the card's debit transactions on each render.
+
+**Why uniform brand-orange fills (no heatmap):** the first pass coloured the fill by utilisation — brand orange under 80%, amber at 80–99%, red at 100%+. Pulled back to uniform brand orange after the design read: the card carousel is already a colourful, branded surface, and stacking three bars that shift colour as thresholds cross introduces noise that competes with the card itself. The "X over limit" sub-line still surfaces overage explicitly in text form, so the information is present without the colour semaphore. Amber/red for genuinely alarming states (failed transactions, errors) stays reserved for those cases so the semantics don't dilute.
+
+**Why `Edit  →` matches `N cards  →`:** there's already an established "drill-in affordance" pattern in the app — small brand-orange text with a trailing arrow, no icon. Reusing that shape here ties the interaction vocabulary together (both are "tap this text to open a deeper view"), and avoids inventing a third style for what's functionally the same affordance.
+
+### 149. Deep-link scroll pattern — route param + `onLayout`-measured Y + delayed `scrollTo`
+
+**Decision:** When one screen needs to open another and land the user on a specific section (rather than the top), the pattern is:
+1. Extend the destination screen's route params with a discriminator (e.g. `CardDetail` gained `scrollTo?: 'limits'`).
+2. Capture the target section's Y offset via `onLayout` on the section wrapper, stored in local state.
+3. In a `useEffect` keyed on `[scrollTo, sectionY]`, when both the param is set and the Y is known, schedule `scrollRef.current?.scrollTo({ y, animated: true })` with a `setTimeout` delay of ~280ms — roughly the length of the native-stack push transition.
+4. Gate the effect behind a `useRef<boolean>` "already scrolled" flag so the scroll is one-shot. If the user manually scrolls back up after landing, the effect won't re-fire.
+
+Applied on `CardDetailScreen` for the `Edit limits` affordance on WalletCardListScreen, which navigates with `{ cardId, scrollTo: 'limits' }`.
+
+**Why the delay:** running `scrollTo` during the push transition produces a jerky double-motion — the screen is still sliding in from the right when the scroll animation starts, so the content appears to jump. Waiting until after the transition settles (280ms covers the default native-stack slide) means the scroll plays as its own discrete motion, and the user sees a clear "page arrived → now scrolling to your spot" sequence.
+
+**Why `onLayout` rather than a fixed offset:** the Spending section's position depends on how many rows appear above it (the Card settings section height varies with toggles, the card face height is fixed but the action row below it isn't). Measuring at layout time is robust to future reordering or new rows added above the target section — no magic constants to update later.
+
+**Why a ref guard:** without the one-shot flag, any state change that re-triggers the `useEffect`'s deps (e.g. if the section re-lays out for any reason, `sectionY` could change) would re-scroll. That would feel like the screen is fighting the user. Setting `hasScrolledToLimits.current = true` on the first fire makes the scroll a navigation-time event, not a layout-time event.
+
+**Trade-off:** the param is typed as the literal `'limits'` rather than a generic `string`, so adding a second scroll target (e.g. `scrollTo: 'danger-zone'`) requires both a type change and a matching Y-capture wired up in the screen. That's fine — forcing the explicit shape catches typos and keeps unused scroll targets out of the param type.
+
+---
+
+## Snapshot 6 — 2026-04-16
+*Covers: transaction row colouring — semantic direction over wallet theme, failed goes gray, groceries off green*
+
+### 150. P2P transaction rows use semantic direction colours, not wallet theme
+
+**Decision:** `TransactionRow` (the P2P row used by `ActivityItem` and rendered on `WalletsScreen` + `UnifiedActivityScreen`) no longer tints its icon box from the wallet accent. The icon colour + alpha-0.12 background are now driven by direction:
+
+- **Incoming, not failed** → `colors.success` (`#16a34a`) on a 12% success tint
+- **Outgoing, not failed** → `colors.failed` (`#dc2626`) on a 12% failed tint
+- **Failed (either direction)** → `colors.textMuted` (`#a1a1aa`) on `colors.surfaceHigh` (`#e4e4e7`)
+
+The `accentColor` prop was dropped from `TransactionRow` entirely, and the `walletAccent` plumbing in `ActivityItem` (plus the now-unused `wallets` prop it needed) was deleted so callers on `WalletsScreen` and `UnifiedActivityScreen` no longer thread a wallet list through for colour lookup. `CardTransactionRow` keeps its category-driven tinting (see #151 for the category side) but its failed state now also falls back to the same gray pair (`surfaceHigh` box, `textMuted` icon) instead of `failedSubtle`/`failed` — a red category box was reading as "outgoing" rather than "failed".
+
+**Why semantic over theme:** the wallet accent already shows up on the balance card face, the wallet stack gradient, the section header pill, and the filter chips on UnifiedActivityScreen. Repeating it on every transaction row's icon square added a fifth instance that did no new work — and actively misled, because the same arrow-down-left glyph appeared in teal for a GTQ wallet and blue for a USD wallet, making "incoming" read differently across wallets. Tying direction to colour (green/red) makes the status-at-a-glance scan match the amount column's `+`/`−` sign immediately, with no wallet context needed.
+
+**Why failed is gray, not red:** with outgoing now rendered in red, a red-on-pink-subtle failed row looked identical to a regular debit at a quick scan — both pull the eye the same way. Dropping failed to the neutral gray pair puts failed rows visually *behind* active ones, which is correct: a failed transaction is a closed, non-actionable event, and the row's existing `StatusChip` (plus `textMuted` on the recipient name) already handles the "this needs your attention" signal where needed. The gray icon says "this row is over" without competing for the same attention as a live outgoing debit.
+
+**Why alpha-0.12 tints on the box:** using `colors.successSubtle` (`#dcfce7`) and `colors.failedSubtle` (`#fee2e2`) directly was the first pass, but `failedSubtle` read pinker than the rest of the app's surface tones on a phone screen. `alpha(colors.success, 0.12)` and `alpha(colors.failed, 0.12)` render as desaturated green/red tints that share the same lightness and sit more comfortably next to `surfaceHigh` (the failed box) and the category-coloured boxes on `CardTransactionRow`. Consistent box luminance across all three states (incoming/outgoing/failed) keeps the icon column reading as one visual rail instead of three competing chip colours.
+
+### 151. Categories stay off semantic green/red to avoid colliding with direction
+
+**Decision:** `CATEGORY_META.groceries` swapped from green (`#16a34a` on `#dcfce7`) to teal (`#0d9488` on `#ccfbf1`). The remaining categories already avoid both semantic red (`#dc2626`) and semantic green (`#16a34a`), so only groceries needed moving. Future category additions must not use those two hues.
+
+**Why:** after decision 150, green on a transaction-adjacent surface means "incoming". A grocery run rendered with a green ShoppingCart on `CardTransactionRow` sat one row away from a P2P incoming transaction rendered with a green ArrowDownLeft on `TransactionRow`, and the two icon boxes were indistinguishable at a glance — the user had to read the icon *shape* rather than the colour to tell apart "money came in" from "you bought groceries". Since the categories are rendering on the same `UnifiedActivityScreen` list as P2P rows (card and P2P transactions interleave by date), the collision was real, not theoretical.
+
+**Why teal specifically:** teal (`#0d9488`) sits on the cyan side of green, keeping enough warmth that a grocery icon still reads as "fresh/food" without stepping on semantic green. Alternatives considered — yellow-gold (`#ca8a04`) clashed with fuel's `#d97706` amber when the two rows sat adjacent; rose/pink (`#be185d`) sat too close to semantic red and reintroduced the outgoing-vs-category confusion on the other side; violet (`#7c3aed`) collided with streaming's `#9333ea` purple. Teal was the only hue that was both distinct from every other category and at least two steps removed from both semantic colours. The user called out that teal still reads as green-adjacent; accepted as a known trade-off — every in-palette alternative collided worse.
+
+**Rule for future categories:** semantic red and semantic green are reserved for direction/status. Categories may use any other hue, but the brand-orange family (`#f97316`, `#ea580c`, `#fb923c`) is also reserved so a category icon doesn't get mistaken for a brand affordance. The practical safe-zone for new categories: teal/cyan, blue/sky/indigo, purple/violet/pink (distinct from streaming and music), amber/yellow (distinct from fuel), brown, slate. Check `cardCategories.ts` before picking — two categories sharing a hue is fine if their labels disambiguate, but two categories with identical `iconColor` + `bgColor` pairs will read as a bug.
+
+---
+
+## Snapshot 7 — 2026-04-16
+*Covers: activity filter architecture — chip-per-filter pickers, Apply-batching, semantic pruning for Received direction*
+
+### 152. Activity filter architecture — one chip per filter, each opens a dedicated picker
+
+**Decision:** The filter UI on `UnifiedActivityScreen` is rebuilt from a single "filter button → monolithic sheet" into a horizontal row of chips, one per filter category (`Wallet`, `Type`, `Date`, `Status`, `Category`, `Cards`, plus a terminal `Clear` action). Each chip opens its own dedicated `BottomSheet` picker. The chip label is self-documenting — it names the filter when inactive ("Date", "Cards") and reflects the committed value when active ("Last 7 days", "2 cards", wallet nickname + flag). A trailing `ChevronDown` on every filter chip signals that it opens a picker; the `Clear` action chip uses `X` without a chevron because it's terminal, not a dropdown.
+
+The old surfaces — search-row filter button with count badge, active-pill row, dedicated wallet-radio row, dedicated card-chip row — are all removed. One row, one vocabulary, no hidden filters behind a `SlidersHorizontal` icon.
+
+**Apply-batching:** each picker owns local draft state, synced from the parent every time the picker opens. Chip taps mutate the draft only. `Apply filters` flushes to the parent (one state commit → one list re-filter). Swipe/backdrop dismiss discards the draft. `Reset` inside a picker commits an empty state immediately, keeping the sheet open — the user sees pickers clear behind the sheet without waiting for Apply.
+
+A shared `PickerSheet` shell component provides the header + Reset link + Apply button, so all five primary pickers (`WalletPicker`, `TypePicker`, `DatePicker`, `StatusPicker`, `CategoryPicker`) have identical chrome. `CardPicker` deliberately diverges — it renders rows (colour swatch + name + last4 + checkmark) rather than chips, because cards carry richer per-item content that spills awkwardly as wrapping chips.
+
+A small `textOn(color)` helper centralises the "brand orange bg → `#441306` text, non-brand bg → white text" rule (per the memory rule) that both `FilterChip` and `OptionChip` now share, replacing the ad-hoc `activeColor === colors.brand ? '#441306' : '#fff'` ternaries scattered across components.
+
+**Why one chip per filter:** the single-sheet pattern hides state behind an icon — you can't tell which filters are active without opening the sheet, and the count badge is a weak proxy for what. With per-filter chips, the filter row itself is the state display; "Last 7 days" written on the chip says more than "2" written on a badge. Each filter also gets a dedicated picker surface it can grow into — `CategoryPicker` can add grouping if the category list doubles, `CardPicker` can add a search box when a business wallet hits 50 cards, and neither change ripples into the other filters' UX. The shared sheet couldn't offer that without a redesign each time a filter scaled.
+
+**Why Apply-batching even for the prototype:** the immediate performance concern is negligible for a mock dataset, but the API shape matters more than the CPU savings. When the backend lands, each committed filter change becomes a network request — and we want one request per Apply, not five while the user is toggling statuses. Wiring the draft/commit seam now means the prototype's state flow already matches what the production pattern needs, so the API swap later doesn't drag UX shape-changes with it. The one concession: `Reset` commits immediately, because "clear everything" reads as a single user intent, not a draft-in-progress — and flushing it keeps the list behaviour behind the sheet consistent with the chip-level `Clear` action.
+
+**Why the Clear chip is terminal:** the per-picker Reset clears one category; a global "clear everything" needed to be a single tap, not N sheet-opens. Putting it at the end of the chip row — same vocabulary as the filters, different icon (`X`, no chevron), no dropdown affordance — gives it the nuke-button role without introducing a new UI element type. It only renders when `hasAnyFilter` is true, so it's discoverable exactly when useful.
+
+**Why no "All wallets" option in the Wallet picker:** the picker's Reset link already clears the filter, and tapping an already-active wallet also deselects it (same pattern as Type's toggle-back-to-`all`). Keeping an "All" chip would have been a third way to do the same thing, and it read awkwardly as a chip that represents the *absence* of a filter. Removed for consistency with how every other picker expresses "nothing selected".
+
+**Why the search bar + chips share `radius.full`:** with the filter button gone, the search input sits alone on its row and can commit to a fully-rounded pill shape that matches the chips below it. The previous `radius.lg` (16) search bar read as a rectangle next to a row of pills — minor but visible seam. Unifying the radius threads the search and filter affordances as one interaction zone.
+
+### 153. Received direction disables Status and Category — mute, don't hide
+
+**Decision:** When `direction === 'receive'` is committed, both the `Status` and `Category` chips on the filter row render at 40% opacity and stop responding to taps. Inside the pickers, every option chip gets the same `disabled` treatment. Flipping direction to `receive` via `TypePicker` also clears any previously-applied status/category selections in the same render pass — the parent's `handleApplyType` wipes both sets when the new direction is `receive`.
+
+The Status and Category chips are **muted but still rendered** — hiding them would cause the chip row to snap shorter and push the `Clear` chip leftward, producing visible reflow every time the user toggled direction.
+
+**Why:** in the current data model, received transactions always land as `status: 'completed'` and never carry a `category` (categories are outgoing-card-only per the `// spending category (card transactions only)` comment on `Transaction.category`). So:
+- `direction: receive` + `status: pending | failed` → guaranteed 0 results (impossible combination).
+- `direction: receive` + `status: completed` → redundant (receive already implies completed).
+- `direction: receive` + any category → guaranteed 0 results (received txs have no category).
+
+Every combination is either impossible or redundant, so the whole Status section is meaningless under receive — not just the non-completed rows. Disabling all three status chips (not just two) communicates "status filtering isn't a concept here" more cleanly than leaving Completed tappable while greying the others.
+
+**Why mute the chip rather than hide the section:** hiding the Status/Category chips on the main row would shift the Clear chip left every time direction flipped, and hiding sections inside the pickers would make the sheet snap shorter and push the Apply button up. Both reflow patterns read as the UI being unstable rather than expressing a constraint. Muting preserves layout and communicates "not applicable right now" through opacity alone, which is the pattern users already understand from other form controls.
+
+**Why prune existing selections on the switch:** if the user had Status: `pending` selected under direction `all`, then flipped to `receive`, we could either (a) keep the selection dormant and restore it when they flipped back, or (b) drop it outright. We drop it because the intent-preservation model has a subtle failure mode — if the user changes filters across sessions, stale state that the chip doesn't display is surprising. Dropping on the switch is explicit: the chip's label reverts to the default "Status"/"Category" word, matching the muted state, so there's no hidden state anywhere.
+
+**If the data model changes later:** the rule "receive → no status/category" is a product choice about this prototype's mock data. If incoming transfers later gain pending states (wire holds, settlement delays) or categories (payroll, refund), the chip-disable logic needs to become more nuanced — probably per-status rather than blanket-disable. The per-chip `disabled` prop on `OptionChip` already exists as the seam for that, so only the predicate moves, not the component shape.
+
+---
+
+## Snapshot 8 — 2026-04-16
+*Covers: create-wallet flow — flat review, calm success, landing spotlight*
+
+### 154. WalletReviewScreen flattened per decision 144
+
+**Decision:** `WalletReviewScreen` drops both of its gray-container treatments. The `currencyCard` hero — previously a `surface + radius.xl + border` box around the flag/name/code — becomes an unboxed centred block with `paddingVertical: spacing.xl`. The `detailsCard` — previously a `surface + radius.lg + border + overflow: hidden` wrapper around three rows — becomes a flat `section` using the decision-144 recipe: `paddingHorizontal: 24 + paddingBottom: spacing.lg + edge-to-edge borderBottom` on the section wrapper, rows with no internal `paddingHorizontal`, and inset `rowDivider` hairlines (`height: 1, backgroundColor: colors.borderSubtle`) between row Fragments. The outer `ScrollView` carries no `paddingHorizontal` so the section's bottom hairline reaches both screen edges if ever extended.
+
+The section label reads `DETAILS` (11px semibold uppercase, `letterSpacing: 0.8`, `colors.textSecondary`) to match the convention used on every other flat-settings screen (CardDetail, Profile, WalletSettings, TransactionDetail).
+
+**Why the hero unboxed:** the flag + name + code is a single-artefact display, not a group of settings. Inside a gray-container card it was doing the "contain a list" job for a single item, which is exactly the nested-rectangle stack that decision 144 called out. Removed, the hero reads as a header — which is what it is semantically.
+
+**Why the details section flattened:** the three rows (starting balance, fee, cards) are a classic settings-style list — name on the left, value on the right. Decision 144's exact use case. Keeping them in a gray container here would have left this screen as the only settings-shaped list in the app still using the old pattern.
+
+### 155. WalletSuccessScreen — calm entrance, SecondaryButton Done
+
+**Decision:** Three changes land together because they're one coherent moment:
+
+1. **Animation:** the spring-bounce on the flag container is replaced with a staggered fade + 8–10px rise on three layers — flag (0ms delay), title (120ms), subtitle (260ms) — each a 420ms `Easing.out(Easing.cubic)`. The `withSpring` + `checkScale` secondary pop is removed entirely. The circle surround (`radius.full` surface + border + 120×120 frame) is gone; the flag sits at 72×72 directly on the gradient background.
+2. **Copy:** `Wallet created!` becomes `{CODE} Wallet Created.` (e.g. `MXN Wallet Created.`) so the screen names the specific thing that just happened. Subtitle is `Your {currency.name} wallet is ready to use.`
+3. **CTA:** Done is a `SecondaryButton` (not `PrimaryButton`). On press, the screen calls `markJustAddedWallet(walletId)` then `navigation.popToTop()`. `walletId` was added to the route param type — `WalletReview` generates the id, persists it via `addWallet`, and threads it through so `Success` has the same id the store holds.
+
+**Why calm over celebratory:** the previous spring-bounce + scale check read as "big deal event" — the right tone for money-leaving-your-hands flows (send money, confirm transfer), but wrong for "you added a container". Adding a wallet to a multi-wallet app is closer to adding a filter than completing a transaction; the existing celebration weight was miscalibrated and made the moment feel heavier than it is. Fade + rise feels like arrival, not fanfare.
+
+**Why no circle around the flag:** the circle was a frame doing no work — the flag icon is already a self-contained rounded visual, and the 120×120 framed container inflated it past the hero treatment used on TransactionDetail and SendSuccess (which show a bare avatar on the gradient). Removing the frame matches those screens' hero conventions and lets the flag sit at its natural size (72px) without fighting a surrounding ring.
+
+**Why SecondaryButton for Done:** PrimaryButton is reserved for the single highest-weight action on a screen — Create/Send/Confirm — and its brand-orange fill commands "this is the thing". But `Done` on a success screen is ceremonial, not the action that did the work (the wallet was already created on the previous screen's Confirm). Downgrading to Secondary signals "this screen is a confirmation, not an action" and visually cools the footer so the celebration stays in the content area.
+
+**Why `walletId` in the route params instead of looking it up by currency:** currency codes happen to be unique today (CurrencyPickerScreen blocks already-owned codes), but that's a rule of the picker flow, not a property of the `Wallet` type. Threading the id through the route types means if we ever add a "duplicate this wallet" or "rename and re-add" flow, `WalletSuccess` still targets exactly the wallet that was just created — no ambiguity, no by-currency lookup that silently grabs the wrong one.
+
+### 156. `justAddedWalletId` — one-shot store signal + carousel scroll-to-new on Wallets
+
+**Decision:** `useWalletStore` gains `justAddedWalletId: string | null`, `markJustAddedWallet(id)`, and `clearJustAddedWalletId()` — mirroring the `justAddedCardId` pattern already in `useCardStore`. `WalletsScreen` reads the signal in two places:
+
+1. **`initialIdx`** — if the signal is set at mount, the carousel initial index prefers the just-added wallet (falls back to just-added-card's wallet, then primary). Covers the edge case of Wallets first-mounting after a wallet add, though normally Wallets is tab-mounted continuously.
+2. **Effect keyed on `justAddedWalletId`** — on change, `scrollRef.current?.scrollTo({ y: 0, animated: false })` snaps the page to top and `flatListRef.current?.scrollToOffset({ offset: idx * W, animated: true })` slides the carousel to the new wallet. Then `setHighlightWalletId(justAddedWalletId)` + `clearJustAddedWalletId()` — the highlight handoff happens in the same tick as consumption so the carousel chip (see #157) starts its own lifecycle independently.
+
+**Why a store signal instead of a route param through `popToTop`:** `popToTop` can't carry params back to the tab screen underneath — the tab is already mounted and isn't being navigated to. A store flag is the established pattern (cards already use it) and decouples the producer (`WalletSuccess`'s Done button) from the consumer (`WalletsScreen`'s effect) so neither has to know about the other's lifecycle.
+
+**Why `animated: true` on the horizontal scroll but `animated: false` on the vertical reset:** the card flow uses `animated: false` on both because the native-stack pop transition hides the snap. For wallets, the pop is a fade (`options={{ animation: 'fade' }}` on the `WalletSuccess` screen), not a slide — the user sees Wallets crossfade in with the carousel in motion, which reads as "we're taking you to your new wallet." The vertical reset stays `animated: false` because the user wasn't scrolling that axis; animating it would be a motion for no reason.
+
+**Why the signal is cleared immediately, not after the animation settles:** unlike `justAddedCardId`, which gates a land-in animation on the new card face and needs to stay set until that animation completes, `justAddedWalletId` doesn't gate anything downstream of the scroll — the scroll call itself is synchronous, and the highlight chip (see #157) owns its own state. Clearing eagerly means a subsequent wallet add (rare but possible mid-lifecycle) re-triggers the effect cleanly.
+
+### 157. "Wallet Created" spotlight chip on the carousel item
+
+**Decision:** The new wallet's `WalletItem` in the carousel renders a one-shot `Wallet Created` chip in the Primary-chip slot (same pill shape, brand-orange fill on `alpha(colors.brand, 0.12)` + `alpha(colors.brand, 0.34)` border, `colors.brand` text + a `shadowColor: colors.brand / shadowOpacity: 0.22 / shadowRadius: 6` drop shadow for weight). The chip is kept **mounted on every non-primary wallet** — visibility is driven purely by `opacity` + `transform: scale`, both layout-free, so flipping the highlight on/off never shifts the rows below.
+
+Animation:
+- **Entry:** 450ms `withDelay` → `withTiming` opacity 0→1 (280ms, cubic-out) + `withSpring` scale 0.5→1 (`damping: 9, stiffness: 170, mass: 0.7`, slight overshoot).
+- **Exit:** `withTiming` opacity 1→0 (280ms). Scale stays at 1 so the chip doesn't shrink on the way out.
+- **Hold:** parent `WalletsScreen` tracks `highlightWalletId` local state, set when the store signal is consumed and cleared after 3200ms (450ms entry delay + ~300ms entry + ~2.2s visible + ~280ms exit).
+
+The previous `primaryChipPlaceholder` style (`height: 22, marginBottom: 10`) is removed — the always-mounted chip now reserves the slot.
+
+**Why kept mounted instead of conditionally rendered:** the first version toggled between `<primaryChipPlaceholder />` and `<Animated.View chip />` based on `justCreated`. Even with their heights nominally matching, the chip's `borderWidth: 1` + text line-height gave it a ~1–2px difference from the placeholder, which pushed the currency name up when the chip appeared and back down on exit — a visible layout shift. Always-mounted removes the branch entirely: the chip's footprint is always present on non-primary wallets, and non-just-created wallets simply render it at opacity 0.
+
+**Why a 450ms entry delay:** the horizontal `flatListRef.current?.scrollToOffset({ animated: true })` settles in ~350–400ms. Popping the chip mid-scroll would mean the user reads "Wallet Created" while the carousel is still in motion — split attention between "where are we going" and "what is this label". Delaying until after the scroll lands means the user first registers "I've arrived at my new wallet", *then* the chip pops to label it.
+
+**Why spring scale with overshoot (not pure fade):** a linear fade reads as "this text faded in", which is passive. A spring-scale pop reads as "look here" — the motion itself is a signal, not just the text arriving. The overshoot is small (~3–5%) so it feels bouncy-but-not-cartoonish; `damping: 9` specifically prevents multiple oscillations so the chip settles on the second beat.
+
+**Why exit is fade-only (scale stays at 1):** shrinking the chip on exit would read as "this is going away forever" with a diminishing-weight signal. But the meaning is "your attention is no longer needed here" — the chip did its job, the user has now seen it. A clean fade is the right verb; the pill dissolves rather than retreats.
+
+**Why brand-orange and not wallet accent:** the Primary chip uses the wallet's own accent (teal for GTQ, blue for USD, etc.) so it reads as "this wallet's meta state." The Wallet Created chip is a cross-wallet, app-level signal — "the user just did a thing" — which is a brand affordance, not a per-wallet property. Brand orange also keeps the chip visually distinct from any future Primary chip shown on the same wallet (they never occupy the same wallet simultaneously today, but the semantic separation is worth preserving).
+
+### 158. Single-use cards skip customization and land directly on CardDetail
+
+**Decision:** Tapping **Single-use** on `AddCardTypeScreen` navigates to `SingleUseCreatingScreen` — a brief interstitial that auto-creates the card, shows a materializing animation with a "Creating your card…" → checkmark transition (~1.7s), then resets the stack to `[Main, CardList, CardSettings]`. Virtual and Physical continue through the full four-screen flow (`AddCardName → AddCardColor → AddCardReview`) unchanged. This supersedes the part of #39 that said the four-screen flow applies uniformly to all three types.
+
+**Why skip the customization flow:** a single-use card is ephemeral — it exists for one transaction and auto-deletes on use. Letting the user name it "Groceries" and pick a color invests effort in a thing that disappears minutes later; the labor-to-lifespan ratio is wrong. Virtual and physical cards live on the account for months or years, so the customization pays back every time the user scans the carousel and recognises their card. Single-use doesn't get that payoff.
+
+**Why an interstitial instead of instant navigation:** jumping from the type picker directly to CardSettings felt abrupt — the user taps a card type and lands on a dense settings screen with no acknowledgement that anything was created. The interstitial provides a brief moment of confirmation: the card face materialises (fade + rise), a "Creating your card…" label transitions to a green checkmark + "Card created", and then the screen auto-navigates. Total dwell time is ~1.7s — long enough to register the creation, short enough to feel instant. The pattern mirrors the cadence of a real card issuance (request → processing → issued) compressed to prototype speed.
+
+**Why the interstitial auto-navigates instead of requiring a tap:** the single-use flow is optimised for speed — the user wants a disposable card number as fast as possible. Adding a "Continue" button would re-introduce the tap the entire skip was designed to eliminate. Auto-navigation after the checkmark settles means the user's hands are free and the card details appear without further input.
+
+**Why land on CardSettings instead of the usual `AddCardReview` celebration:** the celebratory "Card added!" screen is built around the metaphor of a card you'll keep — it offers "Add to Apple Wallet" and "View card details" as parallel next steps, and the Done button returns to Wallets with a land-in animation on the new card face in the stack. For single-use, the user's next step is almost always "grab the number and paste it into a checkout form" — which is exactly what CardSettings supports (reveal number, reveal CVV). Skipping straight there puts the user in the tool they actually need.
+
+**Why `navigation.dispatch(reset(...))` and not `navigate('CardSettings')`:** `navigate` would stack `AddCardType → SingleUseCreating → CardSettings` and leave dead screens behind. `reset` rebuilds the stack as `[Main, CardList, CardSettings]` so back lands on the wallet's card list (the natural home for the just-issued card) and a second back returns to the tabs. Same pattern the existing `handleViewDetails` in `AddCardReviewScreen` uses.
+
+**What I'd do with more time:** append a short identifier to the default name when multiple single-use cards coexist on one wallet (e.g. `Single-use · 4821` using the last4) so they're distinguishable in the carousel without requiring the user to open each one.
+
+### 159. Freeze card moved from quick-action button to settings toggle
+
+**Decision:** Removed the standalone "quick actions" row (which contained only a Freeze button) from `CardSettingsScreen` and replaced it with a toggle row inside the Card settings section. The new row order is: **Freeze card** (toggle) → **Online transactions** (toggle) → **Change PIN** (action). The frost overlay animation on the card face and the confirmation modal are preserved.
+
+**Why a toggle instead of a button:** the freeze/unfreeze action is a reversible on/off state, identical in shape to Online transactions. A toggle communicates this better than a standalone button — it makes the current state immediately visible (on = frozen) and groups it with the other card-level controls. The old quick-actions row existed for a single button, which looked orphaned.
+
+**Why the label stays fixed as "Freeze card":** toggle rows communicate state through the switch position and sublabel, not the label. Changing the label to "Unfreeze card" when frozen doubles the state signal and makes the row feel like it belongs to a different control entirely. The sublabel handles state ("Card is frozen" / "Card is active" / "Freezing…" / "Unfreezing…").
+
+**Why the toggle opens a confirmation modal instead of toggling directly:** freezing blocks all transactions on the card — a heavier consequence than toggling online-transactions. The confirmation step prevents accidental freezes from a stray thumb tap while scrolling. The Switch is controlled (`value={card.frozen}`), so it doesn't visually flip until the store actually updates after confirmation + processing animation.
+
+### 163. CardList peek carousel — adjacent cards visible during scroll
+
+**Decision:** The card carousel on `CardListScreen` shows ~28px of the previous/next card on each side, with a 12px gap between cards. Uses `snapToInterval` instead of `pagingEnabled`, with `CardFront` accepting an optional `width` prop to size down from the default full-width.
+
+**Why:** Full-width paging gave no visual hint that more cards exist. The peek pattern is a standard affordance for "swipe for more" without needing an explicit label or arrow.
+
+### 164. CardList content pager — limits + activity scroll with the cards
+
+**Decision:** The content below quick actions (spending limits + activity) lives in a second horizontal `FlatList` (`scrollEnabled={false}`, `pagingEnabled`) that is programmatically synced to the card carousel's scroll offset on every frame via `scrollToOffset`. Each card gets its own vertical `ScrollView` page with its own limits and transactions.
+
+**Why previous approaches failed:**
+- *Animated height on limits section* — layout pop when limits appear/disappear; unreliable in ScrollView.
+- *Fade/slide content tied to scrollX* — data swap (React state update) couldn't be timed to the fade; fast swipes still flashed.
+- *`runOnJS(setActiveIndex)` mid-scroll* — every React re-render during scroll caused frame drops.
+
+The synced-pager approach avoids all React state updates during scroll. The content pager receives a native `scrollToOffset` call (no re-render), so limits/activity slide in lockstep with the cards at 60fps.
+
+### 165. Quick action targeting via liveIndex ref
+
+**Decision:** Quick actions (show number, show CVV, view PIN, settings) read the current card from a `liveIndex` ref updated on every scroll frame, not from `activeIndex` React state. `activeIndex` only updates on `onMomentumEnd` to avoid mid-scroll re-renders.
+
+**Why:** Updating React state mid-scroll for action targeting caused frame drops. But deferring state updates to momentum-end meant actions briefly targeted the wrong card after a swipe. The ref splits the difference: scroll-driven reads with zero re-render cost, state updates only when the scroll settles (for renderItem/extraData that needs it).
+
+### 160. Card screen renames — AllCards / CardList / CardSettings
+
+**Decision:** Renamed the three card screens to match their actual roles:
+
+| Old name | New name | Route |
+|---|---|---|
+| `AllCardsScreen` | `AllCardsScreen` (unchanged) | — (tab) |
+| `WalletCardListScreen` | `CardListScreen` | `CardList` |
+| `CardDetailScreen` | `CardSettingsScreen` | `CardSettings` |
+
+The old stub `CardListScreen.tsx` (which returned `null`) was deleted to free the filename.
+
+**Why rename:** the original names mixed metaphors — `CardDetailScreen` was actually a settings screen (titled "Card settings" in the header), and `WalletCardListScreen` was the only card list scoped to a wallet, making the `Wallet` prefix redundant. The new names match what the screens do: `CardList` lists cards for a wallet, `CardSettings` configures a single card.
+
+### 159. Single-use cards use Blaze (solid orange), not Classic Ria Edition
+
+**Decision:** The auto-created single-use card uses Blaze (`#f97316`, `branded: false`) from the solid palette instead of Classic Ria Edition (`#f97316`, `branded: true`).
+
+**Why:** Classic Ria Edition applies the full branded card treatment — Ria logo, metallic sheen overlay, premium badge styling. That treatment is designed for cards the user keeps and identifies with; it signals "this is your card" the same way a branded physical card does. A single-use card is disposable infrastructure — it exists to hold a number for one checkout. Giving it the full branded treatment would be like embossing a gift card. Blaze is the same orange but rendered as a plain solid fill, which reads as "functional, not precious" and visually distinguishes single-use cards from the user's curated virtual/physical cards in the carousel.
+
+### 166. Matcha replaces Green in the Ria Edition palette
+
+**Decision:** Renamed and recoloured the third Ria Edition swatch from Green (`#14532d`) to Matcha (`#CDE896`). Badge theme set to `default` (dark text) since it's a light colour.
+
+**Why:** The dark forest green was too close in value to Black and Metal. Matcha is a distinctive light tone that gives the Ria Edition palette a wider range — one warm (Classic orange), two neutrals (Metal, Black), and now one fresh/light option.
+
+### 167. Official network logo PNGs replace text/CSS Visa and Mastercard marks
+
+**Decision:** `VisaLogo` now renders `Visa_Brandmark_White_RGB_2021.png` with explicit `tintColor` (`#fff` on dark cards, `#1a1a5e` on light). `MastercardLogo` renders `ma_symbol_opt_73_3x.png` inside a clipping container (scale 1.2×, height ratio 0.7) to crop the transparent padding baked into the asset. Both share a `LOGO_SIZES` map for sm/md/lg.
+
+**Why:** The text-based Visa and overlapping-circle Mastercard were placeholders. Real brand assets improve visual fidelity. The Mastercard PNG has significant transparent padding, so the overflow-clip approach trims it without re-exporting the asset.
+
+### 168. Deterministic card network — physical → Mastercard, virtual/single-use → Visa
+
+**Decision:** Card network is assigned deterministically based on card type instead of random coin flip. Physical cards get Mastercard, virtual and single-use get Visa. The preview card on the colour screen shows the correct network before creation.
+
+**Why:** Real issuers assign networks based on card program, not randomly. Deterministic assignment means the preview is accurate — what you see is what you get. A prototype toggle in the "⚙ Prototype" section lets designers test both logo treatments without affecting the default assignment.
+
+### 169. Mastercard logo visibility on orange cards — accepted as-is
+
+**Decision:** The Mastercard symbol's red/orange circles lose contrast on the Classic orange (`#f97316`) card face. Decided not to add a background rectangle or frosted pill behind the logo.
+
+**Why:** Couldn't confirm that placing the Mastercard symbol on a dark rectangle is permitted by brand guidelines for card faces. Adding an unauthorised treatment risks being worse than the contrast issue. The orange card is one of several options, and users who pick it accept the visual trade-off.
+
+### 170. EMVCo contactless indicator on physical cards
+
+**Decision:** Physical cards show the EMVCo contactless indicator SVG next to the chip. Virtual and single-use cards don't show it — they have no NFC antenna. The indicator uses `tc.primary` (same color as card number and expiry) for visual consistency.
+
+**Why:** The contactless symbol is a standard feature of physical payment cards. Including it adds realism to the card face prototype.
+
+### 171. Contactless toggle in card settings — dims indicator, doesn't hide it
+
+**Decision:** Physical cards have a "Contactless payments" toggle in card settings. When disabled, the contactless indicator on the card face dims to 25% opacity rather than disappearing. A `contactless` boolean field on the Card type (defaulting to `true` via `!== false`) backs the toggle.
+
+**Why:** Hiding the indicator entirely suggests the physical antenna was removed, which isn't how it works. Dimming communicates "present but disabled" — the same pattern most banking apps use. A diagonal strikethrough was tried but rejected: it's a custom treatment not used by real banking apps, and the line clipped awkwardly at the SVG bounds.
+
+### 172. Custom EMV chip design from Figma SVG (Card Chip.svg)
+
+**Decision:** The card chip is rendered as an inline `SvgXml` using the custom `assets/Card Chip.svg` design. It features a gold-to-orange linear gradient fill with groove lines cut into a single surface (not separate pad shapes). A 2pt rounded stroke outlines the chip, with internal groove strokes also at 2pt. The background rect is inset 1px with its own stroke to cleanly frame the grooves clipped at the edges.
+
+**Why:** The standard 6-segment EMV chip was studied (ISO 7816-2 defines 8 contacts that visually appear as 6 pads). Multiple ASCII layouts were explored — separate shapes looked artificial; lines carved into a single surface looked authentic. A custom SVG was designed in Figma to match, with a gold-to-orange gradient matching the Ria brand palette.
+
+### 173. Chip hidden on virtual and single-use cards
+
+**Decision:** The chip + contactless indicator only render for `card.type === 'physical'`. Virtual and single-use cards show a 28px spacer in the chip row's place so the card number position stays consistent across all card types.
+
+**Why:** Virtual cards have no physical chip. Hiding it reinforces the visual distinction between physical and digital cards without changing the overall card layout.
+
+### 174. Chip placement — ISO 7816-2 inspired positioning
+
+**Decision:** The chip row uses `marginTop: 24, marginLeft: 10` positioning, placing it visually centered between the card name and card number, offset slightly right from the content edge. The card number's `marginTop` was reduced from 32px to 24px to compensate for the chip's increased top margin, keeping the number at the same absolute position.
+
+**Why:** ISO 7816-2 specifies chip placement at ~10% from left and ~47% from top of a standard card. The exact spec position is too low for our compact UI card, so a compromise was struck: centered between name and number (~35% from top), with ~10px right offset. Multiple iterations tested — pure spec placement crowded the bottom, original placement was too high and flush-left compared to physical cards.

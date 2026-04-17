@@ -29,12 +29,13 @@ import SendErrorScreen from '../screens/send/SendErrorScreen';
 
 // Card screens
 import AllCardsScreen from '../screens/cards/AllCardsScreen';
-import WalletCardListScreen from '../screens/cards/WalletCardListScreen';
-import CardDetailScreen from '../screens/cards/CardDetailScreen';
+import CardListScreen from '../screens/cards/CardListScreen';
+import CardSettingsScreen from '../screens/cards/CardSettingsScreen';
 import AddCardTypeScreen from '../screens/cards/AddCardTypeScreen';
 import AddCardNameScreen from '../screens/cards/AddCardNameScreen';
 import AddCardColorScreen from '../screens/cards/AddCardColorScreen';
 import AddCardReviewScreen from '../screens/cards/AddCardReviewScreen';
+import SingleUseCreatingScreen from '../screens/cards/SingleUseCreatingScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -207,12 +208,13 @@ export default function RootNavigator() {
         <Stack.Screen name="SendError" component={SendErrorScreen} options={{ animation: 'fade', gestureEnabled: false }} />
 
         {/* Card flows */}
-        <Stack.Screen name="WalletCardList" component={WalletCardListScreen} />
-        <Stack.Screen name="CardDetail" component={CardDetailScreen} />
+        <Stack.Screen name="CardList" component={CardListScreen} />
+        <Stack.Screen name="CardSettings" component={CardSettingsScreen} />
         <Stack.Screen name="AddCardType" component={AddCardTypeScreen} />
         <Stack.Screen name="AddCardName" component={AddCardNameScreen} />
         <Stack.Screen name="AddCardColor" component={AddCardColorScreen} />
         <Stack.Screen name="AddCardReview" component={AddCardReviewScreen} />
+        <Stack.Screen name="SingleUseCreating" component={SingleUseCreatingScreen} options={{ gestureEnabled: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

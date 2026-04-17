@@ -10,6 +10,7 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import { Copy, Check, Clock, Snowflake } from 'lucide-react-native';
+import { SvgXml } from 'react-native-svg';
 import { colors, typography, spacing, radius } from '../theme';
 import CardOverlay from './CardOverlay';
 import type { Card, CardType } from '../stores/types';
@@ -57,29 +58,35 @@ function cardTextColors(light: boolean) {
 
 // ─── Network logos ────────────────────────────────────────────────────────────
 
+const VISA_LOGO = require('../../assets/Visa_Brandmark_White_RGB_2021.png');
+const MC_LOGO = require('../../assets/ma_symbol_opt_73_3x.png');
+
+const LOGO_SIZES = { sm: 18, md: 24, lg: 32 } as const;
+
 export function VisaLogo({ size = 'md', dark = false }: { size?: 'sm' | 'md' | 'lg'; dark?: boolean }) {
-  const fontSize = size === 'sm' ? 13 : size === 'lg' ? 22 : 17;
+  const h = LOGO_SIZES[size];
   return (
-    <Text style={[logoStyles.visa, { fontSize }, dark && logoStyles.visaDark]}>VISA</Text>
+    <Image
+      source={VISA_LOGO}
+      style={{ height: h, width: h * 2.5, tintColor: dark ? '#1a1a5e' : '#fff' } as any}
+      resizeMode="contain"
+    />
   );
 }
 
 export function MastercardLogo({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
-  const d = size === 'sm' ? 18 : size === 'lg' ? 32 : 24;
-  const overlap = d * 0.35;
+  const w = LOGO_SIZES[size] * 2.5;
+  const scale = 1.2;
   return (
-    <View style={{ width: d * 2 - overlap, height: d, position: 'relative' }}>
-      <View style={[logoStyles.mcCircle, { width: d, height: d, borderRadius: d / 2, backgroundColor: '#EB001B', left: 0 }]} />
-      <View style={[logoStyles.mcCircle, { width: d, height: d, borderRadius: d / 2, backgroundColor: '#F79E1B', right: 0, opacity: 0.95 }]} />
+    <View style={{ width: w, height: w * 0.7, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', marginBottom: -4 }}>
+      <Image
+        source={MC_LOGO}
+        style={{ height: w * scale, width: w * scale }}
+        resizeMode="contain"
+      />
     </View>
   );
 }
-
-const logoStyles = StyleSheet.create({
-  visa: { color: '#fff', fontWeight: '900', fontStyle: 'italic', letterSpacing: 1.5 },
-  visaDark: { color: '#1a1a5e' },
-  mcCircle: { position: 'absolute', top: 0 },
-});
 
 // ─── Type labels ──────────────────────────────────────────────────────────────
 
@@ -92,12 +99,13 @@ const TYPE_LABELS: Record<CardType, string> = {
 
 // ─── Card surface ─────────────────────────────────────────────────────────────
 
-function CardSurface({ card, children, compact = false }: { card: Card; children: React.ReactNode; compact?: boolean }) {
+function CardSurface({ card, children, compact = false, width: overrideW }: { card: Card; children: React.ReactNode; compact?: boolean; width?: number }) {
   const isMetallic = card.finish === 'metallic';
 
   return (
     <View style={[
       styles.cardOuter,
+      overrideW != null && { width: overrideW, height: overrideW / 1.586 },
       {
         borderColor: compact
           ? 'transparent'
@@ -304,6 +312,7 @@ export function CardFront({
   onCopyCvv,
   copiedField,
   compact = false,
+  width: overrideW,
 }: {
   card: Card;
   currency?: string;
@@ -314,6 +323,7 @@ export function CardFront({
   copiedField?: string | null;
   /** Stack-preview mode: hides EXPIRES (CVV is already gated by interactive). */
   compact?: boolean;
+  width?: number;
 }) {
   const isFrozen = card.frozen;
   const isExpired = card.expired === true;
@@ -324,7 +334,7 @@ export function CardFront({
   const tc = cardTextColors(light);
 
   return (
-    <CardSurface card={card} compact={compact}>
+    <CardSurface card={card} compact={compact} width={overrideW}>
       {isFrozen && !isExpired && <View style={styles.frozenOverlay} />}
       {card.branded && <RiaLogoWatermark />}
 
@@ -351,9 +361,26 @@ export function CardFront({
         </View>
       </View>
 
-      {/* ── Chip ── */}
-      <View style={styles.chip}>
-        <View style={styles.chipInner} />
+      {/* ── Chip + contactless ── */}
+      <View style={styles.chipRow}>
+        {card.type === 'physical' ? (
+          <>
+            <SvgXml
+            xml={`<svg width="116" height="86" viewBox="0 0 116 86" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="114" height="84" rx="15" fill="url(#g1)" stroke="#734100" stroke-width="2"/><g clip-path="url(#clip0)"><path d="M31.76-.5c3.85 0 7.08 2.92 7.46 6.75L41.45 28.5H-.5V-.5h32.26z" stroke="#734100" stroke-width="2"/><path d="M42 28.5c1.93 0 3.5 1.57 3.5 3.5v22c0 1.93-1.57 3.5-3.5 3.5H-.5v-29H42z" stroke="#734100" stroke-width="2"/><path d="M74 28.5h42.5v29H74a3.5 3.5 0 01-3.5-3.5V32l.005-.18A3.5 3.5 0 0174 28.5z" stroke="#734100" stroke-width="2"/><path d="M117 29V-1H84.45c-4.2 0-7.68 3.24-7.98 7.43L76 13" stroke="#734100" stroke-width="2"/><path d="M116.5 57.5v29H84.24c-3.85 0-7.08-2.92-7.46-6.75L74.55 57.5h41.95z" stroke="#734100" stroke-width="2"/><path d="M41.45 57.5l-2.23 22.25c-.38 3.83-3.61 6.75-7.46 6.75H-.5v-29h41.95z" stroke="#734100" stroke-width="2"/><circle cx="58" cy="-10" r="15.5" stroke="#734100" stroke-width="2"/><circle cx="58" cy="96" r="15.5" stroke="#734100" stroke-width="2"/></g><defs><linearGradient id="g1" x1="0" y1="0" x2="116" y2="86" gradientUnits="userSpaceOnUse"><stop stop-color="#F7C159"/><stop offset="1" stop-color="#FF8A38"/></linearGradient><clipPath id="clip0"><rect width="116" height="86" rx="16" fill="white"/></clipPath></defs></svg>`}
+            width={38}
+            height={28}
+          />
+          <View style={{ opacity: card.contactless !== false ? 1 : 0.25 }}>
+            <SvgXml
+              xml={`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 46 56"><path fill="none" stroke="${tc.primary}" stroke-width="6" stroke-linecap="round" d="m35,3a50,50 0 0,1 0,50M24,8.5a39,39 0 0,1 0,39M13.5,13.55a28.2,28.5 0 0,1 0,28.5M3,19a18,17 0 0,1 0,18"/></svg>`}
+              width={16}
+              height={20}
+            />
+          </View>
+          </>
+        ) : (
+          <View style={{ height: 28 }} />
+        )}
       </View>
 
       {/* ── Card number ── */}
@@ -536,17 +563,14 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
 
-  // ── Chip — proper EMV size, good gap below the name ──
-  chip: {
-    width: 38,
-    height: 28,
-    backgroundColor: '#c8a84b',
-    borderRadius: 5,
-    marginTop: spacing.lg,       // 16px — clear separation from name
-    justifyContent: 'center',
+  chipRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+    marginTop: 24,
+    marginLeft: 10,
   },
-  chipInner: { width: 28, height: 18, borderRadius: 3, borderWidth: 1, borderColor: '#a07830' },
+  // chip styles removed — now rendered as inline SVG with 6 rounded pads
 
   // ── Flip character cell (shared by number + CVV) ──
   charCell: {
@@ -574,7 +598,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.9)',
     fontWeight: typography.semibold,
     letterSpacing: 3,
-    marginTop: spacing.xxl,
+    marginTop: 24,
   },
 
   // ── Card number interactive area (no box — just layout + copy target) ──
@@ -582,7 +606,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    marginTop: spacing.xxl,      // 32px — balanced between chip and bottom row
+    marginTop: 24,
   },
 
   // ── Bottom row ──

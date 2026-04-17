@@ -15,11 +15,9 @@ const date_fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeri
 
 export default function TransactionRow({
   tx,
-  accentColor = colors.brand,
   onPress,
 }: {
   tx: Transaction;
-  accentColor?: string;
   onPress: () => void;
 }) {
   const isCredit = tx.amount > 0;
@@ -30,17 +28,22 @@ export default function TransactionRow({
   const Icon = isCredit ? ArrowDownLeft : ArrowUpRight;
   const showChip = tx.status === 'failed' || tx.status === 'pending';
 
+  // Semantic direction colors (green=incoming, red=outgoing). Failed rows
+  // go gray so a red icon doesn't get mistaken for "outgoing" at a glance.
+  const iconColor = isFailed
+    ? colors.textMuted
+    : isCredit
+      ? colors.success
+      : colors.failed;
+  const iconBg = isFailed ? colors.surfaceHigh : alpha(iconColor, 0.12);
+
   return (
     <Pressable
       onPress={() => { Haptics.selectionAsync(); onPress(); }}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
     >
-      <View style={[styles.icon, { backgroundColor: alpha(isFailed ? colors.failed : accentColor, 0.12) }]}>
-        <Icon
-          size={18}
-          color={isFailed ? colors.failed : accentColor}
-          strokeWidth={1.8}
-        />
+      <View style={[styles.icon, { backgroundColor: iconBg }]}>
+        <Icon size={18} color={iconColor} strokeWidth={1.8} />
       </View>
 
       <View style={styles.middle}>

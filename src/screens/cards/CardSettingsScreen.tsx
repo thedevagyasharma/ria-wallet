@@ -32,6 +32,7 @@ import {
   Check,
   KeyRound,
   WifiOff,
+  Nfc,
   Gauge,
   AlertTriangle,
 } from 'lucide-react-native';
@@ -58,27 +59,6 @@ const TYPE_LABELS: Record<CardType, string> = {
   virtual: 'Virtual card',
   'single-use': 'Single-use card',
 };
-
-// ─── Action button ─────────────────────────────────────────────────────────────
-
-function ActionBtn({
-  icon,
-  label,
-  onPress,
-  disabled,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <SecondaryButton onPress={onPress} disabled={disabled} shape="rect" style={styles.actionBtn}>
-      <View style={styles.actionBtnIcon}>{icon}</View>
-      <Text style={styles.actionBtnLabel}>{label}</Text>
-    </SecondaryButton>
-  );
-}
 
 // ─── View PIN sheet ────────────────────────────────────────────────────────────
 
@@ -298,6 +278,7 @@ function SettingsRow({
   isToggle,
   toggleValue,
   onToggle,
+  toggleDisabled,
   destructive,
   isLast,
 }: {
@@ -309,6 +290,7 @@ function SettingsRow({
   isToggle?: boolean;
   toggleValue?: boolean;
   onToggle?: (v: boolean) => void;
+  toggleDisabled?: boolean;
   destructive?: boolean;
   isLast?: boolean;
 }) {
@@ -335,6 +317,7 @@ function SettingsRow({
           <Switch
             value={toggleValue}
             onValueChange={onToggle}
+            disabled={toggleDisabled}
             trackColor={{ false: colors.border, true: colors.brand }}
             thumbColor="#fff"
           />
@@ -394,12 +377,12 @@ const segStyles = StyleSheet.create({
 
 // ─── Main screen ───────────────────────────────────────────────────────────────
 
-export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>) {
+export default function CardSettingsScreen({ route }: RootStackProps<'CardSettings'>) {
   const navigation = useNavigation();
   const { cardId, scrollTo } = route.params;
   const {
     cards, toggleFreeze, removeCard,
-    changePin, setOnlineTransactions, setSpendingLimit,
+    changePin, setOnlineTransactions, setContactless, setSpendingLimit,
     setExpired, setFreezeSimulateError,
   } = useCardStore();
   const { wallets } = useWalletStore();
@@ -412,7 +395,7 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
   const [showLostStolen, setShowLostStolen] = useState(false);
   const [freezeProcessing, setFreezeProcessing] = useState(false);
 
-  // Scroll coordination — deep-link from WalletCardListScreen's "Edit limits"
+  // Scroll coordination — deep-link from CardListScreen's "Edit limits"
   // lands here with scrollTo:'limits'. We measure the Spending section's Y
   // via onLayout and scroll once both the layout is known and the native push
   // transition has settled. One-shot: guarded so we don't re-scroll if the
@@ -531,6 +514,7 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
 
   const cardPin = card.pin ?? '1234';
   const onlineEnabled = card.onlineTransactions !== false;
+  const contactlessEnabled = card.contactless !== false;
   const spendingLimits = card.spendingLimits ?? {};
   const isExpired = card.expired === true;
 
@@ -556,41 +540,26 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
             />
             <Animated.View style={[styles.frostOverlay, frostStyle]} pointerEvents="none" />
           </View>
-          {freezeProcessing && (
-            <Text style={styles.processingText}>
-              {card.frozen ? 'Unfreezing…' : 'Freezing…'}
-            </Text>
-          )}
-        </View>
-
-        {/* Quick actions */}
-        <View style={styles.actionsRow}>
-          <ActionBtn
-            icon={
-              card.frozen
-                ? <Unlock size={22} color={colors.textSecondary} strokeWidth={1.8} />
-                : <Snowflake size={22} color={isExpired ? colors.textMuted : '#93c5fd'} strokeWidth={1.8} />
-            }
-            label={
-              freezeProcessing
-                ? (card.frozen ? 'Unfreezing…' : 'Freezing…')
-                : (card.frozen ? 'Unfreeze' : 'Freeze')
-            }
-            disabled={freezeProcessing || isExpired}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setShowFreezeConfirm(true);
-            }}
-          />
         </View>
 
         {/* Card settings */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Card settings</Text>
           <SettingsRow
-            icon={<KeyRound size={17} color={colors.textSecondary} strokeWidth={1.8} />}
-            label="Change PIN"
-            onPress={() => { Haptics.selectionAsync(); setShowChangePin(true); }}
+            icon={<Snowflake size={17} color={colors.textSecondary} strokeWidth={1.8} />}
+            label="Freeze card"
+            sublabel={
+              freezeProcessing
+                ? (card.frozen ? 'Unfreezing…' : 'Freezing…')
+                : (card.frozen ? 'Card is frozen' : 'Card is active')
+            }
+            isToggle
+            toggleValue={card.frozen}
+            toggleDisabled={freezeProcessing || isExpired}
+            onToggle={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowFreezeConfirm(true);
+            }}
           />
           <SettingsRow
             icon={
@@ -603,6 +572,24 @@ export default function CardDetailScreen({ route }: RootStackProps<'CardDetail'>
             isToggle
             toggleValue={onlineEnabled}
             onToggle={handleOnlineTransactionsToggle}
+          />
+          {card.type === 'physical' && (
+            <SettingsRow
+              icon={<Nfc size={17} color={contactlessEnabled ? colors.textSecondary : colors.textMuted} strokeWidth={1.8} />}
+              label="Contactless payments"
+              sublabel={contactlessEnabled ? 'Tap to pay enabled' : 'Tap to pay disabled'}
+              isToggle
+              toggleValue={contactlessEnabled}
+              onToggle={(v) => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setContactless(card.id, v);
+              }}
+            />
+          )}
+          <SettingsRow
+            icon={<KeyRound size={17} color={colors.textSecondary} strokeWidth={1.8} />}
+            label="Change PIN"
+            onPress={() => { Haptics.selectionAsync(); setShowChangePin(true); }}
             isLast
           />
         </View>
@@ -852,14 +839,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#bfdbfe',
     borderRadius: radius.xl,
   },
-  processingText: {
-    marginTop: spacing.sm,
-    fontSize: typography.xs,
-    color: colors.textMuted,
-    fontWeight: typography.semibold,
-    letterSpacing: 0.4,
-  },
-
   // ── Sections ──
   section: {
     paddingHorizontal: spacing.xl,
@@ -902,27 +881,6 @@ const styles = StyleSheet.create({
     fontWeight: typography.medium,
   },
 
-  // ── Actions row ──
-  actionsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.xl,
-    paddingHorizontal: spacing.xl,
-  },
-  actionBtn: {
-    flex: 1,
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.md,
-  },
-  actionBtnIcon: { marginBottom: 2 },
-  actionBtnLabel: {
-    fontSize: typography.xs,
-    color: colors.textSecondary,
-    fontWeight: typography.medium,
-    textAlign: 'center',
-  },
-
   // ── Info rows (flat) ──
   infoRow: {
     flexDirection: 'row',
@@ -933,7 +891,6 @@ const styles = StyleSheet.create({
   infoDivider: {
     height: 1,
     backgroundColor: colors.borderSubtle,
-    marginLeft: 22 + spacing.md,
   },
   infoLabelGroup: {
     flexDirection: 'row',
@@ -987,7 +944,6 @@ const styles = StyleSheet.create({
   settingsRowDivider: {
     height: 1,
     backgroundColor: colors.borderSubtle,
-    marginLeft: 22 + spacing.md,
   },
   settingsRowLeft: {
     flexDirection: 'row',

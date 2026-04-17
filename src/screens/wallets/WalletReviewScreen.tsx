@@ -1,12 +1,12 @@
 import React from 'react';
-import { View, Text, StyleSheet, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { ChevronLeft } from 'lucide-react-native';
-import { colors, typography, spacing, radius } from '../../theme';
+import { colors, typography, spacing } from '../../theme';
 import PrimaryButton from '../../components/PrimaryButton';
 import FlagIcon from '../../components/FlagIcon';
 import { getCurrency } from '../../data/currencies';
@@ -15,6 +15,8 @@ import type { RootStackParamList } from '../../navigation/types';
 import type { RootStackProps } from '../../navigation/types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+
+const H_PAD = 24;
 
 export default function WalletReviewScreen({ route }: RootStackProps<'WalletReview'>) {
   const navigation = useNavigation<Nav>();
@@ -25,19 +27,18 @@ export default function WalletReviewScreen({ route }: RootStackProps<'WalletRevi
   const handleConfirm = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    const newWallet = {
-      id: `wallet-${code.toLowerCase()}-${Date.now()}`,
+    const walletId = `wallet-${code.toLowerCase()}-${Date.now()}`;
+    addWallet({
+      id: walletId,
       currency: code,
       balance: 0,
       isPrimary: false,
-    };
-    addWallet(newWallet);
-    navigation.navigate('WalletSuccess', { currency: code });
+    });
+    navigation.navigate('WalletSuccess', { currency: code, walletId });
   };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
           <ChevronLeft size={24} color={colors.textPrimary} strokeWidth={2} />
@@ -46,29 +47,34 @@ export default function WalletReviewScreen({ route }: RootStackProps<'WalletRevi
         <View style={styles.backBtn} />
       </View>
 
-      <View style={styles.content}>
-        {/* Currency display */}
-        <View style={styles.currencyCard}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Hero — flat, unboxed */}
+        <View style={styles.hero}>
           <FlagIcon code={currency.flag} size={56} />
           <Text style={styles.currencyName}>{currency.name}</Text>
           <Text style={styles.currencyCode}>{currency.code}</Text>
         </View>
 
-        {/* Details */}
-        <View style={styles.detailsCard}>
+        {/* Details — flat section, inset hairlines */}
+        <View style={[styles.section, styles.sectionLast]}>
+          <Text style={styles.sectionLabel}>Details</Text>
+
           <DetailRow label="Starting balance" value={`0.00 ${code}`} />
-          <View style={styles.divider} />
+          <View style={styles.rowDivider} />
           <DetailRow label="Wallet creation fee" value="Free" valueColor={colors.success} />
-          <View style={styles.divider} />
-          <DetailRow label="Cards" value="Virtual &amp; physical" />
+          <View style={styles.rowDivider} />
+          <DetailRow label="Cards" value="Virtual & physical" />
         </View>
 
         <Text style={styles.note}>
           You can add virtual cards instantly or request a physical card for a small fee once the wallet is created.
         </Text>
-      </View>
+      </ScrollView>
 
-      {/* CTA */}
       <View style={styles.footer}>
         <PrimaryButton onPress={handleConfirm} style={styles.confirmBtn}>
           <Text style={styles.confirmBtnText}>Create {code} Wallet</Text>
@@ -93,7 +99,7 @@ function DetailRow({
   return (
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={[styles.detailValue, valueColor ? { color: valueColor } : {}]}>
+      <Text style={[styles.detailValue, valueColor ? { color: valueColor } : null]}>
         {value}
       </Text>
     </View>
@@ -113,47 +119,57 @@ const styles = StyleSheet.create({
   backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: typography.md, color: colors.textPrimary, fontWeight: typography.semibold },
 
-  content: { flex: 1, paddingHorizontal: spacing.xl, paddingTop: spacing.xl },
+  scroll: { flex: 1 },
+  scrollContent: { paddingTop: spacing.xl },
 
-  currencyCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
+  hero: {
     alignItems: 'center',
-    paddingVertical: spacing.xxl,
-    marginBottom: spacing.xl,
+    paddingVertical: spacing.xl,
     gap: spacing.sm,
+    marginBottom: spacing.xl,
   },
-  flag: {},
   currencyName: { fontSize: typography.xl, color: colors.textPrimary, fontWeight: typography.bold },
   currencyCode: { fontSize: typography.base, color: colors.textSecondary },
 
-  detailsCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
+  // ── Flat section (decision 144) ──
+  section: {
+    paddingHorizontal: H_PAD,
+    paddingBottom: spacing.lg,
     marginBottom: spacing.lg,
-    overflow: 'hidden',
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
   },
+  sectionLast: {
+    paddingBottom: 0,
+    marginBottom: spacing.lg,
+    borderBottomWidth: 0,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontWeight: typography.semibold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: spacing.sm,
+  },
+
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.lg,
   },
   detailLabel: { fontSize: typography.base, color: colors.textSecondary },
   detailValue: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.semibold },
-  divider: { height: 1, backgroundColor: colors.borderSubtle },
+  rowDivider: { height: 1, backgroundColor: colors.borderSubtle },
 
   note: {
     fontSize: typography.sm,
     color: colors.textMuted,
     lineHeight: 20,
     textAlign: 'center',
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: H_PAD + spacing.sm,
+    marginBottom: spacing.xl,
   },
 
   footer: {

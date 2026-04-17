@@ -14,13 +14,10 @@ import Animated, {
   useAnimatedStyle,
   withTiming,
   interpolateColor,
-  FadeInUp,
-  FadeOut,
-  FadeOutUp,
   LinearTransition,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, SlidersHorizontal, ArrowUpRight, ArrowDownLeft, ArrowLeftRight, ChevronLeft, CreditCard, X, type LucideIcon } from 'lucide-react-native';
+import { Search, ArrowUpRight, ArrowDownLeft, ChevronLeft, ChevronDown, CreditCard, Check, X, type LucideIcon } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -32,9 +29,9 @@ import { getCurrency } from '../../data/currencies';
 import ActivityItem from '../../components/ActivityItem';
 import FlagIcon from '../../components/FlagIcon';
 import BottomSheet from '../../components/BottomSheet';
-import FlatButton from '../../components/FlatButton';
+import SecondaryButton from '../../components/SecondaryButton';
 import { CATEGORY_META } from '../../utils/cardCategories';
-import type { CardCategory, Transaction, TransactionStatus, TransactionType } from '../../stores/types';
+import type { Card, CardCategory, Transaction, TransactionStatus, TransactionType, Wallet } from '../../stores/types';
 import { useTabScrollReset } from '../../navigation/TabScrollContext';
 import type { RootStackParamList } from '../../navigation/types';
 
@@ -46,6 +43,12 @@ const WALLET_ACCENTS: Record<string, string> = {
   HNL: '#0369a1', DOP: '#dc2626', COP: '#ca8a04', MAD: '#ea580c',
 };
 function walletAccent(c: string) { return WALLET_ACCENTS[c] ?? colors.brand; }
+
+// Orange brand bg pairs with dark brown text; non-brand (wallet/semantic)
+// accents stay white — keeps the existing "brand = #441306" rule in one place.
+function textOn(color: string): string {
+  return color === colors.brand ? '#441306' : '#fff';
+}
 
 function groupByMonth(txs: Transaction[]): { title: string; data: Transaction[] }[] {
   const map = new Map<string, Transaction[]>();
@@ -72,99 +75,7 @@ function datePresetFrom(preset: DatePreset): Date {
   }
 }
 
-// ─── Filter chip ─────────────────────────────────────────────────────────────
-
-const COLOR_DURATION = 180;
-
-function FilterChip({
-  label,
-  flagCode,
-  icon: Icon,
-  active,
-  activeColor,
-  activeTextColor = '#fff',
-  onPress,
-}: {
-  label: string;
-  flagCode?: string;
-  icon?: LucideIcon;
-  active: boolean;
-  activeColor: string;
-  activeTextColor?: string;
-  onPress: () => void;
-}) {
-  const progress = useSharedValue(active ? 1 : 0);
-  useEffect(() => {
-    progress.value = withTiming(active ? 1 : 0, { duration: COLOR_DURATION });
-  }, [active, progress]);
-
-  const containerStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(progress.value, [0, 1], [colors.surface, activeColor]),
-    borderColor:     interpolateColor(progress.value, [0, 1], [colors.border,  activeColor]),
-  }));
-  const textStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(progress.value, [0, 1], [colors.textSecondary, activeTextColor]),
-  }));
-
-  // Icon color snaps (lucide Icons don't take animated props cleanly). The
-  // container/text fade masks this — icons are small relative to the chip.
-  const iconColor = active ? activeTextColor : colors.textSecondary;
-
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => pressed && { opacity: 0.7 }}>
-      <Animated.View style={[styles.chip, containerStyle]}>
-        {flagCode && <FlagIcon code={flagCode} size={14} />}
-        {Icon && <Icon size={14} color={iconColor} strokeWidth={2} />}
-        <Animated.Text style={[styles.chipLabel, textStyle]}>{label}</Animated.Text>
-      </Animated.View>
-    </Pressable>
-  );
-}
-
-// ─── Sheet option chip ────────────────────────────────────────────────────────
-
-function OptionChip({
-  label,
-  icon: Icon,
-  active,
-  activeColor = colors.brand,
-  onPress,
-}: {
-  label: string;
-  icon?: LucideIcon;
-  active: boolean;
-  activeColor?: string;
-  onPress: () => void;
-}) {
-  // Orange brand color pairs with dark brown text, not white
-  const activeTextColor = activeColor === colors.brand ? '#441306' : '#fff';
-
-  const progress = useSharedValue(active ? 1 : 0);
-  useEffect(() => {
-    progress.value = withTiming(active ? 1 : 0, { duration: COLOR_DURATION });
-  }, [active, progress]);
-
-  const containerStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(progress.value, [0, 1], [colors.surface, activeColor]),
-    borderColor:     interpolateColor(progress.value, [0, 1], [colors.border,  activeColor]),
-  }));
-  const textStyle = useAnimatedStyle(() => ({
-    color: interpolateColor(progress.value, [0, 1], [colors.textSecondary, activeTextColor]),
-  }));
-
-  const iconColor = active ? activeTextColor : colors.textSecondary;
-
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => pressed && { opacity: 0.7 }}>
-      <Animated.View style={[styles.optionChip, containerStyle]}>
-        {Icon && <Icon size={14} color={iconColor} strokeWidth={2} />}
-        <Animated.Text style={[styles.optionChipLabel, textStyle]}>{label}</Animated.Text>
-      </Animated.View>
-    </Pressable>
-  );
-}
-
-// ─── Filter sheet ─────────────────────────────────────────────────────────────
+// ─── Option tables ────────────────────────────────────────────────────────────
 
 const DATE_PRESETS: { key: DatePreset; label: string }[] = [
   { key: 'today',   label: 'Today' },
@@ -174,8 +85,7 @@ const DATE_PRESETS: { key: DatePreset; label: string }[] = [
   { key: 'year',    label: 'This year' },
 ];
 
-const DIRECTION_OPTIONS: { key: TransactionType | 'all'; label: string; icon?: LucideIcon }[] = [
-  { key: 'all',     label: 'All',      icon: ArrowLeftRight },
+const DIRECTION_OPTIONS: { key: TransactionType; label: string; icon?: LucideIcon }[] = [
   { key: 'send',    label: 'Sent',     icon: ArrowUpRight },
   { key: 'receive', label: 'Received', icon: ArrowDownLeft },
 ];
@@ -191,7 +101,6 @@ const CATEGORIES: CardCategory[] = [
   'food_delivery', 'delivery', 'software', 'dining', 'travel', 'transport', 'other',
 ];
 
-// Toggle membership in an immutable Set — used for multi-select filters.
 function toggleInSet<T>(s: Set<T>, v: T): Set<T> {
   const next = new Set(s);
   if (next.has(v)) next.delete(v);
@@ -199,144 +108,538 @@ function toggleInSet<T>(s: Set<T>, v: T): Set<T> {
   return next;
 }
 
-// Label lookups for sheet-scoped filters (used by active pills).
 function dateLabel(p: DatePreset): string {
   return DATE_PRESETS.find((x) => x.key === p)?.label ?? '';
-}
-function directionLabel(d: TransactionType): string {
-  return DIRECTION_OPTIONS.find((x) => x.key === d)?.label ?? '';
 }
 function statusLabel(s: TransactionStatus): string {
   return STATUS_OPTIONS.find((x) => x.key === s)?.label ?? '';
 }
 
-const STATUS_COLOR: Record<TransactionStatus, string> = {
-  completed: '#16a34a',
-  pending:   '#d97706',
-  failed:    '#dc2626',
-};
+// ─── Filter chip (row-level) ──────────────────────────────────────────────────
 
-function FilterSection({ title, children }: { title: string; children: React.ReactNode }) {
+const COLOR_DURATION = 180;
+
+function FilterChip({
+  label,
+  flagCode,
+  icon: Icon,
+  active,
+  activeColor,
+  disabled = false,
+  showChevron = true,
+  onPress,
+}: {
+  label: string;
+  flagCode?: string;
+  icon?: LucideIcon;
+  active: boolean;
+  activeColor: string;
+  disabled?: boolean;
+  /** Trailing chevron-down to signal the chip opens a picker. */
+  showChevron?: boolean;
+  onPress: () => void;
+}) {
+  const activeTextColor = textOn(activeColor);
+
+  const progress = useSharedValue(active ? 1 : 0);
+  useEffect(() => {
+    progress.value = withTiming(active ? 1 : 0, { duration: COLOR_DURATION });
+  }, [active, progress]);
+
+  const containerStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], [colors.surface, activeColor]),
+    borderColor:     interpolateColor(progress.value, [0, 1], [colors.border,  activeColor]),
+  }));
+  const textStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(progress.value, [0, 1], [colors.textSecondary, activeTextColor]),
+  }));
+
+  // Icon color snaps (lucide Icons don't take animated props cleanly). The
+  // container/text fade masks this — icons are small relative to the chip.
+  const iconColor = active ? activeTextColor : colors.textMuted;
+
   return (
-    <View style={styles.filterSection}>
-      <Text style={styles.filterSectionTitle}>{title}</Text>
-      <View style={styles.filterChipsRow}>{children}</View>
-    </View>
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        disabled && styles.chipDisabled,
+        pressed && !disabled && { opacity: 0.7 },
+      ]}
+    >
+      <Animated.View style={[styles.chip, containerStyle]}>
+        {flagCode && <FlagIcon code={flagCode} size={14} />}
+        {Icon && <Icon size={14} color={active ? activeTextColor : colors.textSecondary} strokeWidth={2} />}
+        <Animated.Text style={[styles.chipLabel, textStyle]}>{label}</Animated.Text>
+        {showChevron && (
+          <ChevronDown size={14} color={iconColor} strokeWidth={2} style={styles.chipChevron} />
+        )}
+      </Animated.View>
+    </Pressable>
   );
 }
 
-function FilterSheet({
+// ─── Sheet option chip ────────────────────────────────────────────────────────
+
+function OptionChip({
+  label,
+  icon: Icon,
+  flagCode,
+  active,
+  activeColor = colors.brand,
+  disabled = false,
+  onPress,
+}: {
+  label: string;
+  icon?: LucideIcon;
+  flagCode?: string;
+  active: boolean;
+  activeColor?: string;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  const activeTextColor = textOn(activeColor);
+
+  const progress = useSharedValue(active ? 1 : 0);
+  useEffect(() => {
+    progress.value = withTiming(active ? 1 : 0, { duration: COLOR_DURATION });
+  }, [active, progress]);
+
+  const containerStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], [colors.surface, activeColor]),
+    borderColor:     interpolateColor(progress.value, [0, 1], [colors.border,  activeColor]),
+  }));
+  const textStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(progress.value, [0, 1], [colors.textSecondary, activeTextColor]),
+  }));
+
+  const iconColor = active ? activeTextColor : colors.textSecondary;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        disabled && styles.optionChipDisabled,
+        pressed && !disabled && { opacity: 0.7 },
+      ]}
+    >
+      <Animated.View style={[styles.optionChip, containerStyle]}>
+        {flagCode && <FlagIcon code={flagCode} size={14} />}
+        {Icon && <Icon size={14} color={iconColor} strokeWidth={2} />}
+        <Animated.Text style={[styles.optionChipLabel, textStyle]}>{label}</Animated.Text>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+// ─── Picker sheet shell ───────────────────────────────────────────────────────
+// Shared shell used by every filter picker: BottomSheet + header with optional
+// Reset link + body (flex-wrap chip area) + Apply. Each picker owns its draft
+// state and calls onApply to commit, so the list behind the sheet doesn't
+// re-filter while the user is toggling.
+
+function PickerSheet({
   visible,
   onClose,
-  datePreset,
-  onDatePreset,
-  direction,
-  onDirection,
-  selectedStatuses,
-  onToggleStatus,
-  selectedCategories,
-  onToggleCategory,
+  title,
+  canReset,
   onReset,
+  onApply,
+  children,
 }: {
   visible: boolean;
   onClose: () => void;
-  datePreset: DatePreset | null;
-  onDatePreset: (p: DatePreset | null) => void;
-  direction: TransactionType | 'all';
-  onDirection: (d: TransactionType | 'all') => void;
-  selectedStatuses: Set<TransactionStatus>;
-  onToggleStatus: (s: TransactionStatus) => void;
-  selectedCategories: Set<CardCategory>;
-  onToggleCategory: (c: CardCategory) => void;
+  title: string;
+  canReset: boolean;
   onReset: () => void;
+  onApply: () => void;
+  children: React.ReactNode;
 }) {
   return (
     <BottomSheet visible={visible} onClose={onClose} swipeToDismiss>
-      {/* Header */}
       <View style={styles.filterHeader}>
-        <Text style={styles.filterTitle}>Filters</Text>
-        <Pressable onPress={onReset} hitSlop={12}>
-          <Text style={styles.filterReset}>Reset all</Text>
-        </Pressable>
+        <Text style={styles.filterTitle}>{title}</Text>
+        {canReset && (
+          <Pressable onPress={onReset} hitSlop={12}>
+            <Text style={styles.filterReset}>Reset</Text>
+          </Pressable>
+        )}
       </View>
-
-      {/* Date range */}
-      <FilterSection title="Date range">
-        {DATE_PRESETS.map(({ key, label }) => (
-          <OptionChip
-            key={key}
-            label={label}
-            active={datePreset === key}
-            onPress={() => {
-              Haptics.selectionAsync();
-              onDatePreset(datePreset === key ? null : key);
-            }}
-          />
-        ))}
-      </FilterSection>
-
-      {/* Type */}
-      <FilterSection title="Type">
-        {DIRECTION_OPTIONS.map(({ key, label, icon }) => (
-          <OptionChip
-            key={key}
-            label={label}
-            icon={icon}
-            active={direction === key}
-            onPress={() => { Haptics.selectionAsync(); onDirection(key); }}
-          />
-        ))}
-      </FilterSection>
-
-      {/* Status */}
-      <FilterSection title="Status">
-        {STATUS_OPTIONS.map(({ key, label }) => (
-          <OptionChip
-            key={key}
-            label={label}
-            active={selectedStatuses.has(key)}
-            activeColor={STATUS_COLOR[key]}
-            onPress={() => { Haptics.selectionAsync(); onToggleStatus(key); }}
-          />
-        ))}
-      </FilterSection>
-
-      {/* Category */}
-      <FilterSection title="Category">
-        {CATEGORIES.map((c) => {
-          const meta = CATEGORY_META[c];
-          return (
-            <OptionChip
-              key={c}
-              label={meta.label}
-              icon={meta.Icon as LucideIcon}
-              active={selectedCategories.has(c)}
-              onPress={() => { Haptics.selectionAsync(); onToggleCategory(c); }}
-            />
-          );
-        })}
-      </FilterSection>
-
-      {/* Done */}
+      <View style={styles.pickerBody}>{children}</View>
       <View style={styles.filterDone}>
-        <FlatButton label="Done" onPress={onClose} />
+        <SecondaryButton label="Apply filters" onPress={onApply} style={styles.applyBtn} />
       </View>
     </BottomSheet>
   );
 }
 
-// ─── Active filter pill ───────────────────────────────────────────────────────
+// ─── Wallet picker ────────────────────────────────────────────────────────────
 
-function ActivePill({ label, onClear }: { label: string; onClear: () => void }) {
+function WalletPicker({
+  visible,
+  onClose,
+  wallets,
+  initial,
+  onApply,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  wallets: Wallet[];
+  initial: string | null;
+  onApply: (next: string | null) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(initial);
+
+  useEffect(() => {
+    if (visible) setDraft(initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  const handleReset = () => {
+    Haptics.selectionAsync();
+    setDraft(null);
+    onApply(null);
+  };
+  const handleApply = () => {
+    onApply(draft);
+    onClose();
+  };
+
   return (
-    <Pressable
-      onPress={() => { Haptics.selectionAsync(); onClear(); }}
-      style={({ pressed }) => [styles.pill, pressed && { opacity: 0.7 }]}
-      hitSlop={6}
+    <PickerSheet
+      visible={visible}
+      onClose={onClose}
+      title="Wallet"
+      canReset={draft !== null}
+      onReset={handleReset}
+      onApply={handleApply}
     >
-      <Text style={styles.pillLabel}>{label}</Text>
-      <X size={12} color={colors.brandDark} strokeWidth={2.5} />
-    </Pressable>
+      {wallets.map((w) => {
+        const currency = getCurrency(w.currency);
+        const accent = w.accentColor ?? walletAccent(w.currency);
+        return (
+          <OptionChip
+            key={w.id}
+            label={w.nickname ?? w.currency}
+            flagCode={currency.flag}
+            active={draft === w.id}
+            activeColor={accent}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setDraft(draft === w.id ? null : w.id);
+            }}
+          />
+        );
+      })}
+    </PickerSheet>
+  );
+}
+
+// ─── Type picker ──────────────────────────────────────────────────────────────
+
+function TypePicker({
+  visible,
+  onClose,
+  initial,
+  onApply,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  initial: TransactionType | 'all';
+  onApply: (next: TransactionType | 'all') => void;
+}) {
+  const [draft, setDraft] = useState<TransactionType | 'all'>(initial);
+
+  useEffect(() => {
+    if (visible) setDraft(initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  const handleReset = () => {
+    Haptics.selectionAsync();
+    setDraft('all');
+    onApply('all');
+  };
+  const handleApply = () => {
+    onApply(draft);
+    onClose();
+  };
+
+  return (
+    <PickerSheet
+      visible={visible}
+      onClose={onClose}
+      title="Type"
+      canReset={draft !== 'all'}
+      onReset={handleReset}
+      onApply={handleApply}
+    >
+      {DIRECTION_OPTIONS.map(({ key, label, icon }) => (
+        <OptionChip
+          key={key}
+          label={label}
+          icon={icon}
+          active={draft === key}
+          onPress={() => {
+            Haptics.selectionAsync();
+            setDraft(draft === key ? 'all' : key);
+          }}
+        />
+      ))}
+    </PickerSheet>
+  );
+}
+
+// ─── Date picker ──────────────────────────────────────────────────────────────
+
+function DatePicker({
+  visible,
+  onClose,
+  initial,
+  onApply,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  initial: DatePreset | null;
+  onApply: (next: DatePreset | null) => void;
+}) {
+  const [draft, setDraft] = useState<DatePreset | null>(initial);
+
+  useEffect(() => {
+    if (visible) setDraft(initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  const handleReset = () => {
+    Haptics.selectionAsync();
+    setDraft(null);
+    onApply(null);
+  };
+  const handleApply = () => {
+    onApply(draft);
+    onClose();
+  };
+
+  return (
+    <PickerSheet
+      visible={visible}
+      onClose={onClose}
+      title="Date range"
+      canReset={draft !== null}
+      onReset={handleReset}
+      onApply={handleApply}
+    >
+      {DATE_PRESETS.map(({ key, label }) => (
+        <OptionChip
+          key={key}
+          label={label}
+          active={draft === key}
+          onPress={() => {
+            Haptics.selectionAsync();
+            setDraft(draft === key ? null : key);
+          }}
+        />
+      ))}
+    </PickerSheet>
+  );
+}
+
+// ─── Status picker ────────────────────────────────────────────────────────────
+
+function StatusPicker({
+  visible,
+  onClose,
+  initial,
+  direction,
+  onApply,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  initial: Set<TransactionStatus>;
+  direction: TransactionType | 'all';
+  onApply: (next: Set<TransactionStatus>) => void;
+}) {
+  const [draft, setDraft] = useState<Set<TransactionStatus>>(initial);
+
+  useEffect(() => {
+    if (visible) setDraft(new Set(initial));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  const handleReset = () => {
+    Haptics.selectionAsync();
+    setDraft(new Set());
+    onApply(new Set());
+  };
+  const handleApply = () => {
+    onApply(draft);
+    onClose();
+  };
+
+  return (
+    <PickerSheet
+      visible={visible}
+      onClose={onClose}
+      title="Status"
+      canReset={draft.size > 0}
+      onReset={handleReset}
+      onApply={handleApply}
+    >
+      {STATUS_OPTIONS.map(({ key, label }) => (
+        <OptionChip
+          key={key}
+          label={label}
+          active={draft.has(key)}
+          disabled={direction === 'receive'}
+          onPress={() => {
+            Haptics.selectionAsync();
+            setDraft((curr) => toggleInSet(curr, key));
+          }}
+        />
+      ))}
+    </PickerSheet>
+  );
+}
+
+// ─── Category picker ──────────────────────────────────────────────────────────
+
+function CategoryPicker({
+  visible,
+  onClose,
+  initial,
+  direction,
+  onApply,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  initial: Set<CardCategory>;
+  direction: TransactionType | 'all';
+  onApply: (next: Set<CardCategory>) => void;
+}) {
+  const [draft, setDraft] = useState<Set<CardCategory>>(initial);
+
+  useEffect(() => {
+    if (visible) setDraft(new Set(initial));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  const handleReset = () => {
+    Haptics.selectionAsync();
+    setDraft(new Set());
+    onApply(new Set());
+  };
+  const handleApply = () => {
+    onApply(draft);
+    onClose();
+  };
+
+  return (
+    <PickerSheet
+      visible={visible}
+      onClose={onClose}
+      title="Category"
+      canReset={draft.size > 0}
+      onReset={handleReset}
+      onApply={handleApply}
+    >
+      {CATEGORIES.map((c) => {
+        const meta = CATEGORY_META[c];
+        return (
+          <OptionChip
+            key={c}
+            label={meta.label}
+            icon={meta.Icon as LucideIcon}
+            active={draft.has(c)}
+            disabled={direction === 'receive'}
+            onPress={() => {
+              Haptics.selectionAsync();
+              setDraft((curr) => toggleInSet(curr, c));
+            }}
+          />
+        );
+      })}
+    </PickerSheet>
+  );
+}
+
+// ─── Card picker sheet ────────────────────────────────────────────────────────
+// Row-based (not chip-based) because cards carry a name + last4 + color, and
+// a long list would spill awkwardly as wrapping chips.
+
+function CardPicker({
+  visible,
+  onClose,
+  cards,
+  accent,
+  initial,
+  onApply,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  cards: Card[];
+  accent: string;
+  initial: Set<string>;
+  onApply: (next: Set<string>) => void;
+}) {
+  const [draft, setDraft] = useState<Set<string>>(initial);
+
+  useEffect(() => {
+    if (visible) setDraft(new Set(initial));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  const toggle = (id: string) => {
+    Haptics.selectionAsync();
+    setDraft((curr) => toggleInSet(curr, id));
+  };
+  const handleReset = () => {
+    Haptics.selectionAsync();
+    setDraft(new Set());
+    onApply(new Set());
+  };
+  const handleApply = () => {
+    onApply(draft);
+    onClose();
+  };
+
+  return (
+    <BottomSheet visible={visible} onClose={onClose} swipeToDismiss>
+      <View style={styles.filterHeader}>
+        <Text style={styles.filterTitle}>Filter by card</Text>
+        {draft.size > 0 && (
+          <Pressable onPress={handleReset} hitSlop={12}>
+            <Text style={styles.filterReset}>Reset</Text>
+          </Pressable>
+        )}
+      </View>
+
+      <View style={styles.cardList}>
+        {cards.map((card) => {
+          const selected = draft.has(card.id);
+          return (
+            <Pressable
+              key={card.id}
+              onPress={() => toggle(card.id)}
+              style={({ pressed }) => [styles.cardRow, pressed && { opacity: 0.7 }]}
+            >
+              <View style={[styles.cardRowSwatch, { backgroundColor: card.color }]}>
+                <CreditCard size={16} color="#fff" strokeWidth={2} />
+              </View>
+              <View style={styles.cardRowText}>
+                <Text style={styles.cardRowName} numberOfLines={1}>{card.name}</Text>
+                <Text style={styles.cardRowLast4}>·· {card.last4}</Text>
+              </View>
+              {selected && <Check size={20} color={accent} strokeWidth={2.5} />}
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <View style={styles.filterDone}>
+        <SecondaryButton label="Apply filters" onPress={handleApply} style={styles.applyBtn} />
+      </View>
+    </BottomSheet>
   );
 }
 
@@ -349,7 +652,7 @@ export default function UnifiedActivityScreen() {
   const cards = useCardStore((s) => s.cards);
 
   // When navigated from a specific wallet (stack route), lock to that wallet
-  // and suppress the wallet selector chips.
+  // and hide the wallet chip.
   const scopedWalletId = route.params?.walletId;
   const isScoped = !!scopedWalletId;
   const scopedWallet = useMemo(
@@ -357,33 +660,41 @@ export default function UnifiedActivityScreen() {
     [wallets, scopedWalletId],
   );
 
-  // Wallet chip filter (tab mode only)
-  const [selectedWalletId, setSelectedWalletId] = useState<string | null>(null);
-
-  // Search
-  const [query, setQuery] = useState('');
-
-  // Advanced filters
-  const [filterVisible, setFilterVisible] = useState(false);
-  const [datePreset, setDatePreset]       = useState<DatePreset | null>(null);
-  const [direction, setDirection]         = useState<TransactionType | 'all'>('all');
+  // Filter state
+  const [selectedWalletId, setSelectedWalletId]     = useState<string | null>(null);
+  const [datePreset, setDatePreset]                 = useState<DatePreset | null>(null);
+  const [direction, setDirection]                   = useState<TransactionType | 'all'>('all');
   const [selectedStatuses, setSelectedStatuses]     = useState<Set<TransactionStatus>>(() => new Set());
   const [selectedCategories, setSelectedCategories] = useState<Set<CardCategory>>(() => new Set());
   const [selectedCardIds, setSelectedCardIds]       = useState<Set<string>>(() => new Set());
 
-  // Cards available to pick from — only meaningful once a wallet is active.
+  // Picker visibility
+  const [walletPickerVisible, setWalletPickerVisible]     = useState(false);
+  const [typePickerVisible, setTypePickerVisible]         = useState(false);
+  const [datePickerVisible, setDatePickerVisible]         = useState(false);
+  const [statusPickerVisible, setStatusPickerVisible]     = useState(false);
+  const [categoryPickerVisible, setCategoryPickerVisible] = useState(false);
+  const [cardPickerVisible, setCardPickerVisible]         = useState(false);
+
+  // Search
+  const [query, setQuery] = useState('');
+
+  // Active wallet (scoped pin or user pick)
   const activeWalletId = scopedWalletId ?? selectedWalletId;
+  const activeWallet = useMemo(
+    () => (activeWalletId ? wallets.find((w) => w.id === activeWalletId) : undefined),
+    [activeWalletId, wallets],
+  );
   const availableCards = useMemo(
     () => (activeWalletId ? cards.filter((c) => c.walletId === activeWalletId) : []),
     [cards, activeWalletId],
   );
 
-  // The active wallet's accent color — used to tint the card-chip row.
+  // Accent used to tint wallet & card chips when active.
   const activeWalletAccent = useMemo(() => {
-    if (!activeWalletId) return colors.brand;
-    const w = wallets.find((x) => x.id === activeWalletId);
-    return w?.accentColor ?? walletAccent(w?.currency ?? '');
-  }, [activeWalletId, wallets]);
+    if (!activeWallet) return colors.brand;
+    return activeWallet.accentColor ?? walletAccent(activeWallet.currency);
+  }, [activeWallet]);
 
   // Drop any selected cards that no longer belong to the active wallet scope.
   useEffect(() => {
@@ -394,49 +705,27 @@ export default function UnifiedActivityScreen() {
     if (pruned.size !== selectedCardIds.size) setSelectedCardIds(pruned);
   }, [availableCards, selectedCardIds]);
 
-  // Wallet & card are represented by their own chip rows; the sheet badge
-  // only counts sheet-scoped filters (Date / Type / Status / Category).
-  const activeFilterCount =
-    (datePreset ? 1 : 0) +
-    (direction !== 'all' ? 1 : 0) +
-    (selectedStatuses.size > 0 ? 1 : 0) +
-    (selectedCategories.size > 0 ? 1 : 0);
-
   const listRef = useRef<SectionListType<Transaction>>(null);
   const scrollReset = useTabScrollReset();
 
   const filteredTxs = useMemo(() => {
     let base = [...transactions].sort((a, b) => b.date.getTime() - a.date.getTime());
-
-    // Wallet — scoped mode pins to the route wallet; tab mode uses the chip
     const walletIdFilter = scopedWalletId ?? selectedWalletId;
     if (walletIdFilter) base = base.filter((t) => t.walletId === walletIdFilter);
-
-    // Date range
     if (datePreset) {
       const from = datePresetFrom(datePreset);
       base = base.filter((t) => t.date >= from);
     }
-
-    // Direction
     if (direction !== 'all') base = base.filter((t) => t.type === direction);
-
-    // Cards (multi-select — empty set = no filter)
     if (selectedCardIds.size > 0) {
       base = base.filter((t) => t.cardId && selectedCardIds.has(t.cardId));
     }
-
-    // Statuses (multi-select)
     if (selectedStatuses.size > 0) {
       base = base.filter((t) => selectedStatuses.has(t.status));
     }
-
-    // Categories (multi-select — only card tx have categories)
     if (selectedCategories.size > 0) {
       base = base.filter((t) => t.category != null && selectedCategories.has(t.category));
     }
-
-    // Search
     if (!query.trim()) return base;
     const q = query.toLowerCase();
     return base.filter(
@@ -455,35 +744,114 @@ export default function UnifiedActivityScreen() {
     }
   }, [scrollReset, sections]);
 
-  const handleChipPress = (walletId: string | null) => {
+  // ── Chip labels ──────────────────────────────────────────────────────────
+
+  const walletChipLabel = useMemo(() => {
+    if (!selectedWalletId) return 'Wallet';
+    const w = wallets.find((x) => x.id === selectedWalletId);
+    return w?.nickname ?? w?.currency ?? 'Wallet';
+  }, [selectedWalletId, wallets]);
+
+  const walletChipFlag = useMemo(() => {
+    if (!selectedWalletId) return undefined;
+    const w = wallets.find((x) => x.id === selectedWalletId);
+    return w ? getCurrency(w.currency).flag : undefined;
+  }, [selectedWalletId, wallets]);
+
+  const typeChipLabel = direction === 'all'
+    ? 'Type'
+    : direction === 'send' ? 'Sent' : 'Received';
+
+  const dateChipLabel = datePreset === null ? 'Date' : dateLabel(datePreset);
+
+  const statusChipLabel = useMemo(() => {
+    if (selectedStatuses.size === 0) return 'Status';
+    if (selectedStatuses.size === 1) {
+      return statusLabel(Array.from(selectedStatuses)[0]);
+    }
+    return `${selectedStatuses.size} statuses`;
+  }, [selectedStatuses]);
+
+  const categoryChipLabel = useMemo(() => {
+    if (selectedCategories.size === 0) return 'Category';
+    if (selectedCategories.size === 1) {
+      return CATEGORY_META[Array.from(selectedCategories)[0]].label;
+    }
+    return `${selectedCategories.size} categories`;
+  }, [selectedCategories]);
+
+  const cardChipLabel = useMemo(() => {
+    if (selectedCardIds.size === 0) return 'Cards';
+    if (selectedCardIds.size === 1) {
+      const only = availableCards.find((c) => selectedCardIds.has(c.id));
+      return only ? only.name : '1 card';
+    }
+    return `${selectedCardIds.size} cards`;
+  }, [selectedCardIds, availableCards]);
+
+  // Any user-set filter active? (Scoped wallet pin isn't user-set, so ignore.)
+  const hasAnyFilter =
+    (!isScoped && selectedWalletId !== null) ||
+    direction !== 'all' ||
+    datePreset !== null ||
+    selectedStatuses.size > 0 ||
+    selectedCategories.size > 0 ||
+    selectedCardIds.size > 0;
+
+  // ── Handlers ─────────────────────────────────────────────────────────────
+
+  const handleApplyWallet = (walletId: string | null) => {
     Haptics.selectionAsync();
     setSelectedWalletId(walletId);
   };
 
-  const handleReset = () => {
+  const handleApplyType = (next: TransactionType | 'all') => {
     Haptics.selectionAsync();
-    setDatePreset(null);
+    setDirection(next);
+    // Received tx are always completed and never carry a category — prune
+    // any stranded filters on the switch so results never collapse to 0.
+    if (next === 'receive') {
+      setSelectedStatuses(new Set());
+      setSelectedCategories(new Set());
+    }
+  };
+
+  const handleApplyDate = (next: DatePreset | null) => {
+    Haptics.selectionAsync();
+    setDatePreset(next);
+  };
+
+  const handleApplyStatus = (next: Set<TransactionStatus>) => {
+    Haptics.selectionAsync();
+    setSelectedStatuses(next);
+  };
+
+  const handleApplyCategory = (next: Set<CardCategory>) => {
+    Haptics.selectionAsync();
+    setSelectedCategories(next);
+  };
+
+  const handleApplyCards = (next: Set<string>) => {
+    Haptics.selectionAsync();
+    setSelectedCardIds(next);
+  };
+
+  const handleClearAll = () => {
+    Haptics.selectionAsync();
+    if (!isScoped) setSelectedWalletId(null);
     setDirection('all');
+    setDatePreset(null);
     setSelectedStatuses(new Set());
     setSelectedCategories(new Set());
+    setSelectedCardIds(new Set());
   };
 
-  const handleToggleCard = (cardId: string) => {
-    Haptics.selectionAsync();
-    setSelectedCardIds((s) => toggleInSet(s, cardId));
-  };
+  // ── Empty state copy ─────────────────────────────────────────────────────
 
-  const handleToggleStatus = (s: TransactionStatus) =>
-    setSelectedStatuses((curr) => toggleInSet(curr, s));
-
-  const handleToggleCategory = (c: CardCategory) =>
-    setSelectedCategories((curr) => toggleInSet(curr, c));
-
-  // Empty state copy adapts to active filters
   const emptyTitle = query.trim() ? 'No transactions found' : 'No transactions match';
   const emptySub   = query.trim()
     ? 'Try a different name or keyword.'
-    : activeFilterCount > 0
+    : hasAnyFilter
       ? 'Try adjusting your filters.'
       : 'No activity yet.';
 
@@ -495,9 +863,14 @@ export default function UnifiedActivityScreen() {
           <Pressable onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={10}>
             <ChevronLeft size={24} color={colors.textPrimary} strokeWidth={2} />
           </Pressable>
-          <Text style={styles.navTitle} numberOfLines={1}>
-            {scopedWallet?.nickname ?? scopedWallet?.currency ?? ''} activity
-          </Text>
+          <View style={styles.navTitleWrap}>
+            {scopedWallet && (
+              <FlagIcon code={getCurrency(scopedWallet.currency).flag} size={16} />
+            )}
+            <Text style={styles.navTitle} numberOfLines={1}>
+              {scopedWallet?.nickname ?? scopedWallet?.currency ?? ''} activity
+            </Text>
+          </View>
           <View style={styles.backBtn} />
         </View>
       ) : (
@@ -506,7 +879,7 @@ export default function UnifiedActivityScreen() {
         </View>
       )}
 
-      {/* ── Search + filter button (top-level so position is stable) ─────── */}
+      {/* ── Search ─────────────────────────────────────────────────────── */}
       <View style={styles.searchRow}>
         <View style={styles.searchWrap}>
           <Search size={16} color={colors.textMuted} strokeWidth={1.8} />
@@ -520,137 +893,73 @@ export default function UnifiedActivityScreen() {
             clearButtonMode="while-editing"
           />
         </View>
-
-        <Pressable
-          onPress={() => { Haptics.selectionAsync(); setFilterVisible(true); }}
-          style={({ pressed }) => [
-            styles.filterBtn,
-            activeFilterCount > 0 && styles.filterBtnActive,
-            pressed && { opacity: 0.7 },
-          ]}
-          hitSlop={6}
-        >
-          <SlidersHorizontal
-            size={18}
-            color={activeFilterCount > 0 ? '#441306' : colors.textSecondary}
-            strokeWidth={1.8}
-          />
-          {activeFilterCount > 0 && (
-            <View style={styles.filterBadge}>
-              <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
-            </View>
-          )}
-        </Pressable>
       </View>
 
-      {/* ── Active filter pills (sheet-scoped filters only) ──────────────── */}
-      {activeFilterCount > 0 && (
-        <Animated.View
-          style={styles.pillsRow}
-          entering={FadeInUp.duration(220)}
-          exiting={FadeOutUp.duration(160)}
+      {/* ── Filter chip row ─────────────────────────────────────────────── */}
+      <Animated.View style={styles.chipsRow} layout={LinearTransition.duration(240)}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipsContent}
         >
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.pillsContent}
-          >
-            {datePreset && (
-              <ActivePill
-                label={dateLabel(datePreset)}
-                onClear={() => setDatePreset(null)}
-              />
-            )}
-            {direction !== 'all' && (
-              <ActivePill
-                label={directionLabel(direction)}
-                onClear={() => setDirection('all')}
-              />
-            )}
-            {Array.from(selectedStatuses).map((s) => (
-              <ActivePill
-                key={`status-${s}`}
-                label={statusLabel(s)}
-                onClear={() => setSelectedStatuses((curr) => toggleInSet(curr, s))}
-              />
-            ))}
-            {Array.from(selectedCategories).map((c) => (
-              <ActivePill
-                key={`cat-${c}`}
-                label={CATEGORY_META[c].label}
-                onClear={() => setSelectedCategories((curr) => toggleInSet(curr, c))}
-              />
-            ))}
-          </ScrollView>
-        </Animated.View>
-      )}
-
-      {/* ── Wallet filter chips (tab mode only) ─────────────────────────── */}
-      {!isScoped && (
-        <View style={styles.chipsRow}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chipsContent}
-          >
+          {!isScoped && (
             <FilterChip
-              label="All"
-              active={selectedWalletId === null}
-              activeColor={colors.brand}
-              activeTextColor="#441306"
-              onPress={() => handleChipPress(null)}
+              label={walletChipLabel}
+              flagCode={walletChipFlag}
+              active={selectedWalletId !== null}
+              activeColor={activeWalletAccent}
+              onPress={() => { Haptics.selectionAsync(); setWalletPickerVisible(true); }}
             />
-            {wallets.map((wallet) => {
-              const currency = getCurrency(wallet.currency);
-              const label = wallet.nickname ?? wallet.currency;
-              const chipColor = wallet.accentColor ?? walletAccent(wallet.currency);
-              return (
-                <FilterChip
-                  key={wallet.id}
-                  label={label}
-                  flagCode={currency.flag}
-                  active={selectedWalletId === wallet.id}
-                  activeColor={chipColor}
-                  onPress={() => handleChipPress(wallet.id)}
-                />
-              );
-            })}
-          </ScrollView>
-        </View>
-      )}
+          )}
+          <FilterChip
+            label={typeChipLabel}
+            active={direction !== 'all'}
+            activeColor={colors.brand}
+            onPress={() => { Haptics.selectionAsync(); setTypePickerVisible(true); }}
+          />
+          <FilterChip
+            label={dateChipLabel}
+            active={datePreset !== null}
+            activeColor={colors.brand}
+            onPress={() => { Haptics.selectionAsync(); setDatePickerVisible(true); }}
+          />
+          <FilterChip
+            label={statusChipLabel}
+            active={selectedStatuses.size > 0}
+            activeColor={colors.brand}
+            disabled={direction === 'receive'}
+            onPress={() => { Haptics.selectionAsync(); setStatusPickerVisible(true); }}
+          />
+          <FilterChip
+            label={categoryChipLabel}
+            active={selectedCategories.size > 0}
+            activeColor={colors.brand}
+            disabled={direction === 'receive'}
+            onPress={() => { Haptics.selectionAsync(); setCategoryPickerVisible(true); }}
+          />
+          {activeWalletId && availableCards.length > 0 && (
+            <FilterChip
+              label={cardChipLabel}
+              icon={CreditCard}
+              active={selectedCardIds.size > 0}
+              activeColor={activeWalletAccent}
+              onPress={() => { Haptics.selectionAsync(); setCardPickerVisible(true); }}
+            />
+          )}
+          {hasAnyFilter && (
+            <FilterChip
+              label="Clear"
+              icon={X}
+              active={false}
+              activeColor={colors.brand}
+              showChevron={false}
+              onPress={handleClearAll}
+            />
+          )}
+        </ScrollView>
+      </Animated.View>
 
-      {/* ── Card chips (visible when a wallet is active) ─────────────────── */}
-      {activeWalletId && availableCards.length > 0 && (
-        <Animated.View
-          style={styles.subChipsRow}
-          entering={FadeInUp.duration(240)}
-          exiting={FadeOutUp.duration(180)}
-        >
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chipsContent}
-          >
-            {availableCards.map((card, i) => (
-              <Animated.View
-                key={card.id}
-                entering={FadeInUp.duration(220).delay(60 + i * 40)}
-                exiting={FadeOut.duration(120)}
-              >
-                <FilterChip
-                  label={`${card.name} ·· ${card.last4}`}
-                  icon={CreditCard}
-                  active={selectedCardIds.has(card.id)}
-                  activeColor={activeWalletAccent}
-                  onPress={() => handleToggleCard(card.id)}
-                />
-              </Animated.View>
-            ))}
-          </ScrollView>
-        </Animated.View>
-      )}
-
-      {/* ── Transaction list (layout transition smooths shifts above) ───── */}
+      {/* ── List ────────────────────────────────────────────────────────── */}
       <Animated.View style={styles.list} layout={LinearTransition.duration(240)}>
         {sections.length === 0 ? (
           <View style={styles.empty}>
@@ -665,7 +974,6 @@ export default function UnifiedActivityScreen() {
             renderItem={({ item }) => (
               <ActivityItem
                 tx={item}
-                wallets={wallets}
                 onPress={() => navigation.navigate('TransactionDetail', { txId: item.id })}
               />
             )}
@@ -681,19 +989,47 @@ export default function UnifiedActivityScreen() {
         )}
       </Animated.View>
 
-      {/* ── Filter sheet ─────────────────────────────────────────────────── */}
-      <FilterSheet
-        visible={filterVisible}
-        onClose={() => setFilterVisible(false)}
-        datePreset={datePreset}
-        onDatePreset={setDatePreset}
+      {/* ── Pickers ────────────────────────────────────────────────────── */}
+      <WalletPicker
+        visible={walletPickerVisible}
+        onClose={() => setWalletPickerVisible(false)}
+        wallets={wallets}
+        initial={selectedWalletId}
+        onApply={handleApplyWallet}
+      />
+      <TypePicker
+        visible={typePickerVisible}
+        onClose={() => setTypePickerVisible(false)}
+        initial={direction}
+        onApply={handleApplyType}
+      />
+      <DatePicker
+        visible={datePickerVisible}
+        onClose={() => setDatePickerVisible(false)}
+        initial={datePreset}
+        onApply={handleApplyDate}
+      />
+      <StatusPicker
+        visible={statusPickerVisible}
+        onClose={() => setStatusPickerVisible(false)}
+        initial={selectedStatuses}
         direction={direction}
-        onDirection={setDirection}
-        selectedStatuses={selectedStatuses}
-        onToggleStatus={handleToggleStatus}
-        selectedCategories={selectedCategories}
-        onToggleCategory={handleToggleCategory}
-        onReset={handleReset}
+        onApply={handleApplyStatus}
+      />
+      <CategoryPicker
+        visible={categoryPickerVisible}
+        onClose={() => setCategoryPickerVisible(false)}
+        initial={selectedCategories}
+        direction={direction}
+        onApply={handleApplyCategory}
+      />
+      <CardPicker
+        visible={cardPickerVisible}
+        onClose={() => setCardPickerVisible(false)}
+        cards={availableCards}
+        accent={activeWalletAccent}
+        initial={selectedCardIds}
+        onApply={handleApplyCards}
       />
     </SafeAreaView>
   );
@@ -722,27 +1058,25 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: typography.bold,
   },
+  navTitleWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   navTitle: {
     fontSize: typography.md,
     color: colors.textPrimary,
     fontWeight: typography.semibold,
   },
 
-  // ── Wallet filter chips ──
+  // ── Filter chips row ──
   chipsRow: {
     flexShrink: 0,
     paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderSubtle,
   },
   chipsContent: {
     paddingHorizontal: H_PAD,
     gap: 8,
-  },
-  subChipsRow: {
-    flexShrink: 0,
-    paddingTop: 2,
-    paddingBottom: 10,
   },
   chip: {
     height: 34,
@@ -760,6 +1094,11 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     includeFontPadding: false,
   },
+  chipChevron: {
+    marginLeft: -2,
+    marginRight: -2,
+  },
+  chipDisabled: { opacity: 0.4 },
 
   // ── Search row ──
   searchRow: {
@@ -773,9 +1112,9 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
+    borderRadius: radius.full,
     borderWidth: 1,
     borderColor: colors.border,
     height: 44,
@@ -786,67 +1125,6 @@ const styles = StyleSheet.create({
     fontSize: typography.base,
     color: colors.textPrimary,
     height: '100%',
-  },
-  filterBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.lg,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterBtnActive: {
-    backgroundColor: colors.brand,
-    borderColor: colors.brand,
-  },
-  filterBadge: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterBadgeText: {
-    fontSize: 9,
-    fontWeight: typography.bold,
-    color: colors.brand,
-    lineHeight: 12,
-    includeFontPadding: false,
-  },
-
-  // ── Active filter pills ──
-  pillsRow: {
-    flexShrink: 0,
-    paddingBottom: 8,
-  },
-  pillsContent: {
-    paddingHorizontal: H_PAD,
-    gap: 6,
-  },
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    height: 28,
-    paddingLeft: 10,
-    paddingRight: 8,
-    borderRadius: radius.full,
-    backgroundColor: colors.brandSubtle,
-    borderWidth: 1,
-    borderColor: '#fed7aa', // orange-200
-  },
-  pillLabel: {
-    fontSize: typography.xs,
-    fontWeight: typography.medium,
-    color: colors.brandDark,
-    lineHeight: 14,
-    includeFontPadding: false,
   },
 
   // ── List ──
@@ -885,7 +1163,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // ── Filter sheet ──
+  // ── Picker sheet (shared) ──
   filterHeader: {
     width: '100%',
     flexDirection: 'row',
@@ -903,19 +1181,8 @@ const styles = StyleSheet.create({
     fontWeight: typography.medium,
     color: colors.brand,
   },
-  filterSection: {
+  pickerBody: {
     width: '100%',
-    marginBottom: spacing.lg,
-  },
-  filterSectionTitle: {
-    fontSize: typography.xs,
-    fontWeight: typography.semibold,
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: spacing.sm,
-  },
-  filterChipsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
@@ -936,8 +1203,49 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     includeFontPadding: false,
   },
+  optionChipDisabled: {
+    opacity: 0.4,
+  },
   filterDone: {
     width: '100%',
     marginTop: spacing.md,
+  },
+  applyBtn: {
+    width: '100%',
+    paddingVertical: spacing.lg,
+  },
+
+  // ── Card picker ──
+  cardList: {
+    width: '100%',
+    marginBottom: spacing.sm,
+  },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    gap: spacing.md,
+  },
+  cardRowSwatch: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardRowText: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+  },
+  cardRowName: {
+    fontSize: typography.base,
+    fontWeight: typography.semibold,
+    color: colors.textPrimary,
+  },
+  cardRowLast4: {
+    fontSize: typography.sm,
+    color: colors.textSecondary,
   },
 });

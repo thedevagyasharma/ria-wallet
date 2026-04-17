@@ -66,6 +66,12 @@ export default function AddCardTypeScreen({ route }: RootStackProps<'AddCardType
 
   const handleSelect = useCallback((type: CardType) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    if (type === 'single-use') {
+      navigation.navigate('SingleUseCreating', { walletId });
+      return;
+    }
+
     navigation.navigate('AddCardName', { walletId, cardType: type });
   }, [navigation, walletId]);
 

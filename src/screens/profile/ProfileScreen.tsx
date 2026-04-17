@@ -6,7 +6,6 @@ import {
   ScrollView,
   Switch,
   Pressable,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -17,7 +16,6 @@ import {
   Lock,
   ChevronRight,
   Star,
-  Pencil,
   HelpCircle,
   FileText,
   Shield,
@@ -29,7 +27,7 @@ import { alpha } from '../../utils/color';
 import { useWalletStore } from '../../stores/useWalletStore';
 import SetPrimarySheet from '../../components/SetPrimarySheet';
 import { usePrefsStore } from '../../stores/usePrefsStore';
-import { getCurrency, formatAmount } from '../../data/currencies';
+import { getCurrency } from '../../data/currencies';
 import FlatButton from '../../components/FlatButton';
 import FlagIcon from '../../components/FlagIcon';
 
@@ -112,45 +110,26 @@ function Row({
 
 function WalletRow({
   wallet,
-  hideBalances,
   onSetPrimary,
-  onRename,
   last,
 }: {
   wallet: { id: string; currency: string; balance: number; isPrimary: boolean; nickname?: string; accentColor?: string };
-  hideBalances: boolean;
   onSetPrimary: () => void;
-  onRename: () => void;
   last?: boolean;
 }) {
   const currency = getCurrency(wallet.currency);
   const accent   = walletAccent(wallet.currency, wallet.accentColor);
-  const balance  = hideBalances
-    ? `${currency.symbol}•••.••`
-    : formatAmount(wallet.balance, wallet.currency);
   const label    = wallet.nickname ?? currency.code;
 
   return (
     <>
     <View style={styles.walletRow}>
-      {/* Left: flag + name + balance */}
+      {/* Left: flag + name */}
       <View style={styles.walletRowLeft}>
-        <View style={[styles.walletFlagBadge, { backgroundColor: alpha(accent, 0.08) }]}>
+        <View style={styles.walletFlagSlot}>
           <FlagIcon code={currency.flag} size={18} />
         </View>
-        <View>
-          <View style={styles.walletNameRow}>
-            <Text style={styles.walletLabel}>{label}</Text>
-            <Pressable
-              hitSlop={8}
-              onPress={() => { Haptics.selectionAsync(); onRename(); }}
-              style={({ pressed }) => pressed && { opacity: 0.5 }}
-            >
-              <Pencil size={12} color={colors.textMuted} strokeWidth={2} />
-            </Pressable>
-          </View>
-          <Text style={styles.walletBalance}>{balance}</Text>
-        </View>
+        <Text style={styles.walletLabel}>{label}</Text>
       </View>
 
       {/* Right: primary badge or set-primary button */}
@@ -176,24 +155,11 @@ function WalletRow({
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ProfileScreen() {
-  const { wallets, setPrimary, setNickname } = useWalletStore();
+  const { wallets, setPrimary } = useWalletStore();
   const { hideBalances, appLockEnabled, defaultSendCurrency, toggleHideBalances, toggleAppLock } =
     usePrefsStore();
 
   const [primarySheet, setPrimarySheet] = useState<{ id: string; label: string } | null>(null);
-
-  function handleRename(walletId: string, current: string) {
-    Alert.prompt(
-      'Rename wallet',
-      'Give this wallet a custom name',
-      (text) => {
-        const trimmed = text?.trim();
-        if (trimmed) setNickname(walletId, trimmed);
-      },
-      'plain-text',
-      current,
-    );
-  }
 
   function handleSetPrimary(id: string, label: string) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -246,9 +212,7 @@ export default function ProfileScreen() {
             <WalletRow
               key={w.id}
               wallet={w}
-              hideBalances={hideBalances}
               onSetPrimary={() => handleSetPrimary(w.id, w.nickname ?? getCurrency(w.currency).code)}
-              onRename={() => handleRename(w.id, w.nickname ?? getCurrency(w.currency).code)}
               last={i === wallets.length - 1}
             />
           ))}
@@ -401,7 +365,6 @@ const styles = StyleSheet.create({
   rowDivider: {
     height: 1,
     backgroundColor: colors.borderSubtle,
-    marginLeft: 22 + spacing.md,
   },
   rowLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   rowIcon: { width: 22, alignItems: 'center' },
@@ -417,17 +380,8 @@ const styles = StyleSheet.create({
     paddingVertical: 13,
   },
   walletRowLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  walletFlagBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  walletFlag: {},
-  walletNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 },
+  walletFlagSlot: { width: 27, alignItems: 'center', justifyContent: 'center' },
   walletLabel: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.medium },
-  walletBalance: { fontSize: typography.sm, color: colors.textMuted },
 
   primaryBadge: {
     flexDirection: 'row',

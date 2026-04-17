@@ -36,6 +36,7 @@ export type Card = {
   type: CardType;
   pin?: string;
   onlineTransactions?: boolean;
+  contactless?: boolean;
   spendingLimits?: {
     daily?: number;
     weekly?: number;

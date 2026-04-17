@@ -16,14 +16,15 @@ export type RootStackParamList = {
   // Wallet flows
   CurrencyPicker: undefined;
   WalletReview: { currency: string };
-  WalletSuccess: { currency: string };
+  WalletSuccess: { currency: string; walletId: string };
   // Card flows
-  WalletCardList: { walletId: string };
-  CardDetail: { cardId: string; scrollTo?: 'limits' };
+  CardList: { walletId: string };
+  CardSettings: { cardId: string; scrollTo?: 'limits' };
   AddCardType: { walletId: string };
   AddCardName: { walletId: string; cardType: string };
   AddCardColor: { walletId: string; cardType: string; name: string };
   AddCardReview: { cardId: string };
+  SingleUseCreating: { walletId: string };
   // Wallet settings
   WalletSettings: { walletId: string };
   // Activity

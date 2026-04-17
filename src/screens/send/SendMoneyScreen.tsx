@@ -1231,7 +1231,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
 
                   <View style={[styles.footer, { paddingBottom: keyboardVisible ? 6 : insets.bottom + 6 }]}>
                     <PrimaryButton
-                      label="Next"
+                      label="Review"
                       onPress={handleReview}
                       disabled={!canReview}
                       style={styles.reviewBtn}
@@ -1240,7 +1240,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                 </KeyboardAvoidingView>
 
                 {/* ══ Wallet Dropdown Modal ══ */}
-                <Modal visible={showWalletDropdown} transparent animationType="slide">
+                <Modal visible={showWalletDropdown} transparent animationType="fade">
                   <Pressable style={styles.dropdownBackdrop} onPress={() => setShowWalletDropdown(false)}>
                     <Pressable style={styles.dropdownPanel} onPress={() => {}}>
                       <View style={styles.dropdownHandle} />
@@ -1291,7 +1291,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                 </Modal>
 
                 {/* ══ Receive Currency Dropdown Modal ══ */}
-                <Modal visible={showReceiveDropdown} transparent animationType="slide">
+                <Modal visible={showReceiveDropdown} transparent animationType="fade">
                   <Pressable style={styles.dropdownBackdrop} onPress={() => setShowReceiveDropdown(false)}>
                     <Pressable style={styles.dropdownPanel} onPress={() => {}}>
                       <View style={styles.dropdownHandle} />
@@ -1299,7 +1299,6 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                       {receiveCurrencies.map((code, i) => {
                         const cur = getCurrency(code);
                         const active = code === receiveCurrency;
-                        const isPrimary = i === 0;
                         const isLast = i === receiveCurrencies.length - 1;
                         return (
                           <Pressable
@@ -1322,11 +1321,6 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                                 <Text style={styles.dropdownCode}>{cur.code}</Text>
                                 <Text style={styles.dropdownName}>{cur.name}</Text>
                               </View>
-                              {isPrimary && (
-                                <View style={styles.dropdownPrimaryBadge}>
-                                  <Text style={styles.dropdownPrimaryBadgeText}>Default</Text>
-                                </View>
-                              )}
                             </View>
                             <View style={styles.dropdownRowRight}>
                               {active && <Check size={16} color={colors.textPrimary} strokeWidth={2.5} />}
@@ -1747,14 +1741,6 @@ const styles = StyleSheet.create({
   dropdownName: { fontSize: typography.xs, color: colors.textSecondary, marginTop: 2 },
   dropdownRowRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   dropdownBalance: { fontSize: typography.sm, color: colors.textSecondary, fontWeight: typography.regular },
-  dropdownPrimaryBadge: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    marginLeft: spacing.xs,
-  },
-  dropdownPrimaryBadgeText: { fontSize: typography.xs - 1, color: colors.textMuted, fontWeight: typography.medium },
 
   // ── Confirm step ──
   confirmScroll: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xl },

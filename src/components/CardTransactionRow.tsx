@@ -37,11 +37,11 @@ export default function CardTransactionRow({
       {/* Category icon */}
       <View style={[
         styles.icon,
-        { backgroundColor: isFailed ? colors.failedSubtle : bgColor },
+        { backgroundColor: isFailed ? colors.surfaceHigh : bgColor },
       ]}>
         <Icon
           size={18}
-          color={isFailed ? colors.failed : iconColor}
+          color={isFailed ? colors.textMuted : iconColor}
           strokeWidth={1.8}
         />
       </View>
