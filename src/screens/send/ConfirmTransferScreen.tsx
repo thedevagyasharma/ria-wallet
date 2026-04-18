@@ -8,6 +8,7 @@ import {
   LayoutAnimation,
   ActivityIndicator,
   BackHandler,
+  Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -268,9 +269,10 @@ const morphStyles = StyleSheet.create({
 
 // ─── Confirm hero ─────────────────────────────────────────────────────────────
 
-type ChipState = 'eta' | 'success' | 'failed';
+type ChipState = 'eta' | 'processing' | 'success' | 'failed';
 
 function chipStateForPhase(phase: Phase): ChipState {
+  if (phase === 'processing') return 'processing';
   if (phase === 'success' || phase === 'viewTransfer') return 'success';
   if (phase === 'failed'  || phase === 'retryReady')   return 'failed';
   return 'eta';
@@ -281,15 +283,17 @@ function successLabel(eta: string): string {
 }
 
 function chipText(state: ChipState, eta: string): string {
-  if (state === 'eta')     return eta;
-  if (state === 'success') return successLabel(eta);
-  return 'FAILED';
+  if (state === 'eta')        return eta;
+  if (state === 'success')    return successLabel(eta);
+  if (state === 'failed')     return 'FAILED';
+  return '';
 }
 
 const CHIP_COLOR_MAP: Record<ChipState, [string, string, string]> = {
-  eta:     [colors.brandSubtle,   colors.brand,   colors.brand],
-  success: [colors.successSubtle, colors.success, colors.success],
-  failed:  [colors.failedSubtle,  colors.failed,  colors.failed],
+  eta:        [colors.brandSubtle,   colors.brand,          colors.brand],
+  processing: [colors.surface,       colors.border,         colors.textSecondary],
+  success:    [colors.successSubtle, colors.success,        colors.success],
+  failed:     [colors.failedSubtle,  colors.failed,         colors.failed],
 };
 
 function ConfirmHero({ phase, label, amount, currencyCode, eta }: {
@@ -298,35 +302,48 @@ function ConfirmHero({ phase, label, amount, currencyCode, eta }: {
   const [displayState, setDisplayState] = useState<ChipState>('eta');
 
   const swapDisplay = useCallback((next: ChipState) => {
-    LayoutAnimation.configureNext(LayoutAnimation.create(200, LayoutAnimation.Types.easeOut, LayoutAnimation.Properties.scaleX));
     setDisplayState(next);
   }, []);
 
   const colorProgress = useSharedValue(0);
   const contentY = useSharedValue(0);
+  const iconOpacity = useSharedValue(1);
+
+  const stateIdx = (s: ChipState) => s === 'eta' ? 0 : s === 'processing' ? 1 : s === 'success' ? 2 : 3;
 
   useEffect(() => {
     const next = chipStateForPhase(phase);
     if (next === displayState) return;
-    const nextIdx = next === 'eta' ? 0 : next === 'success' ? 1 : 2;
-    colorProgress.value = withTiming(nextIdx, { duration: 280, easing: Easing.out(Easing.cubic) });
-    contentY.value = withTiming(-CHIP_SLOT, { duration: 110, easing: Easing.in(Easing.quad) }, (done) => {
+    colorProgress.value = withTiming(stateIdx(next), { duration: 280, easing: Easing.out(Easing.cubic) });
+    iconOpacity.value = 1;
+    contentY.value = withTiming(CHIP_SLOT, { duration: 110, easing: Easing.in(Easing.quad) }, (done) => {
       if (!done) return;
       runOnJS(swapDisplay)(next);
-      contentY.value = CHIP_SLOT;
+      contentY.value = -CHIP_SLOT;
       contentY.value = withTiming(0, { duration: 170, easing: Easing.out(Easing.cubic) });
     });
   }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const bgColors   = [CHIP_COLOR_MAP.eta[0], CHIP_COLOR_MAP.success[0], CHIP_COLOR_MAP.failed[0]];
-  const bordColors = [CHIP_COLOR_MAP.eta[1], CHIP_COLOR_MAP.success[1], CHIP_COLOR_MAP.failed[1]];
+  useEffect(() => {
+    if (phase === 'viewTransfer' || phase === 'retryReady') {
+      iconOpacity.value = withTiming(0, { duration: 250, easing: Easing.out(Easing.cubic) });
+    }
+  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const bgColors   = [CHIP_COLOR_MAP.eta[0], CHIP_COLOR_MAP.processing[0], CHIP_COLOR_MAP.success[0], CHIP_COLOR_MAP.failed[0]];
+  const bordColors = [CHIP_COLOR_MAP.eta[1], CHIP_COLOR_MAP.processing[1], CHIP_COLOR_MAP.success[1], CHIP_COLOR_MAP.failed[1]];
 
   const chipAnimStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(colorProgress.value, [0, 1, 2], bgColors),
-    borderColor:     interpolateColor(colorProgress.value, [0, 1, 2], bordColors),
+    backgroundColor: interpolateColor(colorProgress.value, [0, 1, 2, 3], bgColors),
+    borderColor:     interpolateColor(colorProgress.value, [0, 1, 2, 3], bordColors),
   }));
   const contentAnimStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: contentY.value }],
+  }));
+  const iconAnimStyle = useAnimatedStyle(() => ({
+    opacity: iconOpacity.value,
+    width: iconOpacity.value * 11,
+    marginRight: iconOpacity.value * 3,
   }));
 
   const textColor = CHIP_COLOR_MAP[displayState][2];
@@ -337,9 +354,22 @@ function ConfirmHero({ phase, label, amount, currencyCode, eta }: {
         <View style={styles.heroChipClip}>
           <Animated.View style={[styles.heroChipContent, contentAnimStyle]}>
             {displayState === 'eta' && <Zap size={11} color={textColor} strokeWidth={2.5} />}
-            <Text style={[styles.heroChipText, { color: textColor }]}>
-              {chipText(displayState, eta)}
-            </Text>
+            {displayState === 'processing' && <ActivityIndicator size="small" color={textColor} style={{ height: 14, width: 14, transform: [{ scale: 0.7 }] }} />}
+            {displayState === 'success' && (
+              <Animated.View style={[{ overflow: 'hidden' }, iconAnimStyle]}>
+                <Check size={11} color={textColor} strokeWidth={2.5} />
+              </Animated.View>
+            )}
+            {displayState === 'failed' && (
+              <Animated.View style={[{ overflow: 'hidden' }, iconAnimStyle]}>
+                <X size={11} color={textColor} strokeWidth={2.5} />
+              </Animated.View>
+            )}
+            {displayState !== 'processing' && (
+              <Text style={[styles.heroChipText, { color: textColor }]}>
+                {chipText(displayState, eta)}
+              </Text>
+            )}
           </Animated.View>
         </View>
       </Animated.View>
@@ -384,6 +414,18 @@ export default function ConfirmTransferScreen() {
   const [protoDelay, setProtoDelay]     = useState(1000);
   const successParamsRef = useRef<{ txId: string } | null>(null);
 
+  const [flashH, setFlashH] = useState(Dimensions.get('window').height);
+  const [flashColor, setFlashColor] = useState(colors.success);
+  const flashOpacity = useSharedValue(0);
+  const flashStyle = useAnimatedStyle(() => ({
+    opacity: flashOpacity.value,
+  }));
+
+  const contentDim = useSharedValue(1);
+  const contentDimStyle = useAnimatedStyle(() => ({
+    opacity: contentDim.value,
+  }));
+
   // Block hardware back while processing
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -411,6 +453,7 @@ export default function ConfirmTransferScreen() {
   }, [navigation, clear]);
 
   const handleCloseToWallets = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     clear();
     navigation.dispatch(CommonActions.reset({ index: 0, routes: [{ name: 'Main' }] }));
   }, [navigation, clear]);
@@ -446,16 +489,34 @@ export default function ConfirmTransferScreen() {
       successParamsRef.current = { txId: tx.id };
     }
     setPhase('processing');
+    contentDim.value = withTiming(0.3, { duration: 300, easing: Easing.out(Easing.cubic) });
     setTimeout(() => {
       if (capturedOutcome === 'success') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
         setPhase('success');
+        setFlashColor(colors.success);
+        flashOpacity.value = withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) });
+        setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy), 100);
+        [180, 220, 270, 330, 410, 520].forEach((t) =>
+          setTimeout(() => Haptics.selectionAsync(), t),
+        );
         setTimeout(() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          contentDim.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) });
           LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
           setPhase('viewTransfer');
+          // Remove SendMoney from the stack so swipe-back exits to Main
+          navigation.dispatch(state => {
+            const routes = state.routes.filter(r => r.name !== 'SendMoney');
+            return CommonActions.reset({ ...state, routes, index: routes.length - 1 });
+          });
         }, 2000);
       } else {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         setPhase('failed');
         setTimeout(() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          contentDim.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) });
           LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
           setPhase('retryReady');
         }, 2000);
@@ -465,6 +526,17 @@ export default function ConfirmTransferScreen() {
 
   return (
     <View style={[styles.safe, { paddingTop: insets.top }]}>
+      <Animated.View
+        pointerEvents="none"
+        style={[{ position: 'absolute', top: 0, left: 0, right: 0, height: flashH }, flashStyle]}
+      >
+        <LinearGradient
+          colors={[`${flashColor}20`, 'transparent']}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
       {/* Header */}
       <View style={styles.header}>
         <Pressable
@@ -495,60 +567,89 @@ export default function ConfirmTransferScreen() {
       <ScrollView
         contentContainerStyle={styles.confirmScroll}
         showsVerticalScrollIndicator={false}
-        scrollEnabled={phase === 'idle' || phase === 'failed'}
+        scrollEnabled={phase === 'idle' || phase === 'failed' || phase === 'viewTransfer' || phase === 'retryReady'}
       >
-        <ConfirmHero
-          phase={phase}
-          label={`${contact?.name.split(' ')[0]} receives`}
-          amount={`${getCurrency(receiveCurrency).symbol}${convertedFormatted}`}
-          currencyCode={receiveCurrency}
-          eta={eta}
-        />
+        <View onLayout={(e) => {
+          const bottom = e.nativeEvent.layout.y + e.nativeEvent.layout.height;
+          const headerH = 36 + spacing.md * 2 + insets.top + spacing.sm;
+          setFlashH(headerH + bottom);
+        }}>
+          <ConfirmHero
+            phase={phase}
+            label={`${contact?.name.split(' ')[0]} receives`}
+            amount={`${getCurrency(receiveCurrency).symbol}${convertedFormatted}`}
+            currencyCode={receiveCurrency}
+            eta={eta}
+          />
+        </View>
 
-        {/* Recipient */}
-        <View style={styles.confirmSection}>
-          <Text style={styles.confirmSectionLabel}>Recipient</Text>
-          <View style={styles.recipientRow}>
-            {contact && <Avatar name={contact.name} size="lg" />}
-            <View style={{ flex: 1 }}>
-              <Text style={styles.confirmRecipientName}>{contact?.name}</Text>
-              <Text style={styles.confirmRecipientPhone}>{contact?.phone}</Text>
+        <Animated.View style={contentDimStyle}>
+          {/* Recipient */}
+          <View style={styles.confirmSection}>
+            <Text style={styles.confirmSectionLabel}>Recipient</Text>
+            <View style={styles.recipientRow}>
+              {contact && <Avatar name={contact.name} size="lg" />}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.confirmRecipientName}>{contact?.name}</Text>
+                <Text style={styles.confirmRecipientPhone}>{contact?.phone}</Text>
+              </View>
             </View>
           </View>
-        </View>
 
-        {/* Details */}
-        <View style={[styles.confirmSection, { borderBottomWidth: 0, marginBottom: 0 }]}>
-          <Text style={styles.confirmSectionLabel}>Details</Text>
-          <Row label="From wallet" value={sendCurrency.code} flagCode={sendCurrency.flag} />
-          <View style={styles.confirmDivider} />
-          <Row label="You send" value={formatAmount(sendAmount, sendWallet.currency)} />
-          <View style={styles.confirmDivider} />
-          <Row label="Transfer fee" subtitle={getFeeTierLabel(sendAmount, sendWallet.currency)} value={formatAmount(fee, sendWallet.currency)} />
-          <View style={styles.confirmDivider} />
-          <Row label="Total deducted" value={formatAmount(total, sendWallet.currency)} bold struck={phase === 'failed' || phase === 'retryReady'} />
-          <View style={styles.confirmDivider} />
-          <View style={styles.rateFootnote}>
-            <Text style={styles.rateFootnoteText}>1 {sendCurrency.code} = {rate.toFixed(4)} {receiveCurrency}</Text>
+          {/* Details */}
+          <View style={[styles.confirmSection, { borderBottomWidth: 0, marginBottom: 0 }]}>
+            <Text style={styles.confirmSectionLabel}>Details</Text>
+            <Row label="From wallet" value={sendCurrency.code} flagCode={sendCurrency.flag} />
+            <View style={styles.confirmDivider} />
+            <Row label="You send" value={formatAmount(sendAmount, sendWallet.currency)} />
+            <View style={styles.confirmDivider} />
+            <Row label="Transfer fee" subtitle={getFeeTierLabel(sendAmount, sendWallet.currency)} value={formatAmount(fee, sendWallet.currency)} />
+            <View style={styles.confirmDivider} />
+            <Row label="Total deducted" value={formatAmount(total, sendWallet.currency)} bold struck={phase === 'failed' || phase === 'retryReady'} />
+            <View style={styles.confirmDivider} />
+            <View style={styles.rateFootnote}>
+              <Text style={styles.rateFootnoteText}>1 {sendCurrency.code} = {rate.toFixed(4)} {receiveCurrency}</Text>
+            </View>
           </View>
-        </View>
+        </Animated.View>
 
         {/* Prototype settings */}
-        {phase === 'idle' && (
+        {(phase === 'idle' || phase === 'viewTransfer' || phase === 'retryReady') && (
           <View style={styles.protoWrap}>
             <Text style={styles.protoTitle}>⚙  Prototype</Text>
-            <SegControl<Outcome>
-              label="Outcome"
-              value={protoOutcome}
-              onChange={setProtoOutcome}
-              options={[{ label: 'Success', value: 'success' }, { label: 'Failure', value: 'failure' }]}
-            />
-            <SegControl<string>
-              label="Delay"
-              value={String(protoDelay)}
-              onChange={(v) => setProtoDelay(Number(v))}
-              options={[{ label: '0.5s', value: '500' }, { label: '1s', value: '1000' }, { label: '2s', value: '2000' }, { label: '3s', value: '3000' }]}
-            />
+            {phase === 'idle' ? (
+              <>
+                <SegControl<Outcome>
+                  label="Outcome"
+                  value={protoOutcome}
+                  onChange={setProtoOutcome}
+                  options={[{ label: 'Success', value: 'success' }, { label: 'Failure', value: 'failure' }]}
+                />
+                <SegControl<string>
+                  label="Delay"
+                  value={String(protoDelay)}
+                  onChange={(v) => setProtoDelay(Number(v))}
+                  options={[{ label: '0.5s', value: '500' }, { label: '1s', value: '1000' }, { label: '2s', value: '2000' }, { label: '3s', value: '3000' }]}
+                />
+              </>
+            ) : (
+              <View style={segStyles.row}>
+                <Text style={segStyles.label}>Animation</Text>
+                <Pressable
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    flashOpacity.value = 0;
+                    contentDim.value = 1;
+                    setPhase('idle');
+                  }}
+                  style={[segStyles.track, { borderRadius: radius.sm }]}
+                >
+                  <View style={segStyles.seg}>
+                    <Text style={segStyles.segText}>↻ Reset</Text>
+                  </View>
+                </Pressable>
+              </View>
+            )}
           </View>
         )}
       </ScrollView>
@@ -598,7 +699,7 @@ const styles = StyleSheet.create({
   confirmHeroAmountRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, marginTop: spacing.xs },
   confirmHeroAmount: { fontSize: typography.hero, color: colors.textPrimary, fontWeight: typography.bold, letterSpacing: -2 },
   confirmHeroAmountCode: { fontSize: typography.lg, color: colors.textSecondary, fontWeight: typography.semibold, paddingBottom: 6 },
-  heroChip: { borderRadius: radius.full, paddingHorizontal: CHIP_MD.paddingHorizontal, paddingVertical: CHIP_MD.paddingVertical, borderWidth: 1, marginBottom: spacing.sm, overflow: 'hidden', alignItems: 'center' },
+  heroChip: { borderRadius: radius.full, paddingHorizontal: CHIP_MD.paddingHorizontal, paddingVertical: CHIP_MD.paddingVertical, borderWidth: 1, overflow: 'hidden', alignItems: 'center', marginBottom: 16 },
   heroChipClip: { height: CHIP_SLOT, overflow: 'hidden', justifyContent: 'center' },
   heroChipContent: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   heroChipText: { fontSize: CHIP_MD.fontSize, fontWeight: CHIP_MD.fontWeight },
@@ -615,7 +716,7 @@ const styles = StyleSheet.create({
   protoWrap: { marginTop: spacing.xxl, paddingTop: spacing.lg, paddingHorizontal: spacing.xl, borderTopWidth: 1, borderTopColor: colors.borderSubtle, gap: spacing.sm },
   protoTitle: { fontSize: typography.xs, color: colors.textSecondary, fontWeight: typography.semibold, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: spacing.xs },
 
-  confirmFooter: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm },
+  confirmFooter: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.borderSubtle },
   exitBtn: { alignSelf: 'center' as const, marginTop: spacing.sm, paddingVertical: spacing.md, paddingHorizontal: spacing.xl },
   failureSub: { fontSize: typography.sm, color: colors.textSecondary, textAlign: 'center' },
 });

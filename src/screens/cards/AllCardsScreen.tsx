@@ -13,6 +13,7 @@ import CardStackPreview from '../../components/CardStackPreview';
 import FlagIcon from '../../components/FlagIcon';
 import type { RootStackParamList } from '../../navigation/types';
 import { useTabScrollReset } from '../../navigation/TabScrollContext';
+import EmptyState from '../../components/EmptyState';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -54,10 +55,10 @@ export default function AllCardsScreen() {
       </View>
 
       {allEmpty ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyTitle}>No cards yet</Text>
-          <Text style={styles.emptySub}>Add a card from any wallet to get started.</Text>
-        </View>
+        <EmptyState
+          title="No cards yet"
+          subtitle="Add a card from any wallet to get started."
+        />
       ) : (
         <ScrollView
           ref={scrollRef}
@@ -150,15 +151,4 @@ const styles = StyleSheet.create({
     color: colors.brand,
   },
 
-  // Empty state
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.xl,
-    marginTop: -spacing.xxxl,
-  },
-  emptyTitle: { fontSize: typography.xl, color: colors.textPrimary, fontWeight: typography.bold },
-  emptySub: { fontSize: typography.base, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 },
 });

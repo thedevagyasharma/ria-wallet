@@ -45,6 +45,7 @@ import FlagIcon from '../../components/FlagIcon';
 import { CardFront } from '../../components/CardFace';
 import type { RootStackProps, RootStackParamList } from '../../navigation/types';
 import type { Card, Transaction } from '../../stores/types';
+import EmptyState from '../../components/EmptyState';
 
 type LimitPeriod = 'daily' | 'weekly' | 'monthly';
 const PERIOD_LABELS: Record<LimitPeriod, string> = { daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly' };
@@ -425,24 +426,12 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
       </View>
 
       {walletCards.length === 0 ? (
-        <View style={styles.emptyState}>
-          <View style={styles.emptyContent}>
-            <Image
-              source={require('../../../assets/Isometric Cards.png')}
-              style={styles.emptyImage}
-              resizeMode="contain"
-            />
-            <Text style={styles.emptyTitle}>No cards yet</Text>
-            <Text style={styles.emptySub}>
-              Create a card to start spending from this wallet.
-            </Text>
-          </View>
-          <PrimaryButton
-            label="Create a new card"
-            onPress={handleAddCard}
-            style={styles.emptyAddBtn}
-          />
-        </View>
+        <EmptyState
+          imageSource={require('../../../assets/No Cards.png')}
+          title="No cards yet"
+          subtitle="Create a card to start spending from this wallet."
+          action={{ label: 'Create a new card', onPress: handleAddCard }}
+        />
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -538,12 +527,12 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
           </View>
 
           {cardTxs.length === 0 ? (
-            <View style={styles.emptyActivity}>
-              <Text style={styles.emptyActivityTitle}>No transactions yet</Text>
-              <Text style={styles.emptyActivitySub}>
-                Purchases made with this card will appear here.
-              </Text>
-            </View>
+            <EmptyState
+              compact
+              imageSource={require('../../../assets/No Transactions.png')}
+              title="No transactions yet"
+              subtitle="Purchases made with this card will appear here."
+            />
           ) : (
             cardTxs.map((tx) => (
               <CardTransactionRow
@@ -773,53 +762,6 @@ const styles = StyleSheet.create({
     fontWeight: typography.semibold,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
-  },
-
-  emptyActivity: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.xxl,
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  emptyActivityTitle: {
-    fontSize: typography.base,
-    color: colors.textPrimary,
-    fontWeight: typography.semibold,
-  },
-  emptyActivitySub: {
-    fontSize: typography.sm,
-    color: colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-
-  // ── Empty state (no cards) ──
-  emptyState: {
-    flex: 1,
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xxxl + spacing.lg,
-  },
-  emptyContent: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.md,
-  },
-  emptyImage: { width: 280, height: 220 },
-  emptyTitle: {
-    fontSize: typography.xl,
-    color: colors.textPrimary,
-    fontWeight: typography.bold,
-    marginTop: spacing.lg,
-  },
-  emptySub: {
-    fontSize: typography.base,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  emptyAddBtn: {
-    paddingVertical: spacing.lg,
   },
 
   // ── Add to wallet prompt ──

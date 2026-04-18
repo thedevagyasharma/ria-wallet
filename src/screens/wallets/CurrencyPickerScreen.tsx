@@ -1,9 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TextInput,
   FlatList,
   Pressable,
 } from 'react-native';
@@ -11,7 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ChevronLeft, Search } from 'lucide-react-native';
+import { ChevronLeft } from 'lucide-react-native';
 
 import { colors, typography, spacing, radius } from '../../theme';
 import { CURRENCIES } from '../../data/currencies';
@@ -25,17 +24,7 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 export default function CurrencyPickerScreen() {
   const navigation = useNavigation<Nav>();
   const { wallets } = useWalletStore();
-  const [query, setQuery] = useState('');
-
   const ownedCodes = new Set(wallets.map((w) => w.currency));
-
-  const filtered = useMemo(() => {
-    const q = query.toLowerCase();
-    return CURRENCIES.filter(
-      (c) =>
-        c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)
-    );
-  }, [query]);
 
   const handleSelect = (code: string) => {
     if (ownedCodes.has(code)) return;
@@ -56,24 +45,9 @@ export default function CurrencyPickerScreen() {
 
       <Text style={styles.subtitle}>Choose a currency for your new wallet.</Text>
 
-      {/* Search */}
-      <View style={styles.searchContainer}>
-        <Search size={16} color={colors.textMuted} strokeWidth={2} />
-        <TextInput
-          style={styles.searchInput}
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search currency…"
-          placeholderTextColor={colors.textMuted}
-          keyboardAppearance="light"
-          autoCorrect={false}
-          autoCapitalize="none"
-        />
-      </View>
-
       {/* List */}
       <FlatList
-        data={filtered}
+        data={CURRENCIES}
         keyExtractor={(c) => c.code}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
@@ -128,25 +102,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     paddingHorizontal: spacing.xl,
     marginBottom: spacing.lg,
-  },
-
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    marginHorizontal: spacing.xl,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.lg,
-    gap: spacing.sm,
-  },
-  searchInput: {
-    flex: 1,
-    height: 44,
-    color: colors.textPrimary,
-    fontSize: typography.base,
   },
 
   list: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xxxl },

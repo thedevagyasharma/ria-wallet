@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
+  InteractionManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -31,6 +32,13 @@ export default function AddCardNameScreen({ route }: RootStackProps<'AddCardName
   const [name, setName] = useState('');
   const inputRef = useRef<TextInput>(null);
 
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      inputRef.current?.focus();
+    });
+    return () => task.cancel();
+  }, []);
+
   const canContinue = name.trim().length > 0;
 
   const handleContinue = useCallback(() => {
@@ -42,6 +50,7 @@ export default function AddCardNameScreen({ route }: RootStackProps<'AddCardName
   const handleSuggestion = useCallback((s: string) => {
     Haptics.selectionAsync();
     setName(s);
+    inputRef.current?.blur();
   }, []);
 
   const defaultName =
@@ -87,7 +96,6 @@ export default function AddCardNameScreen({ route }: RootStackProps<'AddCardName
               placeholder="e.g. Everyday Spend"
               placeholderTextColor={colors.textMuted}
               keyboardAppearance="light"
-              autoFocus
               maxLength={24}
               returnKeyType="done"
               onSubmitEditing={handleContinue}
@@ -173,12 +181,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   clearBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: spacing.xs,
     marginLeft: spacing.sm,
   },
   hint: {

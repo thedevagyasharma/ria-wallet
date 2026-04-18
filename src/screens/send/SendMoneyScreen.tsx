@@ -42,6 +42,7 @@ import FlatButton from '../../components/FlatButton';
 import BottomSheet from '../../components/BottomSheet';
 import FlagIcon from '../../components/FlagIcon';
 import Avatar from '../../components/Avatar';
+import EmptyState from '../../components/EmptyState';
 import { MOCK_CONTACTS } from '../../data/mockData';
 import { getRate, getFee } from '../../data/exchangeRates';
 import type { RootStackProps, RootStackParamList } from '../../navigation/types';
@@ -746,10 +747,11 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
 
                   {filteredContacts.length === 0 ? (
                     !looksLikePhone(contactQuery) && (
-                      <View style={styles.emptyState}>
-                        <Search size={36} color={colors.textMuted} strokeWidth={1.5} />
-                        <Text style={styles.emptyText}>No contacts found for "{contactQuery}"</Text>
-                      </View>
+                      <EmptyState
+                        compact
+                        illustration={<Search size={36} color={colors.textMuted} strokeWidth={1.5} />}
+                        title={`No contacts found for "${contactQuery}"`}
+                      />
                     )
                   ) : (
                     filteredContacts.map((item) => (
@@ -1442,6 +1444,8 @@ const styles = StyleSheet.create({
   footer: {
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
   },
   reviewBtn: {
     paddingVertical: spacing.lg,
@@ -1556,8 +1560,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  emptyState: { alignItems: 'center', paddingTop: spacing.xxxl, gap: spacing.md },
-  emptyText: { fontSize: typography.base, color: colors.textSecondary, textAlign: 'center' },
 
   // ── Wallet dropdown modal ──
   dropdownBackdrop: {

@@ -156,7 +156,7 @@ export default function AddCardColorScreen({ route }: RootStackProps<'AddCardCol
             return (
               <Pressable key={p.hex} onPress={() => handleRiaSelect(i)} style={styles.swatchWrap}>
                 <View style={[styles.swatch, { backgroundColor: p.hex }, active && styles.swatchActive]}>
-                  {active && <Check size={16} color="#fff" strokeWidth={2.5} />}
+                  {active && <Check size={16} color={p.badgeTheme === 'default' ? colors.textPrimary : '#fff'} strokeWidth={2.5} />}
                 </View>
                 <Text style={[styles.swatchLabel, active && styles.swatchLabelActive]}>{p.label}</Text>
               </Pressable>
@@ -174,7 +174,7 @@ export default function AddCardColorScreen({ route }: RootStackProps<'AddCardCol
             return (
               <Pressable key={p.hex} onPress={() => handleSolidSelect(p.hex)} style={styles.swatchWrap}>
                 <View style={[styles.swatch, { backgroundColor: p.hex }, active && styles.swatchActive]}>
-                  {active && <Check size={16} color="#fff" strokeWidth={2.5} />}
+                  {active && <Check size={16} color={p.badgeTheme === 'default' ? colors.textPrimary : '#fff'} strokeWidth={2.5} />}
                 </View>
                 <Text style={[styles.swatchLabel, active && styles.swatchLabelActive]}>{p.label}</Text>
               </Pressable>

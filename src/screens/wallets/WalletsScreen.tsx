@@ -38,7 +38,6 @@ import {
   ArrowDownLeft,
   Plus,
   CircleDollarSign,
-  SlidersHorizontal,
   Settings,
   Eye,
   EyeOff,
@@ -60,6 +59,7 @@ import FlagIcon from '../../components/FlagIcon';
 import type { RootStackParamList } from '../../navigation/types';
 import { useTabScrollReset } from '../../navigation/TabScrollContext';
 import type { Transaction, Wallet, Card } from '../../stores/types';
+import EmptyState from '../../components/EmptyState';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -345,6 +345,46 @@ function ActionBtn({
   );
 }
 
+// ─── Prototype seg control ───────────────────────────────────────────────────
+
+function WalletSegControl<T extends string>({
+  label, options, value, onChange,
+}: {
+  label: string;
+  options: { label: string; value: T }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <View style={segStyles.row}>
+      <Text style={segStyles.label}>{label}</Text>
+      <View style={segStyles.track}>
+        {options.map((opt) => (
+          <Pressable
+            key={opt.value}
+            onPress={() => onChange(opt.value)}
+            style={[segStyles.seg, value === opt.value && segStyles.segActive]}
+          >
+            <Text style={[segStyles.segText, value === opt.value && segStyles.segTextActive]}>
+              {opt.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const segStyles = StyleSheet.create({
+  row:          { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.xs },
+  label:        { fontSize: typography.sm, color: colors.textSecondary, fontWeight: typography.medium },
+  track:        { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
+  seg:          { paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 2 },
+  segActive:    { backgroundColor: colors.textPrimary },
+  segText:      { fontSize: typography.xs, color: colors.textSecondary, fontWeight: typography.semibold },
+  segTextActive:{ color: colors.bg },
+});
+
 // ─── Animated card stack ─────────────────────────────────────────────────────
 
 const SPREAD_V_OFFSET = 90;
@@ -497,7 +537,7 @@ export default function WalletsScreen() {
     clearJustAddedWalletId,
   } = useWalletStore();
   const { cards, getWalletCards, justAddedCardId, clearJustAddedCardId } = useCardStore();
-  const { hideBalances, toggleHideBalances } = usePrefsStore();
+  const { hideBalances, toggleHideBalances, walletActionsLayout, toggleWalletActionsLayout } = usePrefsStore();
 
   // Initial wallet: prefer just-added wallet, then just-added card's wallet,
   // then primary. Covers first-mount-after-create cases where the store
@@ -800,9 +840,11 @@ export default function WalletsScreen() {
             <Text style={styles.greetingName}>{MOCK_PROFILE.name}</Text>
           </View>
           <View style={styles.greetingRight}>
-            <FlatButton onPress={handleCustomize} style={styles.customizeBtn}>
-              <Settings size={18} color={colors.textSecondary} strokeWidth={1.8} />
-            </FlatButton>
+            {walletActionsLayout === 'default' && (
+              <FlatButton onPress={handleCustomize} style={styles.customizeBtn}>
+                <Settings size={18} color={colors.textSecondary} strokeWidth={1.8} />
+              </FlatButton>
+            )}
             <SecondaryButton onPress={handleAddWallet} style={styles.addBtn}>
               <Plus size={11} color={colors.textPrimary} strokeWidth={2.5} />
               <Text style={styles.addBtnText}>Wallet</Text>
@@ -879,28 +921,57 @@ export default function WalletsScreen() {
         )}
 
         {/* ── Actions ───────────────────────────────────────────────────── */}
-        <View style={styles.actions}>
-          <PrimaryButton onPress={handleSend} style={styles.sendBtn}>
-            <View style={styles.actionBtnContent}>
-              <ArrowUpRight size={18} color="#441306" strokeWidth={2.2} />
-              <Text style={styles.sendBtnLabel}>Send Money</Text>
+        {walletActionsLayout === 'default' ? (
+          <View style={styles.actions}>
+            <PrimaryButton onPress={handleSend} style={styles.sendBtn}>
+              <View style={styles.actionBtnContent}>
+                <ArrowUpRight size={18} color="#441306" strokeWidth={2.2} />
+                <Text style={styles.sendBtnLabel}>Send Money</Text>
+              </View>
+            </PrimaryButton>
+            <View style={styles.actionSecondaryRow}>
+              <SecondaryButton onPress={handleReceive} style={styles.secondaryBtn}>
+                <View style={styles.actionBtnContent}>
+                  <ArrowDownLeft size={16} color={colors.textPrimary} strokeWidth={2} />
+                  <Text style={styles.secondaryBtnLabel}>Receive</Text>
+                </View>
+              </SecondaryButton>
+              <SecondaryButton onPress={handleStub} style={styles.secondaryBtn}>
+                <View style={styles.actionBtnContent}>
+                  <CircleDollarSign size={16} color={colors.textPrimary} strokeWidth={2} />
+                  <Text style={styles.secondaryBtnLabel}>Top Up</Text>
+                </View>
+              </SecondaryButton>
             </View>
-          </PrimaryButton>
-          <View style={styles.actionSecondaryRow}>
-            <SecondaryButton onPress={handleReceive} style={styles.secondaryBtn}>
-              <View style={styles.actionBtnContent}>
-                <ArrowDownLeft size={16} color={colors.textPrimary} strokeWidth={2} />
-                <Text style={styles.secondaryBtnLabel}>Receive</Text>
-              </View>
-            </SecondaryButton>
-            <SecondaryButton onPress={handleStub} style={styles.secondaryBtn}>
-              <View style={styles.actionBtnContent}>
-                <CircleDollarSign size={16} color={colors.textPrimary} strokeWidth={2} />
-                <Text style={styles.secondaryBtnLabel}>Top Up</Text>
-              </View>
-            </SecondaryButton>
           </View>
-        </View>
+        ) : (
+          <View style={styles.quickActions}>
+            <ActionBtn
+              icon={<ArrowUpRight size={20} color={iconAccent} strokeWidth={2.2} />}
+              label="Send"
+              onPress={handleSend}
+              circleStyle={animatedCircleStyle}
+            />
+            <ActionBtn
+              icon={<ArrowDownLeft size={20} color={iconAccent} strokeWidth={2} />}
+              label="Receive"
+              onPress={handleReceive}
+              circleStyle={animatedCircleStyle}
+            />
+            <ActionBtn
+              icon={<CircleDollarSign size={20} color={iconAccent} strokeWidth={2} />}
+              label="Top Up"
+              onPress={handleStub}
+              circleStyle={animatedCircleStyle}
+            />
+            <ActionBtn
+              icon={<Settings size={20} color={iconAccent} strokeWidth={2} />}
+              label="Customize"
+              onPress={handleCustomize}
+              circleStyle={animatedCircleStyle}
+            />
+          </View>
+        )}
 
         {/* ── Activity ──────────────────────────────────────────────────── */}
         <View style={styles.activityHead}>
@@ -908,10 +979,12 @@ export default function WalletsScreen() {
         </View>
 
         {walletTxs.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>No activity yet</Text>
-            <Text style={styles.emptySub}>Send or receive to see transactions here.</Text>
-          </View>
+          <EmptyState
+            compact
+            imageSource={require('../../../assets/No Transactions.png')}
+            title="No activity yet"
+            subtitle="Send or receive to see transactions here."
+          />
         ) : (
           <>
             {previewTxs.map((tx) => (
@@ -968,6 +1041,21 @@ export default function WalletsScreen() {
             </Animated.View>
           </GestureDetector>
         </View>
+
+        {/* ── Prototype controls ────────────────────────────────────────── */}
+        <View style={styles.protoWrap}>
+          <Text style={styles.protoTitle}>⚙  Prototype</Text>
+          <WalletSegControl
+            label="Actions layout"
+            value={walletActionsLayout}
+            onChange={(v) => { Haptics.selectionAsync(); if (v !== walletActionsLayout) toggleWalletActionsLayout(); }}
+            options={[
+              { label: 'Default', value: 'default' },
+              { label: 'Quick',   value: 'quick'   },
+            ]}
+          />
+        </View>
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -1156,6 +1244,31 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
     gap: 10,
   },
+  quickActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: H_PAD,
+    paddingTop: 8,
+    paddingBottom: 28,
+  },
+  // ── Prototype ──
+  protoWrap: {
+    marginHorizontal: H_PAD,
+    marginTop: spacing.lg,
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+    gap: spacing.sm,
+    paddingBottom: spacing.xl,
+  },
+  protoTitle: {
+    fontSize: typography.xs,
+    color: colors.textSecondary,
+    fontWeight: typography.semibold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: spacing.xs,
+  },
   sendBtn: {
     paddingVertical: 16,
     marginBottom: 4,
@@ -1285,7 +1398,4 @@ const styles = StyleSheet.create({
     fontWeight: typography.medium,
   },
 
-  empty: { paddingTop: spacing.xxxl, paddingHorizontal: H_PAD, alignItems: 'center', gap: 8 },
-  emptyTitle: { fontSize: typography.base, color: colors.textSecondary, fontWeight: typography.medium },
-  emptySub: { fontSize: typography.sm, color: colors.textMuted, textAlign: 'center', lineHeight: 20 },
 });

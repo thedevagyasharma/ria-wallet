@@ -7,8 +7,6 @@ import Animated, {
   useAnimatedStyle,
   withTiming,
   withDelay,
-  withSequence,
-  withSpring,
   Easing,
   runOnJS,
 } from 'react-native-reanimated';
@@ -101,14 +99,15 @@ export default function AddCardReviewScreen({ route }: Props) {
   const cardOpacity = useSharedValue(0);
   const textOpacity = useSharedValue(0);
   const stepOpacity = useSharedValue(1);
+  const stepY = useSharedValue(0);
   const barWidth = useSharedValue(0);
   const checkScale = useSharedValue(0);
   const checkOpacity = useSharedValue(0);
+  const barOpacity = useSharedValue(1);
 
   const navigateToCardList = () => {
     if (navigated.current || !cardIdRef.current) return;
     navigated.current = true;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     useCardStore.getState().markJustAdded(cardIdRef.current);
     navigation.dispatch(
       CommonActions.reset({
@@ -145,6 +144,7 @@ export default function AddCardReviewScreen({ route }: Props) {
       const fireAt = elapsed - 180;
       stepTimers.push(
         setTimeout(() => {
+          stepY.value = withTiming(-20, { duration: 180, easing: Easing.in(Easing.quad) });
           stepOpacity.value = withTiming(0, { duration: 180 }, () => {
             runOnJS(setStepIndex)(i);
           });
@@ -152,10 +152,10 @@ export default function AddCardReviewScreen({ route }: Props) {
       );
     }
 
-    // Phase 3: checkmark + navigate
+    // Phase 3: safety-net only — navigation fires via lift animation callback
     const navTimer = setTimeout(() => {
       navigateToCardList();
-    }, TOTAL_DURATION + 2000);
+    }, TOTAL_DURATION + 3000);
 
     return () => {
       stepTimers.forEach(clearTimeout);
@@ -165,14 +165,19 @@ export default function AddCardReviewScreen({ route }: Props) {
 
   useEffect(() => {
     if (done) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      checkOpacity.value = withTiming(1, { duration: 200 });
-      checkScale.value = withSequence(
-        withSpring(1.15, { damping: 8, stiffness: 200, mass: 0.6 }),
-        withSpring(1, { damping: 12, stiffness: 180 }),
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy), 100);
+      [180, 220, 270, 330, 410, 520].forEach((t) =>
+        setTimeout(() => Haptics.selectionAsync(), t),
       );
+      checkOpacity.value = withTiming(1, { duration: 180, easing: Easing.out(Easing.cubic) });
+      checkScale.value = withTiming(1, { duration: 220, easing: Easing.out(Easing.cubic) });
+      barOpacity.value = withTiming(0, { duration: 250, easing: Easing.out(Easing.cubic) });
+      setTimeout(() => navigateToCardList(), 500);
     } else {
-      stepOpacity.value = withTiming(1, { duration: 180 });
+      stepY.value = 20;
+      stepOpacity.value = withTiming(1, { duration: 200 });
+      stepY.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
     }
   }, [stepIndex]);
 
@@ -191,16 +196,24 @@ export default function AddCardReviewScreen({ route }: Props) {
 
   const stepStyle = useAnimatedStyle(() => ({
     opacity: stepOpacity.value,
+    transform: [{ translateY: stepY.value }],
   }));
 
   const barAnimStyle = useAnimatedStyle(() => ({
     width: `${barWidth.value * 100}%` as any,
   }));
 
+  const barTrackStyle = useAnimatedStyle(() => ({
+    opacity: barOpacity.value,
+    height: barOpacity.value * 4,
+    marginBottom: barOpacity.value * spacing.lg,
+  }));
+
   const checkStyle = useAnimatedStyle(() => ({
     opacity: checkOpacity.value,
     transform: [{ scale: checkScale.value }],
   }));
+
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -216,9 +229,9 @@ export default function AddCardReviewScreen({ route }: Props) {
         </Animated.View>
 
         <Animated.View style={[styles.textWrap, textAnimStyle]}>
-          <View style={styles.barTrack}>
+          <Animated.View style={[styles.barTrack, barTrackStyle]}>
             <Animated.View style={[styles.barFill, barAnimStyle]} />
-          </View>
+          </Animated.View>
 
           <View style={styles.statusRow}>
             {!done && (
@@ -228,9 +241,9 @@ export default function AddCardReviewScreen({ route }: Props) {
             )}
             <Animated.View style={[styles.checkWrap, checkStyle]}>
               <View style={styles.checkCircle}>
-                <Check size={16} color="#fff" strokeWidth={2.5} />
+                <Check size={17} color="#fff" strokeWidth={2.5} />
               </View>
-              <Text style={styles.ready}>Card created</Text>
+              <Text style={styles.ready}>Card ready</Text>
             </Animated.View>
           </View>
         </Animated.View>
@@ -256,10 +269,8 @@ const styles = StyleSheet.create({
 
   barTrack: {
     width: '60%',
-    height: 4,
     borderRadius: 2,
     backgroundColor: colors.surfaceHigh,
-    marginBottom: spacing.lg,
     overflow: 'hidden',
   },
 

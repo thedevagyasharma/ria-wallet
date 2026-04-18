@@ -67,10 +67,12 @@ export default function TransactionDetailScreen({ route }: RootStackProps<'Trans
   const incoming = isIncoming(tx);
   const isCard   = isCardTx(tx);
   const absAmount = Math.abs(tx.amount);
-  const heroSymbol = getCurrency(tx.currency).symbol;
+  const heroCurrency = getCurrency(tx.currency);
+  const heroSymbol = heroCurrency.symbol;
   const heroNumber = new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   }).format(absAmount);
+  const showRecipientHero = !isCard && !incoming;
 
   const isInstant = tx.eta === 'Instant' || !tx.eta;
   const timelineStatus = isReceipt
@@ -113,8 +115,11 @@ export default function TransactionDetailScreen({ route }: RootStackProps<'Trans
           <View style={styles.heroAmountRow}>
             <Text style={styles.heroSymbol}>{heroSymbol}</Text>
             <Text style={styles.heroAmount}>{heroNumber}</Text>
-            <Text style={styles.heroSymbolBalance}>{heroSymbol}</Text>
+            <Text style={styles.heroCode}>{tx.currency}</Text>
           </View>
+          {showRecipientHero && (
+            <Text style={styles.heroRecipient}>To · {tx.recipientName}</Text>
+          )}
         </View>
 
         {/* ── Failed — refund notice ── */}
@@ -214,9 +219,13 @@ const styles = StyleSheet.create({
     fontSize: typography.lg, fontWeight: typography.bold,
     color: colors.textSecondary, paddingBottom: 3, marginRight: 2,
   },
-  heroSymbolBalance: {
-    fontSize: typography.lg, fontWeight: typography.bold,
-    opacity: 0, marginLeft: 2,
+  heroCode: {
+    fontSize: typography.sm, fontWeight: typography.semibold,
+    color: colors.textSecondary, marginLeft: 6, paddingBottom: 5,
+  },
+  heroRecipient: {
+    fontSize: typography.sm, color: colors.textSecondary,
+    fontWeight: typography.medium, marginTop: -spacing.sm,
   },
   heroAmount: {
     fontSize: typography.xxl, fontWeight: typography.bold,

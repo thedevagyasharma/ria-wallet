@@ -52,7 +52,7 @@ function cardTextColors(light: boolean) {
     primary:   light ? 'rgba(0,0,0,0.85)'  : 'rgba(255,255,255,0.92)',
     secondary: light ? 'rgba(0,0,0,0.70)'  : 'rgba(255,255,255,0.75)',
     muted:     light ? 'rgba(0,0,0,0.45)'  : 'rgba(255,255,255,0.38)',
-    icon:      light ? 'rgba(0,0,0,0.28)'  : 'rgba(255,255,255,0.28)',
+    icon:      light ? 'rgba(0,0,0,0.52)'  : 'rgba(255,255,255,0.52)',
   };
 }
 
@@ -156,6 +156,7 @@ function FlipChar({
   actual,
   revealed,
   delay,
+  revealDelay,
   color,
   looping = false,
 }: {
@@ -163,6 +164,7 @@ function FlipChar({
   actual: string;
   revealed: boolean;
   delay: number;
+  revealDelay?: number;
   color?: string;
   looping?: boolean;
 }) {
@@ -232,7 +234,7 @@ function FlipChar({
             duration: LOOP_FLIP,
             easing: Easing.out(Easing.cubic),
           });
-        }, delay + 50);
+        }, (revealDelay ?? delay) + 50);
       } else {
         progress.value = 0;
       }
@@ -287,6 +289,7 @@ function FlipCardNumber({ fullNumber, revealed, color, looping = false, maskFirs
               actual={!isLast4 && maskFirst12 ? '•' : digits[i] ?? '0'}
               revealed={charRevealed}
               delay={i * 38}
+              revealDelay={maskFirst12 && isLast4 ? (i - 12) * 80 : undefined}
               color={color}
               looping={looping}
             />
@@ -322,7 +325,16 @@ function FlipExpiry({ expiry, revealed, color, looping = false, baseDelay = 0 }:
             </View>
           </View>
         ) : (
-          <FlipChar key={i} masked="•" actual={ch} revealed={revealed} delay={baseDelay + i * 60} color={color} looping={looping} />
+          <FlipChar
+            key={i}
+            masked="•"
+            actual={ch}
+            revealed={revealed}
+            delay={baseDelay + i * 60}
+            revealDelay={i < 2 ? i * 60 : (i - 1) * 60}
+            color={color}
+            looping={looping}
+          />
         ),
       )}
     </View>
@@ -364,9 +376,47 @@ function AnimatedCopyIcon({ isCopied, color, size }: { isCopied: boolean; color?
   );
 }
 
+// ─── Slide-in/out wrapper — animates children up on show, down on hide ────────
+// Keeps the node mounted during the exit animation before unmounting.
+
+function AnimatedSlideIn({ children, style, visible }: { children: React.ReactNode; style?: object; visible: boolean }) {
+  const [mounted, setMounted] = React.useState(visible);
+  const translateY = useSharedValue(8);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      // Reset to starting position, then ease in after a frame
+      translateY.value = 8;
+      opacity.value = 0;
+      translateY.value = withDelay(16, withTiming(0, { duration: 230, easing: Easing.out(Easing.cubic) }));
+      opacity.value = withDelay(16, withTiming(1, { duration: 220, easing: Easing.out(Easing.cubic) }));
+    } else {
+      translateY.value = withTiming(8, { duration: 200, easing: Easing.in(Easing.cubic) });
+      opacity.value = withTiming(0, { duration: 180, easing: Easing.in(Easing.cubic) });
+      const timer = setTimeout(() => setMounted(false), 220);
+      return () => clearTimeout(timer);
+    }
+  }, [visible]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+    opacity: opacity.value,
+  }));
+
+  if (!mounted) return null;
+
+  return (
+    <Animated.View style={[style, animStyle]} pointerEvents={visible ? 'auto' : 'none'}>
+      {children}
+    </Animated.View>
+  );
+}
+
 // ─── Small floating tooltip above the copy icon ───────────────────────────────
 
-function MiniTooltip({ visible }: { visible: boolean }) {
+function MiniTooltip({ visible, color }: { visible: boolean; color?: string }) {
   const opacity = useSharedValue(0);
   const tx = useSharedValue(-4);
 
@@ -381,9 +431,9 @@ function MiniTooltip({ visible }: { visible: boolean }) {
   }));
 
   return (
-    <Animated.View style={[styles.miniTooltip, animStyle]} pointerEvents="none">
-      <Text style={styles.miniTooltipText}>Copied</Text>
-    </Animated.View>
+    <Animated.Text style={[styles.miniTooltipText, color ? { color } : undefined, animStyle]} pointerEvents="none">
+      Copied
+    </Animated.Text>
   );
 }
 
@@ -523,12 +573,10 @@ export function CardFront({
           style={styles.numRect}
         >
           <FlipCardNumber fullNumber={card.fullNumber} revealed={revealedNumber} color={tc.primary} />
-          {revealedNumber && (
-            <View style={styles.copyWithTooltip}>
-              <AnimatedCopyIcon isCopied={copiedField === 'number'} color={tc.icon} size={17} />
-              <MiniTooltip visible={copiedField === 'number'} />
-            </View>
-          )}
+          <AnimatedSlideIn style={styles.copyWithTooltip} visible={revealedNumber}>
+            <AnimatedCopyIcon isCopied={copiedField === 'number'} color={tc.icon} size={17} />
+            <MiniTooltip visible={copiedField === 'number'} color={tc.icon} />
+          </AnimatedSlideIn>
         </Pressable>
       ) : useFlipLoading ? (
         <View style={styles.numRect}>
@@ -558,12 +606,10 @@ export function CardFront({
               style={styles.cvvRow}
             >
               <FlipCvv cvv={card.cvv} revealed={revealedCvv} color={tc.primary} />
-              {revealedCvv && (
-                <View style={[styles.copyWithTooltip, { marginLeft: 6 }]}>
-                  <AnimatedCopyIcon isCopied={copiedField === 'cvv'} color={tc.icon} size={17} />
-                  <MiniTooltip visible={copiedField === 'cvv'} />
-                </View>
-              )}
+              <AnimatedSlideIn style={[styles.copyWithTooltip, { marginLeft: 6 }]} visible={revealedCvv}>
+                <AnimatedCopyIcon isCopied={copiedField === 'cvv'} color={tc.icon} size={17} />
+                <MiniTooltip visible={copiedField === 'cvv'} color={tc.icon} />
+              </AnimatedSlideIn>
             </Pressable>
           </View>
         )}
@@ -795,18 +841,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // ── Mini tooltip — sits inline to the right of the copy icon ──
-  miniTooltip: {
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    borderRadius: radius.full,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
+  // ── Mini tooltip — inline text next to the copy icon ──
   miniTooltipText: {
     fontSize: 10,
-    color: 'rgba(255,255,255,0.9)',
+    color: 'rgba(255,255,255,0.6)',
     fontWeight: typography.semibold,
     letterSpacing: 0.3,
   },

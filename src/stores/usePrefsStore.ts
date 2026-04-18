@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 export type Discoverability = 'everyone' | 'contacts' | 'nobody';
+export type WalletActionsLayout = 'default' | 'quick';
 
 type PrefsStore = {
   hideBalances: boolean;
@@ -8,11 +9,13 @@ type PrefsStore = {
   defaultSendCurrency: string;
   discoverability: Discoverability;
   hiddenCurrencies: string[];
+  walletActionsLayout: WalletActionsLayout;
   toggleHideBalances: () => void;
   toggleAppLock: () => void;
   setDefaultSendCurrency: (currency: string) => void;
   setDiscoverability: (value: Discoverability) => void;
   toggleCurrencyVisibility: (currency: string) => void;
+  toggleWalletActionsLayout: () => void;
 };
 
 export const usePrefsStore = create<PrefsStore>((set) => ({
@@ -21,6 +24,7 @@ export const usePrefsStore = create<PrefsStore>((set) => ({
   defaultSendCurrency: 'USD',
   discoverability: 'contacts',
   hiddenCurrencies: [],
+  walletActionsLayout: 'quick',
   toggleHideBalances: () => set((s) => ({ hideBalances: !s.hideBalances })),
   toggleAppLock: () => set((s) => ({ appLockEnabled: !s.appLockEnabled })),
   setDefaultSendCurrency: (currency) => set({ defaultSendCurrency: currency }),
@@ -30,5 +34,9 @@ export const usePrefsStore = create<PrefsStore>((set) => ({
       hiddenCurrencies: s.hiddenCurrencies.includes(currency)
         ? s.hiddenCurrencies.filter((c) => c !== currency)
         : [...s.hiddenCurrencies, currency],
+    })),
+  toggleWalletActionsLayout: () =>
+    set((s) => ({
+      walletActionsLayout: s.walletActionsLayout === 'default' ? 'quick' : 'default',
     })),
 }));

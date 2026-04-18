@@ -2218,6 +2218,16 @@ The old stub `CardListScreen.tsx` (which returned `null`) was deleted to free th
 
 ---
 
+### 229. Currency list — curated to 6 stable currencies, no search bar
+
+**Decision:** The add-wallet currency picker is limited to 6 currencies: USD, EUR, GBP, MXN, PHP, INR. The search bar has been removed.
+
+**Reason:** A service holding customer balances should not offer currencies with significant volatility or devaluation risk. The prior list of 12 included currencies like NGN (severe devaluation 2023–2024) and others whose corridor relevance was unclear. The 6 kept are either major reserve currencies (USD, EUR, GBP) or established high-volume remittance corridors (MXN, PHP, INR). With only 6 options, a search bar adds friction rather than value.
+
+**Trade-off:** Corridors like Morocco (MAD), Nigeria (NGN), Dominican Republic (DOP) are not supported at launch. These can be added later when corridor stability and demand are confirmed.
+
+---
+
 ### 224. Single-use card — persistent per wallet, regenerating details
 
 **Decision:** Each wallet has exactly one single-use card. It is not deleted after a transaction — instead, the card details (number, CVV, expiry) regenerate automatically after each use. The card itself persists.
@@ -2225,3 +2235,23 @@ The old stub `CardListScreen.tsx` (which returned `null`) was deleted to free th
 **Reason:** Deleting the card after each transaction would orphan the associated activity history, making it impossible to review past single-use transactions. A persistent card with regenerating details preserves the "one-time number" security model while keeping all transaction history attached to a stable card record. It also simplifies the UX — the card is always present in the wallet, no creation flow needed after the first time.
 
 **Trade-off:** The card is not truly ephemeral at the record level. The security guarantee is at the number level (each number works once), not the card level.
+
+---
+
+### 230. Shared `EmptyState` component — two layout variants
+
+**Decision:** Extracted all inline empty states into a single `EmptyState` component (`src/components/EmptyState.tsx`) with two variants: default (full-screen, `flex: 1`, vertically centred, `xl` title, optional CTA button) and `compact` (top-padded, inline within scroll views, `base` title, `sm` subtitle, no CTA).
+
+**Reason:** Seven empty states across six screens were all styled independently with duplicated colour tokens, font sizes, and spacing. A single component enforces consistency and makes future copy or illustration changes a one-line edit.
+
+**Trade-off:** The `compact` prop is a boolean rather than a separate component. Acceptable here because the two variants share enough structure (illustration slot, title, subtitle) that a flag is cleaner than duplication.
+
+---
+
+### 231. Empty state illustrations — `No Cards.png` and `No Transactions.png`
+
+**Decision:** Added custom illustrations for the two primary empty states. `No Cards.png` is used on `CardListScreen` (no cards in wallet). `No Transactions.png` is used on `UnifiedActivityScreen` (no activity at all), `WalletsScreen` (no recent activity inline), and `CardListScreen` (no card transactions inline). Search/filter empty states (no transactions match, no contacts found) remain illustration-free.
+
+**Reason:** Illustrations make permanent "you have nothing yet" states feel intentional and welcoming. Search/filter states are transient mid-task moments where an illustration would slow the scan and feel like a dead end rather than feedback.
+
+**Trade-off:** Compact inline sections use the illustration at 180×140 vs the full-screen 280×220. Both sizes are baked into `EmptyState` and selected automatically based on the `compact` prop.

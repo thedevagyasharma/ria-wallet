@@ -32,6 +32,7 @@ import ActivityItem from '../../components/ActivityItem';
 import FlagIcon from '../../components/FlagIcon';
 import BottomSheet from '../../components/BottomSheet';
 import SecondaryButton from '../../components/SecondaryButton';
+import EmptyState from '../../components/EmptyState';
 import { CATEGORY_META } from '../../utils/cardCategories';
 import type { Card, CardCategory, Transaction, TransactionStatus, TransactionType, Wallet } from '../../stores/types';
 import { useTabScrollReset } from '../../navigation/TabScrollContext';
@@ -856,12 +857,13 @@ export default function UnifiedActivityScreen() {
 
   // ── Empty state copy ─────────────────────────────────────────────────────
 
-  const emptyTitle = query.trim() ? 'No transactions found' : 'No transactions match';
+  const isFiltered = query.trim().length > 0 || hasAnyFilter;
+  const emptyTitle = query.trim() ? 'No transactions found' : isFiltered ? 'No transactions match' : 'No activity yet';
   const emptySub   = query.trim()
     ? 'Try a different name or keyword.'
     : hasAnyFilter
       ? 'Try adjusting your filters.'
-      : 'No activity yet.';
+      : 'Transactions will appear here once you send or receive money.';
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -973,10 +975,11 @@ export default function UnifiedActivityScreen() {
       {/* ── List ────────────────────────────────────────────────────────── */}
       <Animated.View style={styles.list} layout={LinearTransition.duration(240)}>
         {sections.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>{emptyTitle}</Text>
-            <Text style={styles.emptySub}>{emptySub}</Text>
-          </View>
+          <EmptyState
+            title={emptyTitle}
+            subtitle={emptySub}
+            imageSource={isFiltered ? undefined : require('../../../assets/No Transactions.png')}
+          />
         ) : (
           <SectionList
             ref={listRef}
@@ -1158,24 +1161,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
 
-  // ── Empty ──
-  empty: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: H_PAD,
-  },
-  emptyTitle: {
-    fontSize: typography.base,
-    color: colors.textSecondary,
-    fontWeight: typography.medium,
-  },
-  emptySub: {
-    fontSize: typography.sm,
-    color: colors.textMuted,
-    textAlign: 'center',
-  },
+
 
   // ── Picker sheet (shared) ──
   filterHeader: {
