@@ -4,9 +4,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 
-import { ChevronLeft, ChevronRight, Globe, CreditCard, Hash } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Globe, CreditCard, Hash, Star } from 'lucide-react-native';
 import { colors, typography, spacing, radius } from '../../theme';
 import Chip from '../../components/Chip';
+import { useCardStore } from '../../stores/useCardStore';
 import type { RootStackProps } from '../../navigation/types';
 import type { CardType } from '../../stores/types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -21,6 +22,7 @@ type CardTypeOption = {
   tagline: string;
   bullets: string[];
   fee?: string;
+  recommended?: boolean;
 };
 
 const sw = 1.8;
@@ -30,33 +32,34 @@ const OPTIONS: CardTypeOption[] = [
     icon: <Globe size={22} color={colors.textSecondary} strokeWidth={sw} />,
     label: 'Virtual',
     tagline: 'Instant · Free',
+    recommended: true,
     bullets: [
-      'Online purchases & subscriptions',
-      'Issued immediately',
-      'Easy to freeze or delete',
+      'Online purchases and subscriptions',
+      'Freeze or delete at any time',
+      'One card per merchant or use case',
     ],
   },
   {
     type: 'physical',
     icon: <CreditCard size={22} color={colors.textSecondary} strokeWidth={sw} />,
     label: 'Physical',
-    tagline: 'Delivered in 5–7 days',
+    tagline: '5–7 day delivery',
     fee: '$4.99 issuance fee',
     bullets: [
-      'POS terminals & ATMs',
-      'Contactless & chip+PIN',
-      'Delivered to your address',
+      'In-store, ATM, and contactless payments',
+      'Chip+PIN and tap-to-pay',
+      'Ships to your registered address',
     ],
   },
   {
     type: 'single-use',
     icon: <Hash size={22} color={colors.textSecondary} strokeWidth={sw} />,
     label: 'Single-use',
-    tagline: 'One-time payment · Free',
+    tagline: 'Auto-refreshing · Free',
     bullets: [
-      'Expires after one transaction',
-      'Great for online checkouts',
-      'Auto-deletes when used',
+      'One per wallet, always available',
+      'Card details regenerate after each use',
+      'All transactions tracked in one place',
     ],
   },
 ];
@@ -64,17 +67,25 @@ const OPTIONS: CardTypeOption[] = [
 export default function AddCardTypeScreen({ route }: RootStackProps<'AddCardType'>) {
   const navigation = useNavigation<Nav>();
   const { walletId } = route.params;
+  const { cards } = useCardStore();
+  const walletCards = cards.filter((c) => c.walletId === walletId);
+  const existingSingleUse = walletCards.find((c) => c.type === 'single-use');
 
   const handleSelect = useCallback((type: CardType) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     if (type === 'single-use') {
+      if (existingSingleUse) {
+        const idx = walletCards.findIndex((c) => c.id === existingSingleUse.id);
+        navigation.navigate('CardList', { walletId, initialCardIndex: idx });
+        return;
+      }
       navigation.navigate('SingleUseCreating', { walletId });
       return;
     }
 
     navigation.navigate('AddCardName', { walletId, cardType: type });
-  }, [navigation, walletId]);
+  }, [navigation, walletId, existingSingleUse, walletCards]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -89,7 +100,9 @@ export default function AddCardTypeScreen({ route }: RootStackProps<'AddCardType
       <Text style={styles.subtitle}>Choose the type of card you'd like to create.</Text>
 
       <ScrollView contentContainerStyle={styles.list}>
-        {OPTIONS.map((opt) => (
+        {OPTIONS.map((opt) => {
+          const hasExisting = opt.type === 'single-use' && !!existingSingleUse;
+          return (
           <Pressable
             key={opt.type}
             onPress={() => handleSelect(opt.type)}
@@ -103,8 +116,30 @@ export default function AddCardTypeScreen({ route }: RootStackProps<'AddCardType
                 <Text style={styles.label}>{opt.label}</Text>
                 <Text style={styles.tagline}>{opt.tagline}</Text>
               </View>
+              {opt.recommended && (
+                <Chip
+                  label="Recommended"
+                  color={colors.brand}
+                  bg={colors.brandSubtle}
+                  size="sm"
+                  icon={<Star size={10} color={colors.brand} fill={colors.brand} strokeWidth={0} />}
+                />
+              )}
               {opt.fee && (
-                <Chip label={opt.fee} color={colors.pending} bg={colors.pendingSubtle} size="sm" border={false} />
+                <Chip
+                  label={opt.fee}
+                  color={colors.pending}
+                  bg={colors.pendingSubtle}
+                  size="sm"
+                />
+              )}
+              {hasExisting && (
+                <Chip
+                  label="Added"
+                  color={colors.textMuted}
+                  bg={colors.surfaceHigh}
+                  size="sm"
+                />
               )}
             </View>
             <View style={styles.bullets}>
@@ -117,7 +152,8 @@ export default function AddCardTypeScreen({ route }: RootStackProps<'AddCardType
             </View>
             <ChevronRight size={18} color={colors.textMuted} strokeWidth={2} style={styles.chevron} />
           </Pressable>
-        ))}
+          );
+        })}
       </ScrollView>
     </SafeAreaView>
   );

@@ -88,7 +88,6 @@ export default function CurrencyPickerScreen() {
               style={({ pressed }) => [
                 styles.row,
                 pressed && !owned && { backgroundColor: colors.surfaceHigh },
-                owned && styles.rowDisabled,
               ]}
             >
               <FlagIcon code={item.flag} size={24} style={styles.rowFlag} />
@@ -101,7 +100,7 @@ export default function CurrencyPickerScreen() {
                 </Text>
               </View>
               {owned && (
-                <Chip label="Added" color={colors.textMuted} bg={colors.surfaceHigh} size="sm" border={false} />
+                <Chip label="Added" color={colors.textMuted} bg={colors.surfaceHigh} size="sm" />
               )}
             </Pressable>
           );
@@ -160,7 +159,6 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     borderRadius: radius.sm,
   },
-  rowDisabled: { opacity: 0.4 },
   rowFlag: { width: 36, alignSelf: 'center' },
   rowText: { flex: 1 },
   rowName: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.medium },

@@ -21,6 +21,7 @@ type CardStore = {
   setSpendingLimit: (cardId: string, period: 'daily' | 'weekly' | 'monthly', limit: number | null) => void;
   replaceSpendingLimits: (cardId: string, limits: { daily?: number; weekly?: number; monthly?: number }) => void;
   getWalletCards: (walletId: string) => Card[];
+  regenerateCardDetails: (cardId: string) => void;
   // Prototype-only
   setExpired: (cardId: string, value: boolean) => void;
   setFreezeSimulateError: (cardId: string, value: boolean) => void;
@@ -85,6 +86,24 @@ export const useCardStore = create<CardStore>((set, get) => ({
 
   getWalletCards: (walletId) =>
     get().cards.filter((c) => c.walletId === walletId),
+
+  regenerateCardDetails: (cardId) =>
+    set((state) => ({
+      cards: state.cards.map((c) => {
+        if (c.id !== cardId) return c;
+        const fullNumber = Array.from({ length: 16 }, () => Math.floor(Math.random() * 10)).join('');
+        const now = new Date();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const year = String((now.getFullYear() + 3) % 100).padStart(2, '0');
+        return {
+          ...c,
+          fullNumber,
+          last4: fullNumber.slice(-4),
+          cvv: String(Math.floor(100 + Math.random() * 900)),
+          expiry: `${month}/${year}`,
+        };
+      }),
+    })),
 
   setExpired: (cardId, value) =>
     set((state) => ({

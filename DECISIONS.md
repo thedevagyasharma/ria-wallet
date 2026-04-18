@@ -2131,3 +2131,97 @@ The old stub `CardListScreen.tsx` (which returned `null`) was deleted to free th
 **Decision:** Kept suggestion chips on the card name screen as light outlined style (surface bg, border, secondary text) rather than matching the filled filter chip style used elsewhere.
 
 **Reason:** Suggestion chips and filter chips serve different purposes. Suggestions are passive hints ("pick one if you want") so the lighter style correctly signals low commitment. Filter chips are active controls so they warrant more visual weight. Different purpose, different treatment.
+
+### 216. Transaction detail — section reorder for UX hierarchy
+
+**Decision:** Reordered the transaction detail screen sections from Hero → Details → Summary → Timeline to Hero → Timeline → Summary → Details.
+
+**Reason:** For outgoing P2P transfers the user's primary question is "where is my money?" The timeline answers that and should sit directly below the amount, not buried beneath static metadata. This matches Wise/Remitly/Western Union tracking screens — status journey first, reference info last.
+
+### 217. Transaction detail — "Get help" moved to navbar
+
+**Decision:** Moved the "Get help with this transaction" button from the bottom actions area into the navbar header, styled as a compact pill (matching the +Wallet button pattern: SecondaryButton, 11px semibold, icon + label).
+
+**Reason:** Help is a secondary action that shouldn't compete with the primary CTA. Placing it in the header keeps it always accessible without taking up scroll real estate. The primary CTA (Share receipt / Repeat transfer) now sits in a sticky footer.
+
+### 218. Transaction detail — sticky footer CTA
+
+**Decision:** Moved the primary action button (Share receipt / Repeat transfer) out of the ScrollView into a fixed footer with a subtle top border.
+
+**Reason:** Primary actions should always be visible without scrolling. A sticky footer guarantees the CTA is reachable regardless of content length.
+
+### 219. Transaction detail — centered header title
+
+**Decision:** Changed the navbar title from flex-based centering to absolute positioning so it's perfectly centered on screen, independent of the differing widths of the close button (left) and help pill (right).
+
+**Reason:** Flex-based centering shifts the title toward whichever side has less content. Absolute positioning guarantees true center alignment.
+
+### 220. Timeline last step — remove bottom padding
+
+**Decision:** Set `paddingBottom: 0` on the last `StepRow` in TransferSteps, using the existing `isLast` prop.
+
+**Reason:** The last step's 24px body padding was stacking with the section's own padding, creating excessive whitespace between the final timeline item and the section divider.
+
+### 221. Transaction detail — details section kept always visible
+
+**Decision:** Removed the collapsible expand/collapse behavior from the Details section. It renders as a plain always-visible section.
+
+**Reason:** No strong UX argument for hiding details by default — the section is short enough that collapsing it adds interaction cost without meaningful benefit.
+
+---
+
+### 222. Transaction detail hero — currency code shown next to amount
+
+**Decision:** Display the ISO currency code (e.g. `USD`) as a small muted label to the right of the hero amount. The previous invisible spacer (`heroSymbolBalance`) that was keeping the amount visually centered is replaced with the real code.
+
+**Reason:** The currency symbol alone (e.g. `$`) is ambiguous in a multi-wallet product — USD, CAD, and AUD all use `$`. The confirm transfer screen already showed the code; the detail screen was inconsistent. The code sits baseline-aligned, small weight, so it reads as annotation rather than competing with the amount.
+
+---
+
+### 223. Transaction detail hero — recipient surfaced for outgoing P2P
+
+**Decision:** For outgoing P2P transfers only, show `"To · [Full Name]"` below the hero amount. Not shown for incoming transfers, card transactions, or failed-only view.
+
+**Reason:** "Who did I send this to?" is the first contextual question a user asks on this screen. Previously the recipient was buried in the Details section requiring a scroll. Card and incoming transactions don't have a meaningful counterpart to surface at this level. On failed transfers the recipient line still shows since knowing the intended recipient remains relevant.
+
+---
+
+### 225. Card type screen — chip consistency and "Added" treatment
+
+**Decision:** All status chips across the app use the `Chip` component. "Added" chips (card type screen and currency picker) are identical: `colors.textMuted` text, `colors.surfaceHigh` background, with border. The card type screen's custom `statusBadge` View+Text in CardSettingsScreen was replaced with `<Chip>`.
+
+**Reason:** Two bespoke chip implementations (card settings status badge, currency picker) diverged visually from each other and from `<Chip>`. Centralising on the component ensures padding, border-radius, font size, and weight are always consistent.
+
+---
+
+### 226. Card type screen — "Added" single-use card navigates to existing card
+
+**Decision:** If a wallet already has a single-use card, tapping the single-use option on the card type screen navigates directly to that card in CardListScreen rather than blocking or disabling the row. An "Added" chip signals the existing state.
+
+**Reason:** Disabling the row with a "1 per wallet" label felt restrictive. The helpful action is to take the user where they want to go. The chip communicates state; the tap delivers the outcome.
+
+---
+
+### 227. Currency picker — row dimming scoped to text only
+
+**Decision:** When a currency is already owned, only the name and code text dims (`colors.textMuted`). The flag and "Added" chip remain at full opacity.
+
+**Reason:** Applying `opacity: 0.4` to the whole row also dimmed the chip, defeating its purpose as a clear status indicator. Dimming only the text preserves the chip's legibility while still communicating the row is not selectable.
+
+---
+
+### 228. CardListScreen header — "+ Card" label
+
+**Decision:** The add-card button in the CardListScreen header is labelled "+ Card".
+
+**Reason:** "+ New" was vague. "+ Card" was preferred over icon-only or "Issue" — direct and unambiguous in context, even if "add an existing card" is a theoretical reading that doesn't apply here.
+
+---
+
+### 224. Single-use card — persistent per wallet, regenerating details
+
+**Decision:** Each wallet has exactly one single-use card. It is not deleted after a transaction — instead, the card details (number, CVV, expiry) regenerate automatically after each use. The card itself persists.
+
+**Reason:** Deleting the card after each transaction would orphan the associated activity history, making it impossible to review past single-use transactions. A persistent card with regenerating details preserves the "one-time number" security model while keeping all transaction history attached to a stable card record. It also simplifies the UX — the card is always present in the wallet, no creation flow needed after the first time.
+
+**Trade-off:** The card is not truly ephemeral at the record level. The security guarantee is at the number level (each number works once), not the card level.

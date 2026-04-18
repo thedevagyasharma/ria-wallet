@@ -47,6 +47,7 @@ import DestructiveButton from '../../components/DestructiveButton';
 import FlatButton from '../../components/FlatButton';
 import BottomSheet from '../../components/BottomSheet';
 import ConfirmSheet from '../../components/ConfirmSheet';
+import Chip from '../../components/Chip';
 
 import { colors, typography, spacing, radius } from '../../theme';
 import { useCardStore } from '../../stores/useCardStore';
@@ -682,10 +683,13 @@ export default function CardSettingsScreen({ route }: RootStackProps<'CardSettin
                 icon={<Activity size={17} color={colors.textSecondary} strokeWidth={1.8} />}
                 label="Status"
                 right={
-                  <View style={[styles.statusBadge, styles.statusActive]}>
-                    <Check size={10} color="#16a34a" strokeWidth={2.5} />
-                    <Text style={[styles.statusBadgeText, styles.statusActiveText]}>Active</Text>
-                  </View>
+                  <Chip
+                    label="Active"
+                    color={colors.success}
+                    bg={colors.successSubtle}
+                    size="sm"
+                    icon={<Check size={10} color={colors.success} strokeWidth={2.5} />}
+                  />
                 }
               />
             </>
@@ -949,26 +953,6 @@ const styles = StyleSheet.create({
     fontWeight: typography.medium,
   },
 
-  // ── Status badge (Active only — face shows Frozen/Expired) ──
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 4,
-    borderWidth: 1,
-  },
-  statusActive: {
-    backgroundColor: 'rgba(22,163,74,0.08)',
-    borderColor: 'rgba(22,163,74,0.22)',
-  },
-  statusBadgeText: {
-    fontSize: typography.xs,
-    fontWeight: typography.semibold,
-    letterSpacing: 0.3,
-  },
-  statusActiveText: { color: '#16a34a' },
 
   // ── Prototype section ──
   protoWrap: { marginTop: spacing.xxl, paddingTop: spacing.lg, paddingHorizontal: spacing.xl, borderTopWidth: 1, borderTopColor: colors.borderSubtle, gap: spacing.sm, paddingBottom: spacing.xxxl },

@@ -27,7 +27,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ChevronLeft, Plus, Eye, EyeOff, Settings, KeyRound } from 'lucide-react-native';
+import { ChevronLeft, Plus, Eye, EyeOff, Settings, KeyRound, RefreshCw } from 'lucide-react-native';
 import AppleWalletBadge from '../../../assets/US-UK_Add_to_Apple_Wallet_RGB_101421.svg';
 import GoogleWalletBadge from '../../../assets/enUS_add_to_google_wallet_add-wallet-badge.png';
 
@@ -114,10 +114,11 @@ type CardItemProps = {
   copiedField: string | null;
   onCopy: (field: string) => void;
   introProgress: SharedValue<number>;
+  justAdded?: boolean;
 };
 
 function AnimatedCardItem({
-  card, index, activeIndex, currency, numberRevealed, cvvRevealed, copiedField, onCopy, introProgress,
+  card, index, activeIndex, currency, numberRevealed, cvvRevealed, copiedField, onCopy, introProgress, justAdded,
 }: CardItemProps) {
   const introStyle = useAnimatedStyle(() => {
     const v = introProgress.value;
@@ -253,7 +254,7 @@ function SpendingLimitsSection({
 export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
   const navigation = useNavigation<Nav>();
   const { walletId, initialCardIndex = 0 } = route.params;
-  const { cards, justAddedCardId, clearJustAddedCardId } = useCardStore();
+  const { cards, justAddedCardId, clearJustAddedCardId, regenerateCardDetails } = useCardStore();
   const { wallets, transactions } = useWalletStore();
 
   const wallet = wallets.find((w) => w.id === walletId);
@@ -364,6 +365,14 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
     navigation.navigate('CardSettings', { cardId: activeCard.id });
   }, [navigation, activeCard]);
 
+  const handleRegenerate = useCallback(() => {
+    if (!activeCard) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    regenerateCardDetails(activeCard.id);
+    setNumberRevealed(false);
+    setCvvRevealed(false);
+  }, [activeCard, regenerateCardDetails]);
+
   const handleEditLimits = useCallback(() => {
     if (!activeCard) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -382,9 +391,10 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
         copiedField={copiedField}
         onCopy={handleCopy}
         introProgress={introProgress}
+        justAdded={item.id === justAddedCardId}
       />
     ),
-    [currency, activeIndex, numberRevealed, cvvRevealed, copiedField, handleCopy, introProgress],
+    [currency, activeIndex, numberRevealed, cvvRevealed, copiedField, handleCopy, introProgress, justAddedCardId],
   );
 
   return (
@@ -407,7 +417,7 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
         {walletCards.length > 0 ? (
           <SecondaryButton onPress={handleAddCard} style={styles.addBtn}>
             <Plus size={11} color={colors.textPrimary} strokeWidth={2.5} />
-            <Text style={styles.addBtnText}>New</Text>
+            <Text style={styles.addBtnText}>Card</Text>
           </SecondaryButton>
         ) : (
           <View style={styles.addBtn} />
@@ -488,15 +498,23 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
               label={cvvRevealed ? 'Hide CVV' : 'Show CVV'}
               onPress={handleToggleRevealCvv}
             />
-            <ActionBtn
-              icon={<KeyRound size={22} color={activeCard?.type !== 'physical' ? colors.textMuted : colors.textSecondary} strokeWidth={1.8} />}
-              label="View PIN"
-              disabled={activeCard?.type !== 'physical'}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setShowPin(true);
-              }}
-            />
+            {activeCard?.type === 'single-use' ? (
+              <ActionBtn
+                icon={<RefreshCw size={22} color={colors.textSecondary} strokeWidth={1.8} />}
+                label="Regenerate"
+                onPress={handleRegenerate}
+              />
+            ) : (
+              <ActionBtn
+                icon={<KeyRound size={22} color={activeCard?.type !== 'physical' ? colors.textMuted : colors.textSecondary} strokeWidth={1.8} />}
+                label="View PIN"
+                disabled={activeCard?.type !== 'physical'}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setShowPin(true);
+                }}
+              />
+            )}
             <ActionBtn
               icon={<Settings size={22} color={colors.textSecondary} strokeWidth={1.8} />}
               label="Settings"
