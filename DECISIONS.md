@@ -2005,3 +2005,129 @@ The old stub `CardListScreen.tsx` (which returned `null`) was deleted to free th
 **Decision:** Replaced the fixed 3-slot AnimatedCardStack (with "+N more" placeholder) with a dynamic per-card system. All wallet cards now render in the stack. A pan gesture on the card area lets users drag down to spread cards apart (STACK_V_OFFSET 56 → SPREAD_V_OFFSET 88) and drag up to collapse. Each card is individually tappable — navigates to CardListScreen with `initialCardIndex` so the carousel opens scrolled to that card. Auto-collapses on wallet switch. Removed CARD_SLOTS cap, MoreCardsPlaceholder usage, and the 4 hardcoded animated-style slots in favor of a memoized AnimatedCardSlot component per card.
 
 **Reason:** The old single-Pressable stack didn't match the mental model of browsing a card collection. Users couldn't see or select specific cards without navigating to the full card list first. The new interaction mirrors Apple Wallet's scroll-to-fan pattern adapted to our embedded layout.
+
+
+---
+
+### 198. Danger zone — red left accent bar
+
+**Decision:** Replaced boxed red outline with a 4px red left border accent on the danger zone section in CardSettingsScreen. Title is red (`colors.failed`), rows have short sublabels ("Block and replace card", "Permanently removes card"). Extra top margin separates the section from settings above.
+
+**Reason:** A full red box felt harsh and fought the existing row layout. The left accent bar (GitHub-style) signals severity without wrapping rows in a container. Keeps the section visually distinct while rows remain aligned with the rest of the screen.
+
+### 199. Danger zone — consequence-driven confirmation messaging
+
+**Decision:** Confirmation sheet body text now spells out the user-facing consequence, not just the action. Report: "will be blocked immediately and you won't be able to use it for payments" + replacement context (physical → "replacement card will be issued", virtual → "you can create a new virtual card afterwards"). Remove: "permanently removed… no payments… no replacement."
+
+**Reason:** "This cannot be undone" is vague — users need to understand what changes for them. The sublabel is a short hook; the confirmation sheet has room for the full consequence. Physical vs virtual cards have different replacement paths, so the messaging reflects that.
+
+### 200. SettingsRow — hideChevron prop
+
+**Decision:** Added `hideChevron` boolean to SettingsRow component. Used on the "Report lost or stolen" row which opens a confirmation sheet, not a navigation destination.
+
+**Reason:** Chevrons imply navigation to another screen. Report opens a bottom sheet in place, so the chevron was misleading. Separate from `destructive` which also hides chevrons but changes text color — report needed chevron suppression without red text.
+
+---
+
+## Snapshot — 2026-04-18
+*Covers: wallet hero section revision — action hierarchy, indicator, section ordering*
+
+### 201. Send Money as full-width PrimaryButton, Receive/Top Up as secondary row
+
+**Decision:** Replaced the 4 equal circle actions with a two-tier layout: full-width PrimaryButton for Send Money on top, two 50%-width SecondaryButtons (Receive, Top Up) below.
+
+**Why:** Send is the #1 action in a remittance wallet but was buried as one of four identical circles. The primary/secondary button split creates clear visual hierarchy. Tried several intermediate approaches (bigger circle, orange circle, side-by-side with circles) — all felt unbalanced. Full-width primary + secondary row reads cleanly.
+
+---
+
+### 202. Rename "Add" → "Top Up" with CircleDollarSign icon
+
+**Decision:** Changed the third quick action from "Add" (Plus icon) to "Top Up" (CircleDollarSign icon).
+
+**Why:** "Add" with a Plus icon next to a "+ Wallet" button in the header was ambiguous — could mean add wallet, add card, or add money. "Top Up" with a dollar icon clearly means loading funds into the wallet.
+
+---
+
+### 203. Move Customize to greeting row as gear icon
+
+**Decision:** Moved the Customize action out of the quick actions row and into the greeting header as a Settings gear icon (FlatButton), next to the "+ Wallet" button.
+
+**Why:** Customize (wallet settings) is not a money action — it was cluttering the transactional action row alongside Send, Receive, and Top Up. The greeting header already has the "+ Wallet" button, so wallet management actions are grouped there. Frees the action area to be purely about money movement.
+
+---
+
+### 204. Activity section above Cards section
+
+**Decision:** Swapped the ordering on the wallets screen: Recent Activity now renders above the Cards stack.
+
+**Why:** For a wallet user, recent transactions are more immediately relevant than cards. Activity answers "what just happened?" which matters more on a home screen than the card stack, which is a less frequent interaction.
+
+---
+
+### 205. Liquid dots retained over flag pills and pager text
+
+**Decision:** Kept the original animated liquid dots as the wallet carousel indicator, after trying flag pills (circles with flag icons) and a text-based "Wallet 1 of 3" pager.
+
+**Why:** Flag pills looked visually cluttered and didn't clearly communicate "swipeable." The text pager was functional but felt static and disconnected from the carousel's animated personality. Liquid dots are a universal carousel pattern — users already know what they mean. The wallet identity (flag + currency code) lives in the carousel item itself, so the dots don't need to duplicate it.
+
+---
+
+### 206. Fee error isolation — only "over by" turns red
+
+**Decision:** Split the single fee hint line into separate styled elements. "Fee" and "Total" stay in secondary text color; only the "over by" text turns red when the amount exceeds balance.
+
+**Reason:** The entire line turning red implied the fee itself was the problem. The error is about the amount exceeding balance — isolating the red to "over by" makes the actual issue clear.
+
+### 207. Persistent fee breakdown on send screen
+
+**Decision:** Fee section is always visible below the exchange card, not gated behind `sendAmountNum > 0`. Shows Fee and Total as separate labeled rows with a hairline divider. Values show "—" when no amount is entered.
+
+**Reason:** Users should understand costs exist before they start typing. A persistent section sets expectations upfront and avoids the surprise of a fee appearing after entering an amount.
+
+### 208. Fee info BottomSheet with localized tiers
+
+**Decision:** Tapping the ⓘ icon next to "Fee" opens a BottomSheet showing the full 3-tier fee table. Tiers are displayed entirely in the sender's currency — thresholds and fee amounts converted from USD. Active tier row highlighted with surface background. Dismissed via "Got it" SecondaryButton.
+
+**Reason:** Fee tiers are internal USD logic, but non-USD users think in their currency. "Under 857 MXN → 34.14 MXN" is immediately useful; "Under $50 → $1.99" requires mental math. A bottom sheet gives space for the full table without cluttering the send screen. Highlighting the active row connects the user's amount to the table without explanatory paragraphs.
+
+### 209. Removed "To" label from send amount step
+
+**Decision:** Kept the compact recipient row (avatar + name + Change button) but removed the "To" section header above it.
+
+**Reason:** The label was redundant — avatar and name already communicate the recipient. Removing it reclaims vertical space for the exchange card and fee section.
+
+### 210. Confirmation screen — fee tier subtitle on Transfer fee row
+
+**Decision:** Added `subtitle` prop to the confirmation Row component. "Transfer fee" row shows the applicable tier label as a muted subtitle beneath the label.
+
+**Reason:** The confirmation screen is the last review before sending. Showing which tier applies gives context for the fee without requiring re-opening the fee sheet.
+
+### 211. Currency picker search — fully rounded
+
+**Decision:** Changed currency picker search input from `radius.lg` (16px) to `radius.full` (999px) to match contact search and transaction search inputs.
+
+**Reason:** All search/filter inputs should share the same pill shape for consistency. The rounded-rect style was an outlier.
+
+### 212. Card name input — underline style with large type
+
+**Decision:** Replaced the bordered rounded input on AddCardNameScreen with a bottom-border-only underline style, 28px bold text, -0.5 letter spacing.
+
+**Reason:** The page had too many fully-rounded elements (input, suggestion chips, button) competing for attention. The underline input creates clear visual hierarchy — the name becomes the focal point while chips and button stay secondary.
+
+### 213. Card name input — clear button
+
+**Decision:** Added an X circle button that appears to the right of the card name input when text is present. Clears the field and refocuses the input.
+
+**Reason:** Standard text field UX — users expect a quick way to clear without long-pressing or selecting all.
+
+### 214. Card naming — skip option
+
+**Decision:** Added a "Skip" text button in the header (top-right) that proceeds with a default name derived from card type ("Physical Card", "Virtual Card", "Single-Use Card").
+
+**Reason:** Naming is a nice-to-have, not a blocker. Users creating cards quickly shouldn't be forced to pick a name. The card type is the most meaningful default available at this step (network is assigned on the next screen).
+
+### 215. Suggestion chips — keep light/outlined style
+
+**Decision:** Kept suggestion chips on the card name screen as light outlined style (surface bg, border, secondary text) rather than matching the filled filter chip style used elsewhere.
+
+**Reason:** Suggestion chips and filter chips serve different purposes. Suggestions are passive hints ("pick one if you want") so the lighter style correctly signals low commitment. Filter chips are active controls so they warrant more visual weight. Different purpose, different treatment.

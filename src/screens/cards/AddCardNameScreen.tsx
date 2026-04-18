@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ChevronLeft } from 'lucide-react-native';
+import { ChevronLeft, X } from 'lucide-react-native';
 
 import { colors, typography, spacing, radius } from '../../theme';
 import PrimaryButton from '../../components/PrimaryButton';
@@ -44,6 +44,21 @@ export default function AddCardNameScreen({ route }: RootStackProps<'AddCardName
     setName(s);
   }, []);
 
+  const defaultName =
+    cardType === 'physical' ? 'Physical Card' :
+    cardType === 'virtual' ? 'Virtual Card' : 'Single-Use Card';
+
+  const handleSkip = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    navigation.navigate('AddCardColor', { walletId, cardType, name: defaultName });
+  }, [navigation, walletId, cardType, defaultName]);
+
+  const handleClear = useCallback(() => {
+    Haptics.selectionAsync();
+    setName('');
+    inputRef.current?.focus();
+  }, []);
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.header}>
@@ -51,7 +66,9 @@ export default function AddCardNameScreen({ route }: RootStackProps<'AddCardName
           <ChevronLeft size={24} color={colors.textPrimary} strokeWidth={2} />
         </Pressable>
         <Text style={styles.title}>Name your card</Text>
-        <View style={styles.backBtn} />
+        <Pressable onPress={handleSkip} style={styles.skipBtn}>
+          <Text style={styles.skipText}>Skip</Text>
+        </Pressable>
       </View>
 
       <KeyboardAvoidingView
@@ -61,19 +78,26 @@ export default function AddCardNameScreen({ route }: RootStackProps<'AddCardName
       >
         <View style={styles.inputSection}>
           <Text style={styles.label}>Card name</Text>
-          <TextInput
-            ref={inputRef}
-            style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="e.g. Everyday Spend"
-            placeholderTextColor={colors.textMuted}
-            keyboardAppearance="light"
-            autoFocus
-            maxLength={24}
-            returnKeyType="done"
-            onSubmitEditing={handleContinue}
-          />
+          <View style={styles.inputRow}>
+            <TextInput
+              ref={inputRef}
+              style={styles.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="e.g. Everyday Spend"
+              placeholderTextColor={colors.textMuted}
+              keyboardAppearance="light"
+              autoFocus
+              maxLength={24}
+              returnKeyType="done"
+              onSubmitEditing={handleContinue}
+            />
+            {name.length > 0 && (
+              <Pressable onPress={handleClear} style={styles.clearBtn}>
+                <X size={16} color={colors.textMuted} strokeWidth={2.5} />
+              </Pressable>
+            )}
+          </View>
           <Text style={styles.hint}>{name.trim().length}/24</Text>
         </View>
 
@@ -121,6 +145,8 @@ const styles = StyleSheet.create({
   },
   backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: typography.md, color: colors.textPrimary, fontWeight: typography.semibold },
+  skipBtn: { height: 36, justifyContent: 'center', paddingHorizontal: spacing.xs },
+  skipText: { fontSize: typography.sm, color: colors.textSecondary, fontWeight: typography.medium },
 
   body: { flex: 1, paddingHorizontal: spacing.xl },
 
@@ -131,16 +157,29 @@ const styles = StyleSheet.create({
     fontWeight: typography.medium,
     marginBottom: spacing.sm,
   },
-  input: {
-    backgroundColor: colors.surface,
-    borderWidth: 1.5,
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 2,
     borderColor: colors.brand,
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.lg,
+  },
+  input: {
+    flex: 1,
+    paddingHorizontal: 0,
     paddingVertical: spacing.md,
-    fontSize: typography.lg,
+    fontSize: 28,
     color: colors.textPrimary,
-    fontWeight: typography.semibold,
+    fontWeight: typography.bold,
+    letterSpacing: -0.5,
+  },
+  clearBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: spacing.sm,
   },
   hint: {
     fontSize: typography.xs,

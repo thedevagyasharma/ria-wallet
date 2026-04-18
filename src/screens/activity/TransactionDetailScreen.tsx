@@ -80,15 +80,21 @@ export default function TransactionDetailScreen({ route }: RootStackProps<'Trans
     ? (isInstant ? 'completed' : 'inProgress')
     : tx.status;
 
+  const showTimeline = shouldShowTimeline(tx);
+  const showSummary  = !isCard && !incoming && tx.fee !== undefined;
+
   return (
     <View style={[styles.safe, { paddingTop: insets.top }]}>
       {/* ── Navbar ── */}
       <View style={styles.navbar}>
-        <Pressable onPress={handleClose} style={styles.navCloseBtn} hitSlop={8}>
+        <Text style={styles.navTitle}>Transaction Details</Text>
+        <Pressable onPress={handleClose} style={[styles.navCloseBtn, styles.navLeft]} hitSlop={8}>
           <X size={20} color={colors.textPrimary} strokeWidth={2} />
         </Pressable>
-        <Text style={styles.navTitle}>Transaction Details</Text>
-        <View style={{ width: 36 }} />
+        <SecondaryButton onPress={() => {}} style={[styles.helpBtn, styles.navRight]}>
+          <LifeBuoy size={13} color={colors.textPrimary} strokeWidth={2} />
+          <Text style={styles.helpBtnText}>Help</Text>
+        </SecondaryButton>
       </View>
 
       <ScrollView
@@ -123,55 +129,52 @@ export default function TransactionDetailScreen({ route }: RootStackProps<'Trans
           </View>
         )}
 
+        {/* ── Timeline (outgoing P2P — promoted to top) ── */}
+        {showTimeline && (
+          <View style={[styles.section, !showSummary && styles.sectionLast]}>
+            <Text style={styles.sectionLabel}>Transfer status</Text>
+            <TxTimeline status={timelineStatus} firstName={firstName} txDate={tx.date} />
+          </View>
+        )}
+
+        {/* ── Summary (P2P outgoing with breakdown) ── */}
+        {showSummary && (
+          <View style={[styles.section, styles.sectionLast]}>
+            <Text style={styles.sectionLabel}>Summary</Text>
+            <TxSummaryCard tx={tx} />
+          </View>
+        )}
+
         {/* ── Details ── */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Details</Text>
           <TxDetailsList tx={tx} wallet={wallet} card={card} />
         </View>
 
-        {/* ── Summary (P2P outgoing with breakdown) ── */}
-        {!isCard && !incoming && tx.fee !== undefined && (
-          <View style={[styles.section, !shouldShowTimeline(tx) && styles.sectionLast]}>
-            <Text style={styles.sectionLabel}>Summary</Text>
-            <TxSummaryCard tx={tx} />
-          </View>
-        )}
+      </ScrollView>
 
-        {/* ── Timeline (outgoing P2P only) ── */}
-        {shouldShowTimeline(tx) && (
-          <View style={[styles.section, styles.sectionLast]}>
-            <Text style={styles.sectionLabel}>Transfer status</Text>
-            <TxTimeline status={timelineStatus} firstName={firstName} txDate={tx.date} />
-          </View>
-        )}
-
-        {/* ── Actions ── */}
-        <View style={styles.actions}>
+      {/* ── Sticky footer CTA ── */}
+      {(isReceipt || (!incoming && !isCard)) && (
+        <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
           {isReceipt ? (
             <PrimaryButton
               onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
               label="Share receipt"
-              style={styles.actionBtn}
+              style={styles.footerBtn}
             />
           ) : (
-            !incoming && !isCard && (
-              <PrimaryButton
-                onPress={() => navigation.navigate('SendMoney', {
-                  walletId: tx.walletId,
-                  contactName: tx.recipientName,
-                  prefillSendAmount: Math.abs(tx.amount) - (tx.fee ?? 0),
-                })}
-                label="Repeat transfer"
-                style={styles.actionBtn}
-              />
-            )
+            <PrimaryButton
+              onPress={() => navigation.navigate('SendMoney', {
+                walletId: tx.walletId,
+                contactName: tx.recipientName,
+                prefillSendAmount: Math.abs(tx.amount) - (tx.fee ?? 0),
+              })}
+              label="Repeat transfer"
+              style={styles.footerBtn}
+            />
           )}
-          <SecondaryButton onPress={() => {}} style={styles.helpBtn}>
-            <LifeBuoy size={16} color={colors.textSecondary} strokeWidth={2} />
-            <Text style={styles.helpBtnText}>Get help with this transaction</Text>
-          </SecondaryButton>
         </View>
-      </ScrollView>
+      )}
     </View>
   );
 }
@@ -184,15 +187,18 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
 
   navbar: {
-    flexDirection: 'row', alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: H_PAD, paddingVertical: spacing.md,
   },
+  navLeft: { zIndex: 1 },
+  navRight: { zIndex: 1 },
   navCloseBtn: {
     width: 36, height: 36,
     alignItems: 'center', justifyContent: 'center', marginLeft: -6,
   },
   navTitle: {
-    flex: 1, textAlign: 'center',
+    position: 'absolute', left: 0, right: 0,
+    textAlign: 'center',
     fontSize: typography.md, fontWeight: typography.semibold, color: colors.textPrimary,
   },
 
@@ -242,16 +248,19 @@ const styles = StyleSheet.create({
   },
   refundText: { fontSize: typography.sm, color: colors.failed, lineHeight: 20, opacity: 0.75 },
 
-  actions: {
-    paddingHorizontal: H_PAD, paddingTop: spacing.md, gap: spacing.sm,
-  },
-  actionBtn: { paddingVertical: spacing.lg },
   helpBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: spacing.sm, paddingVertical: spacing.lg,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 6,
   },
   helpBtnText: {
-    fontSize: typography.base, fontWeight: typography.medium, color: colors.textSecondary,
+    fontSize: 11, fontWeight: typography.semibold, color: colors.textPrimary,
+  },
+  footer: {
+    paddingHorizontal: H_PAD, paddingTop: spacing.md,
+    borderTopWidth: 1, borderTopColor: colors.borderSubtle,
+  },
+  footerBtn: {
+    paddingVertical: spacing.lg,
   },
 
   notFound: { flex: 1, alignItems: 'center', justifyContent: 'center' },

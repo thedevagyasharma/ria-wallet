@@ -32,6 +32,7 @@ export type RootStackParamList = {
   TransactionDetail: { txId: string; mode?: 'detail' | 'receipt' };
   // Send money
   SendMoney: { walletId?: string; contactName?: string; prefillSendAmount?: number };
+  ConfirmTransfer: undefined;
   // Receive money
   ReceiveMoney: { walletId: string };
 };

@@ -37,7 +37,9 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   Plus,
+  CircleDollarSign,
   SlidersHorizontal,
+  Settings,
   Eye,
   EyeOff,
 } from 'lucide-react-native';
@@ -49,6 +51,7 @@ import { useCardStore } from '../../stores/useCardStore';
 import { usePrefsStore } from '../../stores/usePrefsStore';
 import { getCurrency, formatAmount } from '../../data/currencies';
 import { MOCK_PROFILE } from '../../data/mockData';
+import PrimaryButton from '../../components/PrimaryButton';
 import SecondaryButton from '../../components/SecondaryButton';
 import ActivityItem from '../../components/ActivityItem';
 import FlatButton from '../../components/FlatButton';
@@ -302,7 +305,7 @@ function WalletHeaderGradient({ wallet, index, scrollX }: {
   );
 }
 
-// ─── Liquid dot — width tracks scroll position, color is the wallet's own accent ─
+// ─── Liquid dot — width tracks scroll position ──────────────────────────────
 
 const DOT_W_INACTIVE = 5;
 const DOT_W_ACTIVE   = 18;
@@ -312,12 +315,11 @@ function WalletDot({ index, scrollX, accentColor }: {
   scrollX: SharedValue<number>;
   accentColor: string;
 }) {
-  const inactive = colors.border;
   const dotStyle = useAnimatedStyle(() => {
     const t = Math.max(0, 1 - Math.abs(scrollX.value / W - index));
     return {
       width: DOT_W_INACTIVE + (DOT_W_ACTIVE - DOT_W_INACTIVE) * t,
-      backgroundColor: interpolateColor(t, [0, 1], [inactive, accentColor]),
+      backgroundColor: interpolateColor(t, [0, 1], [colors.border, accentColor]),
     };
   });
   return <Animated.View style={[styles.dot, dotStyle]} />;
@@ -699,7 +701,6 @@ export default function WalletsScreen() {
   const handleStub       = useCallback(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light), []);
   const handleAddWallet  = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); navigation.navigate('CurrencyPicker'); }, [navigation]);
   const handleSeeAll     = useCallback(() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); const w = activeRef.current; if (w) navigation.navigate('Activity', { walletId: w.id }); }, [navigation]);
-
   const handleCardTapAtY = useCallback((tapY: number) => {
     const w = activeRef.current;
     if (!w) return;
@@ -799,6 +800,9 @@ export default function WalletsScreen() {
             <Text style={styles.greetingName}>{MOCK_PROFILE.name}</Text>
           </View>
           <View style={styles.greetingRight}>
+            <FlatButton onPress={handleCustomize} style={styles.customizeBtn}>
+              <Settings size={18} color={colors.textSecondary} strokeWidth={1.8} />
+            </FlatButton>
             <SecondaryButton onPress={handleAddWallet} style={styles.addBtn}>
               <Plus size={11} color={colors.textPrimary} strokeWidth={2.5} />
               <Text style={styles.addBtnText}>Wallet</Text>
@@ -876,11 +880,52 @@ export default function WalletsScreen() {
 
         {/* ── Actions ───────────────────────────────────────────────────── */}
         <View style={styles.actions}>
-          <ActionBtn icon={<ArrowUpRight      size={22} color={iconAccent} strokeWidth={1.8} />} label="Send"      onPress={handleSend}      circleStyle={animatedCircleStyle} />
-          <ActionBtn icon={<ArrowDownLeft    size={22} color={iconAccent} strokeWidth={1.8} />} label="Receive"   onPress={handleReceive}   circleStyle={animatedCircleStyle} />
-          <ActionBtn icon={<Plus             size={22} color={iconAccent} strokeWidth={1.8} />} label="Add"       onPress={handleStub}      circleStyle={animatedCircleStyle} />
-          <ActionBtn icon={<SlidersHorizontal size={22} color={iconAccent} strokeWidth={1.8} />} label="Customize" onPress={handleCustomize} circleStyle={animatedCircleStyle} />
+          <PrimaryButton onPress={handleSend} style={styles.sendBtn}>
+            <View style={styles.actionBtnContent}>
+              <ArrowUpRight size={18} color="#441306" strokeWidth={2.2} />
+              <Text style={styles.sendBtnLabel}>Send Money</Text>
+            </View>
+          </PrimaryButton>
+          <View style={styles.actionSecondaryRow}>
+            <SecondaryButton onPress={handleReceive} style={styles.secondaryBtn}>
+              <View style={styles.actionBtnContent}>
+                <ArrowDownLeft size={16} color={colors.textPrimary} strokeWidth={2} />
+                <Text style={styles.secondaryBtnLabel}>Receive</Text>
+              </View>
+            </SecondaryButton>
+            <SecondaryButton onPress={handleStub} style={styles.secondaryBtn}>
+              <View style={styles.actionBtnContent}>
+                <CircleDollarSign size={16} color={colors.textPrimary} strokeWidth={2} />
+                <Text style={styles.secondaryBtnLabel}>Top Up</Text>
+              </View>
+            </SecondaryButton>
+          </View>
         </View>
+
+        {/* ── Activity ──────────────────────────────────────────────────── */}
+        <View style={styles.activityHead}>
+          <Text style={styles.activityLabel}>Recent activity</Text>
+        </View>
+
+        {walletTxs.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>No activity yet</Text>
+            <Text style={styles.emptySub}>Send or receive to see transactions here.</Text>
+          </View>
+        ) : (
+          <>
+            {previewTxs.map((tx) => (
+              <ActivityItem
+                key={tx.id}
+                tx={tx}
+                onPress={() => navigation.navigate('TransactionDetail', { txId: tx.id })}
+              />
+            ))}
+            <SecondaryButton onPress={handleSeeAll} style={styles.seeAllBtn}>
+              <Text style={styles.seeAllText}>See all activity</Text>
+            </SecondaryButton>
+          </>
+        )}
 
         {/* ── Cards section ─────────────────────────────────────────────── */}
         <View
@@ -891,7 +936,7 @@ export default function WalletsScreen() {
             <Text style={styles.cardLabel}>Cards</Text>
             <Pressable onPress={handleCards} hitSlop={8}>
               <Text style={[styles.cardViewAll, { color: accent }]}>
-                {activeCards.length > 0 ? 'View all  →' : 'Add card  →'}
+                {activeCards.length > 0 ? 'View all  →' : 'New card  →'}
               </Text>
             </Pressable>
           </View>
@@ -923,31 +968,6 @@ export default function WalletsScreen() {
             </Animated.View>
           </GestureDetector>
         </View>
-
-        {/* ── Activity ──────────────────────────────────────────────────── */}
-        <View style={styles.activityHead}>
-          <Text style={styles.activityLabel}>Recent activity</Text>
-        </View>
-
-        {walletTxs.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>No activity yet</Text>
-            <Text style={styles.emptySub}>Send or receive to see transactions here.</Text>
-          </View>
-        ) : (
-          <>
-            {previewTxs.map((tx) => (
-              <ActivityItem
-                key={tx.id}
-                tx={tx}
-                onPress={() => navigation.navigate('TransactionDetail', { txId: tx.id })}
-              />
-            ))}
-            <SecondaryButton onPress={handleSeeAll} style={styles.seeAllBtn}>
-              <Text style={styles.seeAllText}>See all activity</Text>
-            </SecondaryButton>
-          </>
-        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -1127,10 +1147,41 @@ const styles = StyleSheet.create({
   dot: { height: 5, borderRadius: radius.full },
 
   // ── Actions ──
+  customizeBtn: {
+    padding: 6,
+  },
   actions: {
-    flexDirection: 'row',
     paddingHorizontal: H_PAD,
+    paddingTop: 8,
     paddingBottom: 28,
+    gap: 10,
+  },
+  sendBtn: {
+    paddingVertical: 16,
+    marginBottom: 4,
+  },
+  actionBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  sendBtnLabel: {
+    fontSize: typography.md,
+    fontWeight: typography.bold,
+    color: '#441306',
+  },
+  actionSecondaryRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  secondaryBtn: {
+    flex: 1,
+    paddingVertical: 14,
+  },
+  secondaryBtnLabel: {
+    fontSize: typography.sm,
+    fontWeight: typography.semibold,
+    color: colors.textPrimary,
   },
   actionBtn: { flex: 1, alignItems: 'center', gap: 8 },
   actionCircle: {

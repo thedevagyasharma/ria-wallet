@@ -101,7 +101,7 @@ export function StepRow({ step, isLast }: { step: Step; isLast: boolean }) {
         {step.status === 'pending' && <PendingIcon />}
         {!isLast && <View style={[stepStyles.stepConnector, { backgroundColor: connectorColor }]} />}
       </View>
-      <View style={stepStyles.stepBody}>
+      <View style={[stepStyles.stepBody, isLast && { paddingBottom: 0 }]}>
         <View style={stepStyles.stepTextWrap}>
           <View style={stepStyles.stepLabelRow}>
             <Text style={[stepStyles.stepLabel, step.status === 'pending' && stepStyles.stepLabelMuted]}>

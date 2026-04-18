@@ -163,7 +163,7 @@ export default function CardStackPreview({ cards, accent, onPressCard, showHeade
         <View style={styles.head}>
           <Text style={styles.label}>Cards</Text>
           <Text style={[styles.viewAll, { color: accent }]}>
-            {count > 0 ? 'View all  →' : 'Add card  →'}
+            {count > 0 ? 'View all  →' : 'New card  →'}
           </Text>
         </View>
       )}
@@ -174,7 +174,7 @@ export default function CardStackPreview({ cards, accent, onPressCard, showHeade
             styles.empty,
             { borderColor: alpha(accent, 0.25), backgroundColor: alpha(accent, 0.04) },
           ]}>
-            <Text style={[styles.emptyText, { color: accent }]}>+ Add your first card</Text>
+            <Text style={[styles.emptyText, { color: accent }]}>+ Create a new card</Text>
           </View>
         </Pressable>
       ) : (

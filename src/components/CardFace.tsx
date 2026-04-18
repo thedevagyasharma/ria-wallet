@@ -394,31 +394,39 @@ function MiniTooltip({ visible }: { visible: boolean }) {
 // height leaves a small gap on the right, which is the desired left-aligned look.
 
 const CARD_PADDING = 18;
-const OVERLAY_H = CARD_HEIGHT - 4 - CARD_PADDING * 2;  // content-area height
-const OVERLAY_W = OVERLAY_H * (294 / 196);              // preserve source aspect ratio
+const OVERLAY_ASPECT = 294 / 196;
 
-function RiaLogoWatermark() {
+const BLEND_OVERRIDES: Record<string, string> = {
+  '#f97316': 'color-dodge',  // Classic
+  '#71717a': 'lighten',      // Metal
+  '#CDE896': 'color-burn',   // Matcha
+};
+
+function RiaLogoWatermark({ cardWidth, color }: { cardWidth: number; color: string }) {
+  const cardH = cardWidth / 1.586;
+  const overlayH = cardH - 4 - CARD_PADDING * 2;
+  const overlayW = overlayH * OVERLAY_ASPECT;
+  const blendMode = BLEND_OVERRIDES[color] ?? 'color-dodge';
+
   return (
-    <View pointerEvents="none">
+    <View
+      style={[StyleSheet.absoluteFill, { mixBlendMode: blendMode, opacity: 0.8 } as any]}
+      pointerEvents="none"
+    >
       <Image
         source={require('../../assets/ria-card-overlay.png')}
-        style={watermarkStyles.overlay}
+        style={{
+          position: 'absolute',
+          top: CARD_PADDING,
+          left: CARD_PADDING,
+          width: overlayW,
+          height: overlayH,
+        }}
         resizeMode="stretch"
       />
     </View>
   );
 }
-
-const watermarkStyles = StyleSheet.create({
-  overlay: {
-    position: 'absolute',
-    top: CARD_PADDING,
-    left: CARD_PADDING,
-    width: OVERLAY_W,
-    height: OVERLAY_H,
-    mixBlendMode: 'soft-light',
-  } as any,
-});
 
 // ─── Front face ──────────────────────────────────────────────────────────────
 
@@ -461,7 +469,7 @@ export function CardFront({
   return (
     <CardSurface card={card} compact={compact} width={overrideW}>
       {isFrozen && !isExpired && <View style={styles.frozenOverlay} />}
-      {card.branded && <RiaLogoWatermark />}
+      {card.branded && <RiaLogoWatermark cardWidth={overrideW ?? CARD_WIDTH} color={card.color} />}
 
       {/* ── Top: name + type badge + state badge ── */}
       <View style={styles.topRow}>

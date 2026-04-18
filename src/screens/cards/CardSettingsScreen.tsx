@@ -289,6 +289,7 @@ function SettingsRow({
   onToggle,
   toggleDisabled,
   destructive,
+  hideChevron,
   isLast,
 }: {
   icon: React.ReactNode;
@@ -301,6 +302,7 @@ function SettingsRow({
   onToggle?: (v: boolean) => void;
   toggleDisabled?: boolean;
   destructive?: boolean;
+  hideChevron?: boolean;
   isLast?: boolean;
 }) {
   return (
@@ -335,7 +337,7 @@ function SettingsRow({
             <Text style={styles.settingsRowValue}>{value}</Text>
             <ChevronRight size={16} color={colors.textMuted} strokeWidth={2} />
           </View>
-        ) : !destructive ? (
+        ) : !destructive && !hideChevron ? (
           <ChevronRight size={16} color={colors.textMuted} strokeWidth={2} />
         ) : null}
       </Pressable>
@@ -691,11 +693,13 @@ export default function CardSettingsScreen({ route }: RootStackProps<'CardSettin
         </View>
 
         {/* Danger zone */}
-        <View style={[styles.section, styles.sectionLast]}>
-          <Text style={styles.sectionTitle}>Danger zone</Text>
+        <View style={[styles.section, styles.sectionLast, styles.dangerSection, { marginTop: spacing.sm }]}>
+          <Text style={[styles.sectionTitle, { color: colors.failed }]}>Danger zone</Text>
           <SettingsRow
             icon={<AlertTriangle size={17} color="#d97706" strokeWidth={1.8} />}
             label={card.type === 'virtual' || card.type === 'single-use' ? 'Report compromised' : 'Report lost or stolen'}
+            sublabel="Block and replace card"
+            hideChevron
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               setShowLostStolen(true);
@@ -704,6 +708,7 @@ export default function CardSettingsScreen({ route }: RootStackProps<'CardSettin
           <SettingsRow
             icon={<Trash2 size={17} color={colors.failed} strokeWidth={1.8} />}
             label="Remove card"
+            sublabel="Permanently removes card"
             destructive
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -773,11 +778,7 @@ export default function CardSettingsScreen({ route }: RootStackProps<'CardSettin
         icon={<AlertTriangle size={26} color={colors.failed} strokeWidth={1.8} />}
         iconBg={colors.failedSubtle}
         title={card.type !== 'physical' ? 'Report card compromised?' : 'Report lost or stolen?'}
-        body={
-          card.type !== 'physical'
-            ? `${card.name} ···· ${card.last4} will be permanently blocked and a new card will be issued. This cannot be undone.`
-            : `${card.name} ···· ${card.last4} will be permanently blocked and a replacement card will be issued. This cannot be undone.`
-        }
+        body={`${card.name} ···· ${card.last4} will be blocked immediately and you won't be able to use it for payments. ${card.type === 'physical' ? 'A replacement card will be issued.' : 'You can create a new virtual card afterwards.'} This action cannot be reversed.`}
         confirmLabel="Report card"
         destructive
         onConfirm={handleLostStolenConfirm}
@@ -790,7 +791,7 @@ export default function CardSettingsScreen({ route }: RootStackProps<'CardSettin
         icon={<Trash2 size={26} color={colors.failed} strokeWidth={1.8} />}
         iconBg={colors.failedSubtle}
         title="Remove card?"
-        body={`${card.name} ···· ${card.last4} will be permanently removed from your wallet. This cannot be undone.`}
+        body={`${card.name} ···· ${card.last4} will be permanently removed. You won't be able to make payments with this card and no replacement will be issued.`}
         confirmLabel="Remove card"
         destructive
         onConfirm={handleRemoveConfirm}
@@ -892,6 +893,12 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: spacing.xs,
+  },
+  dangerSection: {
+    borderLeftWidth: 4,
+    borderLeftColor: colors.failed,
+    paddingLeft: spacing.xl - 4,
+    borderBottomWidth: 0,
   },
 
   // ── Reveal row ──

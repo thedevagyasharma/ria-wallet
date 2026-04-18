@@ -39,6 +39,14 @@ export function getFee(amount: number, fromCurrency: string): number {
   return Math.min(amount * 0.01, 9.99 * (USD_RATES[fromCurrency] ?? 1));
 }
 
+/** Human-readable explanation of the fee tier that applies to a given amount. */
+export function getFeeTierLabel(amount: number, fromCurrency: string): string {
+  const usdAmount = amount / (USD_RATES[fromCurrency] ?? 1);
+  if (usdAmount < 50)  return 'Flat fee for transfers under $50';
+  if (usdAmount < 200) return 'Flat fee for transfers $50–$199';
+  return '1% fee for transfers $200+ (max $9.99)';
+}
+
 /** Estimated delivery time string. */
 export function getETA(fromCurrency: string, toCurrency: string): string {
   if (fromCurrency === toCurrency) return 'Instant';

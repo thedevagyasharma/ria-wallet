@@ -260,7 +260,10 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
   const currency = wallet ? getCurrency(wallet.currency) : null;
   const walletCards = cards.filter((c) => c.walletId === walletId);
 
-  const [activeIndex, setActiveIndex] = useState(Math.max(0, Math.min(initialCardIndex, walletCards.length - 1)));
+  const resolvedInitialIndex = justAddedCardId
+    ? Math.max(0, walletCards.findIndex((c) => c.id === justAddedCardId))
+    : Math.max(0, Math.min(initialCardIndex, walletCards.length - 1));
+  const [activeIndex, setActiveIndex] = useState(resolvedInitialIndex);
   const [numberRevealed, setNumberRevealed] = useState(false);
   const [cvvRevealed, setCvvRevealed] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -310,10 +313,10 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
   }, []);
 
   useEffect(() => {
-    if (initialCardIndex > 0 && walletCards.length > 1) {
+    if (resolvedInitialIndex > 0 && walletCards.length > 1) {
       setTimeout(() => {
         carouselRef.current?.scrollToOffset({
-          offset: Math.min(initialCardIndex, walletCards.length - 1) * SNAP,
+          offset: resolvedInitialIndex * SNAP,
           animated: false,
         });
       }, 50);
@@ -404,7 +407,7 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
         {walletCards.length > 0 ? (
           <SecondaryButton onPress={handleAddCard} style={styles.addBtn}>
             <Plus size={11} color={colors.textPrimary} strokeWidth={2.5} />
-            <Text style={styles.addBtnText}>Card</Text>
+            <Text style={styles.addBtnText}>New</Text>
           </SecondaryButton>
         ) : (
           <View style={styles.addBtn} />
@@ -421,11 +424,11 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
             />
             <Text style={styles.emptyTitle}>No cards yet</Text>
             <Text style={styles.emptySub}>
-              Add a card to start spending from this wallet.
+              Create a card to start spending from this wallet.
             </Text>
           </View>
           <PrimaryButton
-            label="Add your first card"
+            label="Create a new card"
             onPress={handleAddCard}
             style={styles.emptyAddBtn}
           />

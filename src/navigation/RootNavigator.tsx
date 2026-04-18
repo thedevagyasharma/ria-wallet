@@ -25,6 +25,7 @@ import TransactionDetailScreen from '../screens/activity/TransactionDetailScreen
 
 // Send screens
 import SendMoneyScreen from '../screens/send/SendMoneyScreen';
+import ConfirmTransferScreen from '../screens/send/ConfirmTransferScreen';
 
 // Receive screens
 import ReceiveMoneyScreen from '../screens/receive/ReceiveMoneyScreen';
@@ -182,6 +183,7 @@ export default function RootNavigator() {
         {/* Send money — fullScreenModal slides up/down natively, keeps Main composited.
          * "View transfer" replaces SendMoney with TransactionDetail (receipt mode). */}
         <Stack.Screen name="SendMoney" component={SendMoneyScreen} />
+        <Stack.Screen name="ConfirmTransfer" component={ConfirmTransferScreen} />
         <Stack.Screen name="ReceiveMoney" component={ReceiveMoneyScreen} />
 
         {/* Card flows */}

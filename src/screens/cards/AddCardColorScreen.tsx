@@ -128,7 +128,7 @@ export default function AddCardColorScreen({ route }: RootStackProps<'AddCardCol
     navigation.navigate('AddCardReview', { cardId });
   }, [addCard, navigation, walletId, name, selectedColor, branded, finish, cardType]);
 
-  const btnLabel = cardType === 'physical' ? 'Confirm & pay $4.99' : 'Add card';
+  const btnLabel = cardType === 'physical' ? 'Confirm & pay $4.99' : 'Create card';
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>

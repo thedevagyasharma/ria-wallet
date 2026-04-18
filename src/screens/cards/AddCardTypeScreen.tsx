@@ -86,7 +86,7 @@ export default function AddCardTypeScreen({ route }: RootStackProps<'AddCardType
         <View style={styles.backBtn} />
       </View>
 
-      <Text style={styles.subtitle}>Choose the type of card you'd like to add to this wallet.</Text>
+      <Text style={styles.subtitle}>Choose the type of card you'd like to create.</Text>
 
       <ScrollView contentContainerStyle={styles.list}>
         {OPTIONS.map((opt) => (
