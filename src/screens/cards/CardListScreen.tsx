@@ -277,8 +277,9 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
 
   useEffect(() => {
     if (!justAddedCardId) return;
+    const justAddedCard = cards.find((c) => c.id === justAddedCardId);
     const timer = setTimeout(() => {
-      setShowWalletPrompt(true);
+      if (justAddedCard?.type !== 'single-use') setShowWalletPrompt(true);
       clearJustAddedCardId();
     }, 600);
     return () => clearTimeout(timer);

@@ -12,7 +12,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ChevronLeft } from 'lucide-react-native';
 
-import { colors, typography, spacing, radius } from '../../theme';
+import { colors, typography, spacing } from '../../theme';
 import { CURRENCIES } from '../../data/currencies';
 import FlagIcon from '../../components/FlagIcon';
 import Chip from '../../components/Chip';
@@ -51,7 +51,7 @@ export default function CurrencyPickerScreen() {
         keyExtractor={(c) => c.code}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
-        contentContainerStyle={styles.list}
+        contentContainerStyle={styles.listContent}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         renderItem={({ item }) => {
           const owned = ownedCodes.has(item.code);
@@ -61,7 +61,7 @@ export default function CurrencyPickerScreen() {
               disabled={owned}
               style={({ pressed }) => [
                 styles.row,
-                pressed && !owned && { backgroundColor: colors.surfaceHigh },
+                pressed && !owned && styles.rowPressed,
               ]}
             >
               <FlagIcon code={item.flag} size={24} style={styles.rowFlag} />
@@ -104,16 +104,17 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
 
-  list: { paddingHorizontal: spacing.xl, paddingBottom: spacing.xxxl },
-  separator: { height: 1, backgroundColor: colors.borderSubtle },
+  listContent: { paddingBottom: spacing.xxxl },
+  separator: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
 
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
     gap: spacing.md,
-    borderRadius: radius.sm,
   },
+  rowPressed: { backgroundColor: colors.surface },
   rowFlag: { width: 36, alignSelf: 'center' },
   rowText: { flex: 1 },
   rowName: { fontSize: typography.base, color: colors.textPrimary, fontWeight: typography.medium },

@@ -2299,3 +2299,35 @@ The old stub `CardListScreen.tsx` (which returned `null`) was deleted to free th
 **Decision:** Light impact haptic on the Done/Close action that navigates back to wallets.
 
 **Reason:** Every other interactive element on the screen has haptic feedback. The dismissal action was the only gap.
+
+---
+
+### 239. AppLockGate — fade + scale exit animation
+
+**Decision:** On successful unlock, the lock overlay fades out over 260ms while scaling up from 1.0 → 1.03, then unmounts. Re-lock on background is instant (no entry animation).
+
+**Reason:** Hard-cutting on unlock felt jarring. A subtle fade-out lets the app content emerge naturally. The slight scale-up matches the existing animation vocabulary (drum flips, countdown ring). No entry animation on re-lock — snapping back instantly is the right feel when protecting content.
+
+---
+
+### 240. Single-use cards — Apple/Google Wallet disabled
+
+**Decision:** The "Add to Wallet" badge is hidden on single-use card settings, and the post-add wallet prompt is suppressed when a single-use card is created.
+
+**Reason:** Single-use cards are for one-time online/manual-entry transactions. Apple/Google Wallet is a tap-to-pay surface for persistent cards. Provisioning takes time and the card would appear as a dead entry in Wallet after its single use.
+
+---
+
+### 241. Card info row — Status chip always visible
+
+**Decision:** The Status InfoRow in CardSettingsScreen is always rendered, showing Active (green), Frozen (blue-800 bg / blue-200 text, no border), or Expired (red) chips.
+
+**Reason:** Previously the row was conditionally hidden when the card was frozen or expired — the states most worth surfacing. The frozen chip uses the same blue palette as the card-face badge rather than the app's amber pending color, and has no border to match the card-face aesthetic.
+
+---
+
+### 242. Prototype controls — Frozen added to card status seg control
+
+**Decision:** The prototype "Card status" seg control now has three options: Active / Frozen / Expired. Switching states clears conflicting flags (e.g. selecting Expired also unfreezes the card).
+
+**Reason:** Frozen was only toggle-accessible via the real freeze flow, making it hard to prototype the frozen card state quickly.

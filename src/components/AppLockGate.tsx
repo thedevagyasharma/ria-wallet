@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   AppState,
   AppStateStatus,
   Image,
@@ -26,16 +27,34 @@ const METHOD_COPY: Record<
 };
 
 export default function AppLockGate({ children }: { children: React.ReactNode }) {
-  const [locked,     setLocked]     = useState(true);
-  const [authMethod, setAuthMethod] = useState<AuthMethod>('faceId');
-  const [errored,    setErrored]    = useState(false);
-  const [busy,       setBusy]       = useState(false);
+  const [locked,        setLocked]        = useState(true);
+  const [overlayVisible, setOverlayVisible] = useState(true);
+  const [authMethod,    setAuthMethod]    = useState<AuthMethod>('faceId');
+  const [errored,       setErrored]       = useState(false);
+  const [busy,          setBusy]          = useState(false);
+
+  const animValue = useRef(new Animated.Value(1)).current;
 
   const appStateRef       = useRef(AppState.currentState);
   const wentBackgroundRef = useRef(false);
 
   // Mock always presents as Face ID for demo purposes
   useEffect(() => { setAuthMethod('faceId'); }, []);
+
+  useEffect(() => {
+    if (locked) {
+      animValue.setValue(1);
+      setOverlayVisible(true);
+    } else {
+      Animated.timing(animValue, {
+        toValue: 0,
+        duration: 260,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setOverlayVisible(false);
+      });
+    }
+  }, [locked]);
 
   const handleUnlock = useCallback(async () => {
     if (busy) return;
@@ -92,8 +111,21 @@ export default function AppLockGate({ children }: { children: React.ReactNode })
     <View style={{ flex: 1 }}>
       {children}
 
-      {locked && (
-        <View style={StyleSheet.absoluteFill}>
+      {overlayVisible && (
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              opacity: animValue,
+              transform: [{
+                scale: animValue.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [1.03, 1],
+                }),
+              }],
+            },
+          ]}
+        >
           <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
             <View style={styles.content}>
               <Image
@@ -124,7 +156,7 @@ export default function AppLockGate({ children }: { children: React.ReactNode })
               </PrimaryButton>
             </View>
           </SafeAreaView>
-        </View>
+        </Animated.View>
       )}
     </View>
   );

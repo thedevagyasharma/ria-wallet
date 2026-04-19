@@ -18,6 +18,7 @@ import {
   FileText,
   Search,
   Globe,
+  Check,
 } from 'lucide-react-native';
 
 import { colors, typography, spacing, radius } from '../../theme';
@@ -297,7 +298,7 @@ export default function ProfileScreen() {
       <BottomSheet visible={discoverSheet} onClose={() => setDiscoverSheet(false)}>
         <View style={styles.discoverSheet}>
           <Text style={styles.discoverTitle}>Who can find me</Text>
-          {DISCOVERABILITY_OPTIONS.map((opt) => (
+          {DISCOVERABILITY_OPTIONS.map((opt, i) => (
             <Pressable
               key={opt}
               onPress={() => {
@@ -308,6 +309,7 @@ export default function ProfileScreen() {
               style={({ pressed }) => [
                 styles.discoverOption,
                 discoverability === opt && styles.discoverOptionActive,
+                i < DISCOVERABILITY_OPTIONS.length - 1 && styles.discoverOptionBorder,
                 pressed && { opacity: 0.6 },
               ]}
             >
@@ -317,6 +319,7 @@ export default function ProfileScreen() {
               ]}>
                 {DISCOVERABILITY_LABELS[opt]}
               </Text>
+              {discoverability === opt && <Check size={16} color={colors.textPrimary} strokeWidth={2.5} />}
             </Pressable>
           ))}
         </View>
@@ -459,7 +462,7 @@ const styles = StyleSheet.create({
   },
 
   // ── Discoverability sheet ──
-  discoverSheet: { width: '100%', gap: spacing.xs },
+  discoverSheet: { width: '100%' },
   discoverTitle: {
     fontSize: typography.lg,
     fontWeight: typography.bold,
@@ -467,12 +470,19 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   discoverOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingVertical: 14,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
+    paddingHorizontal: spacing.xl,
+    marginHorizontal: -spacing.xl,
   },
   discoverOptionActive: {
-    backgroundColor: alpha(colors.brand, 0.08),
+    backgroundColor: colors.surface,
+  },
+  discoverOptionBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
   discoverOptionText: {
     fontSize: typography.base,
@@ -480,7 +490,7 @@ const styles = StyleSheet.create({
     fontWeight: typography.medium,
   },
   discoverOptionTextActive: {
-    color: colors.brand,
+    color: colors.textPrimary,
     fontWeight: typography.semibold,
   },
 

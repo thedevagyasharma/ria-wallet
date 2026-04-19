@@ -27,17 +27,16 @@ const RIA_PALETTE = [
 
 // Full solid color palette
 const SOLID_PALETTE = [
+  { label: 'Blaze',     hex: '#f97316', badgeTheme: 'default'  as BadgeTheme },
   { label: 'Midnight',  hex: '#1a1f3c', badgeTheme: 'inverted' as BadgeTheme },
   { label: 'Ocean',     hex: '#0f4c75', badgeTheme: 'inverted' as BadgeTheme },
   { label: 'Plum',      hex: '#2c1a38', badgeTheme: 'inverted' as BadgeTheme },
   { label: 'Forest',    hex: '#1c3020', badgeTheme: 'inverted' as BadgeTheme },
   { label: 'Slate',     hex: '#1e293b', badgeTheme: 'inverted' as BadgeTheme },
-  { label: 'Crimson',   hex: '#7f1d1d', badgeTheme: 'inverted' as BadgeTheme },
   { label: 'Amber',     hex: '#78350f', badgeTheme: 'inverted' as BadgeTheme },
   { label: 'Onyx',      hex: '#09090b', badgeTheme: 'inverted' as BadgeTheme },
   { label: 'Cobalt',    hex: '#1e3a5f', badgeTheme: 'inverted' as BadgeTheme },
   { label: 'Charcoal',  hex: '#27272a', badgeTheme: 'inverted' as BadgeTheme },
-  { label: 'Blaze',     hex: '#f97316', badgeTheme: 'default'  as BadgeTheme },
 ];
 
 const SWATCH = 52;
@@ -155,8 +154,9 @@ export default function AddCardColorScreen({ route }: RootStackProps<'AddCardCol
             const active = branded && selectedRia === i;
             return (
               <Pressable key={p.hex} onPress={() => handleRiaSelect(i)} style={styles.swatchWrap}>
-                <View style={[styles.swatch, { backgroundColor: p.hex }, active && styles.swatchActive]}>
+                <View style={[styles.swatch, { backgroundColor: p.hex }]}>
                   {active && <Check size={16} color={p.badgeTheme === 'default' ? colors.textPrimary : '#fff'} strokeWidth={2.5} />}
+                  {active && <View style={styles.swatchInsetRing} pointerEvents="none" />}
                 </View>
                 <Text style={[styles.swatchLabel, active && styles.swatchLabelActive]}>{p.label}</Text>
               </Pressable>
@@ -173,8 +173,9 @@ export default function AddCardColorScreen({ route }: RootStackProps<'AddCardCol
             const active = !branded && selectedColor === p.hex;
             return (
               <Pressable key={p.hex} onPress={() => handleSolidSelect(p.hex)} style={styles.swatchWrap}>
-                <View style={[styles.swatch, { backgroundColor: p.hex }, active && styles.swatchActive]}>
+                <View style={[styles.swatch, { backgroundColor: p.hex }]}>
                   {active && <Check size={16} color={p.badgeTheme === 'default' ? colors.textPrimary : '#fff'} strokeWidth={2.5} />}
+                  {active && <View style={styles.swatchInsetRing} pointerEvents="none" />}
                 </View>
                 <Text style={[styles.swatchLabel, active && styles.swatchLabelActive]}>{p.label}</Text>
               </Pressable>
@@ -326,9 +327,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
-  swatchActive: {
-    borderWidth: 2.5,
+  swatchInsetRing: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: radius.md,
+    borderWidth: 2,
     borderColor: colors.brand,
   },
   swatchLabel: {

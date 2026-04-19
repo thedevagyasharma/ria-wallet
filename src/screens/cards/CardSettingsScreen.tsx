@@ -552,15 +552,17 @@ export default function CardSettingsScreen({ route }: RootStackProps<'CardSettin
             />
             <Animated.View style={[styles.frostOverlay, frostStyle]} pointerEvents="none" />
           </View>
-          <Pressable
-            onPress={() => { Haptics.selectionAsync(); }}
-            style={({ pressed }) => [styles.walletBadgeRow, pressed && { opacity: 0.7 }]}
-          >
-            {Platform.OS === 'ios'
-              ? <AppleWalletBadge width={160} height={50} />
-              : <Image source={GoogleWalletBadge} style={styles.googleBadge} resizeMode="contain" />
-            }
-          </Pressable>
+          {card.type !== 'single-use' && (
+            <Pressable
+              onPress={() => { Haptics.selectionAsync(); }}
+              style={({ pressed }) => [styles.walletBadgeRow, pressed && { opacity: 0.7 }]}
+            >
+              {Platform.OS === 'ios'
+                ? <AppleWalletBadge width={160} height={50} />
+                : <Image source={GoogleWalletBadge} style={styles.googleBadge} resizeMode="contain" />
+              }
+            </Pressable>
+          )}
         </View>
 
         {/* Card settings */}
@@ -676,13 +678,30 @@ export default function CardSettingsScreen({ route }: RootStackProps<'CardSettin
               </View>
             }
           />
-          {!isExpired && !card.frozen && (
-            <>
-              <View style={styles.infoDivider} />
-              <InfoRow
-                icon={<Activity size={17} color={colors.textSecondary} strokeWidth={1.8} />}
-                label="Status"
-                right={
+          <>
+            <View style={styles.infoDivider} />
+            <InfoRow
+              icon={<Activity size={17} color={colors.textSecondary} strokeWidth={1.8} />}
+              label="Status"
+              right={
+                isExpired ? (
+                  <Chip
+                    label="Expired"
+                    color={colors.failed}
+                    bg={colors.failedSubtle}
+                    size="sm"
+                    icon={<AlertTriangle size={10} color={colors.failed} strokeWidth={2.5} />}
+                  />
+                ) : card.frozen ? (
+                  <Chip
+                    label="Frozen"
+                    color="#bfdbfe"
+                    bg="#1e40af"
+                    size="sm"
+                    border={false}
+                    icon={<Snowflake size={10} color="#bfdbfe" />}
+                  />
+                ) : (
                   <Chip
                     label="Active"
                     color={colors.success}
@@ -690,10 +709,10 @@ export default function CardSettingsScreen({ route }: RootStackProps<'CardSettin
                     size="sm"
                     icon={<Check size={10} color={colors.success} strokeWidth={2.5} />}
                   />
-                }
-              />
-            </>
-          )}
+                )
+              }
+            />
+          </>
         </View>
 
         {/* Danger zone */}
@@ -727,9 +746,25 @@ export default function CardSettingsScreen({ route }: RootStackProps<'CardSettin
           <Text style={styles.protoTitle}>⚙  Prototype</Text>
           <CardSegControl
             label="Card status"
-            value={isExpired ? 'expired' : 'active'}
-            onChange={(v) => { setExpired(card.id, v === 'expired'); Haptics.selectionAsync(); }}
-            options={[{ label: 'Active', value: 'active' }, { label: 'Expired', value: 'expired' }]}
+            value={isExpired ? 'expired' : card.frozen ? 'frozen' : 'active'}
+            onChange={(v) => {
+              if (v === 'expired') {
+                if (card.frozen) toggleFreeze(card.id);
+                setExpired(card.id, true);
+              } else if (v === 'frozen') {
+                setExpired(card.id, false);
+                if (!card.frozen) toggleFreeze(card.id);
+              } else {
+                setExpired(card.id, false);
+                if (card.frozen) toggleFreeze(card.id);
+              }
+              Haptics.selectionAsync();
+            }}
+            options={[
+              { label: 'Active',  value: 'active'  },
+              { label: 'Frozen',  value: 'frozen'  },
+              { label: 'Expired', value: 'expired' },
+            ]}
           />
           <CardSegControl
             label="Freeze action"
@@ -1010,9 +1045,9 @@ const styles = StyleSheet.create({
   },
   sheetIconBrand: { backgroundColor: colors.brandSubtle },
   sheetTitle: {
-    fontSize: typography.xl,
+    fontSize: typography.md,
     color: colors.textPrimary,
-    fontWeight: typography.bold,
+    fontWeight: typography.semibold,
     textAlign: 'center',
   },
   sheetBody: {
