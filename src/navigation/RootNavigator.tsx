@@ -17,6 +17,7 @@ import { useTabStore } from '../stores/useTabStore';
 // Wallet screens
 import WalletsScreen from '../screens/wallets/WalletsScreen';
 import CurrencyPickerScreen from '../screens/wallets/CurrencyPickerScreen';
+import AddWalletNameScreen from '../screens/wallets/AddWalletNameScreen';
 import WalletReviewScreen from '../screens/wallets/WalletReviewScreen';
 import WalletSuccessScreen from '../screens/wallets/WalletSuccessScreen';
 import WalletSettingsScreen from '../screens/wallets/WalletSettingsScreen';
@@ -177,6 +178,7 @@ export default function RootNavigator() {
         <Stack.Screen name="Activity" component={UnifiedActivityScreen} />
         <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} />
         <Stack.Screen name="CurrencyPicker" component={CurrencyPickerScreen} />
+        <Stack.Screen name="AddWalletName" component={AddWalletNameScreen} />
         <Stack.Screen name="WalletReview" component={WalletReviewScreen} />
         <Stack.Screen name="WalletSuccess" component={WalletSuccessScreen} options={{ animation: 'fade' }} />
 

@@ -20,9 +20,11 @@ const H_PAD = 24;
 
 export default function WalletReviewScreen({ route }: RootStackProps<'WalletReview'>) {
   const navigation = useNavigation<Nav>();
-  const { currency: code } = route.params;
+  const { currency: code, nickname, accentColor } = route.params;
   const currency = getCurrency(code);
   const { addWallet } = useWalletStore();
+
+  const displayName = nickname && nickname !== code ? nickname : undefined;
 
   const handleConfirm = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -33,6 +35,8 @@ export default function WalletReviewScreen({ route }: RootStackProps<'WalletRevi
       currency: code,
       balance: 0,
       isPrimary: false,
+      nickname,
+      accentColor,
     });
     navigation.navigate('WalletSuccess', { currency: code, walletId });
   };
@@ -55,7 +59,7 @@ export default function WalletReviewScreen({ route }: RootStackProps<'WalletRevi
         {/* Hero — flat, unboxed */}
         <View style={styles.hero}>
           <FlagIcon code={currency.flag} size={56} />
-          <Text style={styles.currencyName}>{currency.name}</Text>
+          <Text style={styles.currencyName}>{displayName ?? currency.name}</Text>
           <Text style={styles.currencyCode}>{currency.code}</Text>
         </View>
 

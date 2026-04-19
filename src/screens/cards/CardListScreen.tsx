@@ -473,8 +473,8 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
             <ActionBtn
               icon={
                 numberRevealed
-                  ? <EyeOff size={22} color={colors.textSecondary} strokeWidth={1.8} />
-                  : <Eye size={22} color={colors.textSecondary} strokeWidth={1.8} />
+                  ? <Eye    size={22} color={colors.textSecondary} strokeWidth={1.8} />
+                  : <EyeOff size={22} color={colors.textSecondary} strokeWidth={1.8} />
               }
               label={numberRevealed ? 'Hide number' : 'Show number'}
               onPress={handleToggleRevealNumber}
@@ -482,8 +482,8 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
             <ActionBtn
               icon={
                 cvvRevealed
-                  ? <EyeOff size={22} color={colors.textSecondary} strokeWidth={1.8} />
-                  : <Eye size={22} color={colors.textSecondary} strokeWidth={1.8} />
+                  ? <Eye    size={22} color={colors.textSecondary} strokeWidth={1.8} />
+                  : <EyeOff size={22} color={colors.textSecondary} strokeWidth={1.8} />
               }
               label={cvvRevealed ? 'Hide CVV' : 'Show CVV'}
               onPress={handleToggleRevealCvv}

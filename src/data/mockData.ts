@@ -661,18 +661,21 @@ export const MOCK_WALLETS: Wallet[] = [
     currency: 'USD',
     balance: 2430.50,
     isPrimary: true,
+    nickname: 'Everyday',
   },
   {
     id: 'wallet-mxn',
     currency: 'MXN',
     balance: 14820.00,
     isPrimary: false,
+    nickname: 'Family',
   },
   {
     id: 'wallet-php',
     currency: 'PHP',
     balance: 8500.00,
     isPrimary: false,
+    nickname: 'Manila',
   },
 ];
 

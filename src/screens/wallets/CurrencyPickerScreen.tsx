@@ -29,7 +29,7 @@ export default function CurrencyPickerScreen() {
   const handleSelect = (code: string) => {
     if (ownedCodes.has(code)) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    navigation.navigate('WalletReview', { currency: code });
+    navigation.navigate('AddWalletName', { currency: code });
   };
 
   return (

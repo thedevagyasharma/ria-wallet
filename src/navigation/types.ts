@@ -15,7 +15,8 @@ export type RootStackParamList = {
   Main: undefined;
   // Wallet flows
   CurrencyPicker: undefined;
-  WalletReview: { currency: string };
+  AddWalletName: { currency: string };
+  WalletReview: { currency: string; nickname: string; accentColor: string };
   WalletSuccess: { currency: string; walletId: string };
   // Card flows
   CardList: { walletId: string; initialCardIndex?: number };
