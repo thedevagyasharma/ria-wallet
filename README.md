@@ -1,3 +1,5 @@
+<img src="assets/icon.png" width="80" />
+
 # Ria Wallet
 
 A React Native / Expo prototype for the Ria Money Transfer wallet experience.
