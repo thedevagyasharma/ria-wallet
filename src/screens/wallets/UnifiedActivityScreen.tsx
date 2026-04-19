@@ -807,6 +807,14 @@ export default function UnifiedActivityScreen() {
     selectedCategories.size > 0 ||
     selectedCardIds.size > 0;
 
+  const activeFilterCount =
+    ((!isScoped && selectedWalletId !== null) ? 1 : 0) +
+    (direction !== 'all' ? 1 : 0) +
+    (datePreset !== null ? 1 : 0) +
+    (selectedStatuses.size > 0 ? 1 : 0) +
+    (selectedCategories.size > 0 ? 1 : 0) +
+    (selectedCardIds.size > 0 ? 1 : 0);
+
   // ── Handlers ─────────────────────────────────────────────────────────────
 
   const handleApplyWallet = (walletId: string | null) => {
@@ -908,10 +916,25 @@ export default function UnifiedActivityScreen() {
 
       {/* ── Filter chip row ─────────────────────────────────────────────── */}
       <Animated.View style={styles.chipsRow} layout={LinearTransition.duration(240)}>
+        {hasAnyFilter && (
+          <Animated.View entering={FadeIn.duration(220)} exiting={FadeOut.duration(160)}>
+            <Pressable
+              onPress={handleClearAll}
+              hitSlop={8}
+              style={({ pressed }) => [styles.clearBtn, pressed && { opacity: 0.5 }]}
+            >
+              <X size={12} color={colors.textSecondary} strokeWidth={2.5} />
+              <Text style={styles.clearBtnLabel}>Clear</Text>
+              <View style={styles.clearBtnBadge}>
+                <Text style={styles.clearBtnBadgeText}>{activeFilterCount}</Text>
+              </View>
+            </Pressable>
+          </Animated.View>
+        )}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chipsContent}
+          contentContainerStyle={[styles.chipsContent, hasAnyFilter && styles.chipsContentOffset]}
         >
           {!isScoped && (
             <FilterChip
@@ -959,16 +982,6 @@ export default function UnifiedActivityScreen() {
             disabled={direction === 'receive'}
             onPress={() => { Haptics.selectionAsync(); setCategoryPickerVisible(true); }}
           />
-          {hasAnyFilter && (
-            <FilterChip
-              label="Clear"
-              icon={X}
-              active={false}
-              activeColor={colors.brand}
-              showChevron={false}
-              onPress={handleClearAll}
-            />
-          )}
         </ScrollView>
       </Animated.View>
 
@@ -1088,8 +1101,11 @@ const styles = StyleSheet.create({
   // ── Filter chips row ──
   chipsRow: {
     flexShrink: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 10,
   },
+  chipsContentOffset: { paddingLeft: 8 },
   chipsContent: {
     paddingHorizontal: H_PAD,
     gap: 8,
@@ -1104,6 +1120,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     overflow: 'hidden',
+  },
+  clearBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    height: 34, paddingLeft: H_PAD, paddingRight: 8,
+  },
+  clearBtnLabel: {
+    fontSize: typography.sm, fontWeight: typography.medium,
+    color: colors.textSecondary,
+  },
+  clearBtnBadge: {
+    minWidth: 18, height: 18, borderRadius: radius.full,
+    backgroundColor: colors.surfaceHigh,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
+  clearBtnBadgeText: {
+    fontSize: typography.xs, fontWeight: typography.semibold,
+    color: colors.textSecondary, lineHeight: 14,
   },
   chipLabel: {
     fontSize: typography.sm,

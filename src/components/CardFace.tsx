@@ -101,6 +101,9 @@ const TYPE_LABELS: Record<CardType, string> = {
 
 function CardSurface({ card, children, compact = false, width: overrideW }: { card: Card; children: React.ReactNode; compact?: boolean; width?: number }) {
   const isMetallic = card.finish === 'metallic';
+  const cardW = overrideW ?? CARD_WIDTH;
+  const svgW = cardW - 4;
+  const svgH = cardW / 1.586 - 4;
 
   return (
     <View style={[
@@ -131,7 +134,7 @@ function CardSurface({ card, children, compact = false, width: overrideW }: { ca
           />
         )}
 
-        <CardOverlay id={card.id} width={SVG_W} height={SVG_H} borderRadius={SVG_R} strokeWidth={2} />
+        <CardOverlay id={card.id} width={svgW} height={svgH} borderRadius={SVG_R} strokeWidth={2} />
         {children}
 
       </View>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { X, LifeBuoy } from 'lucide-react-native';
+import { X, LifeBuoy, Copy, Check } from 'lucide-react-native';
 import PrimaryButton from '../../components/PrimaryButton';
 import SecondaryButton from '../../components/SecondaryButton';
 
@@ -21,6 +21,7 @@ import { getCurrency } from '../../data/currencies';
 import type { RootStackProps, RootStackParamList } from '../../navigation/types';
 import {
   StatusBadge,
+  getTxRef,
   TxSummaryCard,
   TxDetailsList,
   TxTimeline,
@@ -30,6 +31,26 @@ import {
 } from '../../components/TransactionView';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+
+function HeroRef({ refValue }: { refValue: string }) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+  return (
+    <Pressable onPress={onCopy} hitSlop={8} style={styles.heroInfoRow}>
+      <Text style={styles.heroInfoLabel}>Reference</Text>
+      <View style={styles.heroRefValue}>
+        <Text style={styles.heroInfoValue}>{refValue}</Text>
+        {copied
+          ? <Check size={14} color={colors.success} strokeWidth={2.5} />
+          : <Copy  size={14} color={colors.textMuted}   strokeWidth={2} />}
+      </View>
+    </Pressable>
+  );
+}
 
 export default function TransactionDetailScreen({ route }: RootStackProps<'TransactionDetail'>) {
   const { txId, mode = 'detail' } = route.params;
@@ -73,6 +94,13 @@ export default function TransactionDetailScreen({ route }: RootStackProps<'Trans
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   }).format(absAmount);
   const showRecipientHero = !isCard && !incoming;
+  const showReceivedHero  = !isCard && !incoming
+    && !!tx.receivedAmount && !!tx.receiveCurrency
+    && tx.receiveCurrency !== tx.currency;
+  const receivedNumber = tx.receivedAmount
+    ? new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(tx.receivedAmount)
+    : '';
+  const receivedSymbol = tx.receiveCurrency ? getCurrency(tx.receiveCurrency).symbol : '';
 
   const isInstant = tx.eta === 'Instant' || !tx.eta;
   const timelineStatus = isReceipt
@@ -111,15 +139,32 @@ export default function TransactionDetailScreen({ route }: RootStackProps<'Trans
           <View style={styles.badgeWrap}>
             <StatusBadge variant={badgeVariant} />
           </View>
-
-          <View style={styles.heroAmountRow}>
-            <Text style={styles.heroSymbol}>{heroSymbol}</Text>
-            <Text style={styles.heroAmount}>{heroNumber}</Text>
-            <Text style={styles.heroCode}>{tx.currency}</Text>
+          <View style={styles.heroAmountBlock}>
+            <View style={styles.heroAmountRow}>
+              <Text style={[styles.heroSymbol, tx.status === 'failed' && styles.heroAmountFailed]}>{heroSymbol}</Text>
+              <Text style={[styles.heroAmount, tx.status === 'failed' && styles.heroAmountFailed]}>{heroNumber}</Text>
+              <Text style={[styles.heroCode,   tx.status === 'failed' && styles.heroAmountFailed]}>{tx.currency}</Text>
+            </View>
+            {showReceivedHero && (
+              <Text style={styles.heroReceived}>
+                → {receivedSymbol}{receivedNumber} {tx.receiveCurrency}
+              </Text>
+            )}
           </View>
+        </View>
+
+        {/* ── Recipient + Ref rows ── */}
+        <View style={styles.heroInfo}>
           {showRecipientHero && (
-            <Text style={styles.heroRecipient}>To · {tx.recipientName}</Text>
+            <>
+              <View style={styles.heroInfoRow}>
+                <Text style={styles.heroInfoLabel}>To</Text>
+                <Text style={styles.heroInfoValue}>{tx.recipientName}</Text>
+              </View>
+              <View style={styles.heroInfoDivider} />
+            </>
           )}
+          <HeroRef refValue={getTxRef(tx)} />
         </View>
 
         {/* ── Failed — refund notice ── */}
@@ -129,7 +174,7 @@ export default function TransactionDetailScreen({ route }: RootStackProps<'Trans
               {tx.note ?? 'Transfer rejected by payment network'}
             </Text>
             <Text style={styles.refundText}>
-              Your funds were not deducted. If you believe this is an error, use the button below to get help.
+              Your funds were not deducted. If you believe this is an error, tap Help.
             </Text>
           </View>
         )}
@@ -138,7 +183,7 @@ export default function TransactionDetailScreen({ route }: RootStackProps<'Trans
         {showTimeline && (
           <View style={[styles.section, !showSummary && styles.sectionLast]}>
             <Text style={styles.sectionLabel}>Transfer status</Text>
-            <TxTimeline status={timelineStatus} firstName={firstName} txDate={tx.date} />
+            <TxTimeline status={timelineStatus} firstName={firstName} txDate={tx.date} eta={tx.eta} />
           </View>
         )}
 
@@ -211,32 +256,57 @@ const styles = StyleSheet.create({
 
   hero: {
     alignItems: 'center', paddingHorizontal: H_PAD,
-    paddingTop: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md,
+    paddingTop: spacing.lg, paddingBottom: spacing.xl, gap: spacing.lg,
   },
-  badgeWrap: { marginTop: -spacing.lg, marginBottom: spacing.sm },
+  badgeWrap: {},
+  heroAmountBlock: { alignItems: 'center', gap: spacing.xs },
   heroAmountRow: { flexDirection: 'row', alignItems: 'flex-end' },
   heroSymbol: {
     fontSize: typography.lg, fontWeight: typography.bold,
     color: colors.textSecondary, paddingBottom: 3, marginRight: 2,
   },
   heroCode: {
-    fontSize: typography.sm, fontWeight: typography.semibold,
-    color: colors.textSecondary, marginLeft: 6, paddingBottom: 5,
+    fontSize: typography.base, fontWeight: typography.semibold,
+    color: colors.textSecondary, marginLeft: 6, paddingBottom: 4,
   },
-  heroRecipient: {
-    fontSize: typography.sm, color: colors.textSecondary,
-    fontWeight: typography.medium, marginTop: -spacing.sm,
+  heroReceived: {
+    fontSize: typography.sm, color: colors.textMuted,
+    fontWeight: typography.medium, fontVariant: ['tabular-nums'],
   },
+  heroAmountFailed: { color: colors.textMuted },
   heroAmount: {
     fontSize: typography.xxl, fontWeight: typography.bold,
     color: colors.textPrimary, letterSpacing: -1,
   },
 
-  section: {
-    paddingHorizontal: H_PAD, paddingBottom: spacing.xl,
-    marginBottom: spacing.xl, borderBottomWidth: 1, borderBottomColor: colors.borderSubtle,
+  heroInfo: {
+    paddingHorizontal: H_PAD,
+    paddingBottom: spacing.xl,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
   },
-  sectionLast: { paddingBottom: 0, marginBottom: spacing.lg, borderBottomWidth: 0 },
+  heroInfoRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', paddingVertical: spacing.md, gap: spacing.md,
+  },
+  heroInfoDivider: { height: 1, backgroundColor: colors.borderSubtle },
+  heroInfoLabel: {
+    fontSize: typography.base, color: colors.textSecondary, flexShrink: 0,
+  },
+  heroInfoValue: {
+    fontSize: typography.base, color: colors.textPrimary,
+    fontWeight: typography.medium, textAlign: 'right',
+  },
+  heroRefValue: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+  },
+
+  section: {
+    paddingHorizontal: H_PAD,
+    paddingTop: spacing.xl, paddingBottom: spacing.xl,
+    borderBottomWidth: 1, borderBottomColor: colors.borderSubtle,
+  },
+  sectionLast: { paddingBottom: 0, borderBottomWidth: 0 },
   sectionLabel: {
     fontSize: typography.xs, color: colors.textSecondary,
     fontWeight: typography.semibold, textTransform: 'uppercase', letterSpacing: 0.8,

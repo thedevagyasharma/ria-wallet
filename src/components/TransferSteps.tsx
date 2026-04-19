@@ -86,10 +86,10 @@ const iconStyles = StyleSheet.create({
 
 // ─── Step row ─────────────────────────────────────────────────────────────────
 
-export function StepRow({ step, isLast }: { step: Step; isLast: boolean }) {
+export function StepRow({ step, isLast, nextStatus }: { step: Step; isLast: boolean; nextStatus?: StepStatus }) {
   const connectorColor =
-    step.status === 'done'   ? colors.success :
-    step.status === 'failed' ? colors.failed  :
+    nextStatus === 'done'   ? colors.success :
+    nextStatus === 'failed' ? colors.failed  :
     colors.border;
 
   return (

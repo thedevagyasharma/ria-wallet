@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
   AppStateStatus,
+  Image,
   StyleSheet,
   Text,
   View,
@@ -9,10 +10,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { authenticate as runAuth } from '../utils/auth';
 import * as Haptics from 'expo-haptics';
-import { Lock, ScanFace, Fingerprint } from 'lucide-react-native';
+import { ScanFace, Fingerprint, ShieldCheck } from 'lucide-react-native';
 import PrimaryButton from './PrimaryButton';
-import { colors, typography, spacing, radius } from '../theme';
-import { usePrefsStore } from '../stores/usePrefsStore';
+import { colors, typography, spacing } from '../theme';
 
 type AuthMethod = 'faceId' | 'touchId' | 'passcode';
 
@@ -22,13 +22,11 @@ const METHOD_COPY: Record<
 > = {
   faceId:   { label: 'Unlock with Face ID',  verb: 'Face ID',  Icon: ScanFace },
   touchId:  { label: 'Unlock with Touch ID', verb: 'Touch ID', Icon: Fingerprint },
-  passcode: { label: 'Unlock with Passcode', verb: 'passcode', Icon: Lock },
+  passcode: { label: 'Unlock with Passcode', verb: 'passcode', Icon: ShieldCheck },
 };
 
 export default function AppLockGate({ children }: { children: React.ReactNode }) {
-  const appLockEnabled = usePrefsStore((s) => s.appLockEnabled);
-
-  const [locked,     setLocked]     = useState(false);
+  const [locked,     setLocked]     = useState(true);
   const [authMethod, setAuthMethod] = useState<AuthMethod>('faceId');
   const [errored,    setErrored]    = useState(false);
   const [busy,       setBusy]       = useState(false);
@@ -39,15 +37,11 @@ export default function AppLockGate({ children }: { children: React.ReactNode })
   // Mock always presents as Face ID for demo purposes
   useEffect(() => { setAuthMethod('faceId'); }, []);
 
-  // Clear lock if app lock is disabled
-  useEffect(() => {
-    if (!appLockEnabled) setLocked(false);
-  }, [appLockEnabled]);
-
   const handleUnlock = useCallback(async () => {
     if (busy) return;
     setBusy(true);
     setErrored(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     const result = await runAuth('Unlock Ria Wallet');
 
@@ -74,8 +68,6 @@ export default function AppLockGate({ children }: { children: React.ReactNode })
       const prev = appStateRef.current;
       appStateRef.current = next;
 
-      if (!appLockEnabled) return;
-
       if (next === 'background') wentBackgroundRef.current = true;
 
       if (prev === 'active' && next !== 'active') {
@@ -92,7 +84,7 @@ export default function AppLockGate({ children }: { children: React.ReactNode })
       }
     });
     return () => sub.remove();
-  }, [appLockEnabled]);
+  }, []);
 
   const { label, verb, Icon } = METHOD_COPY[authMethod];
 
@@ -100,15 +92,15 @@ export default function AppLockGate({ children }: { children: React.ReactNode })
     <View style={{ flex: 1 }}>
       {children}
 
-      {appLockEnabled && locked && (
+      {locked && (
         <View style={StyleSheet.absoluteFill}>
           <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
             <View style={styles.content}>
-              <View style={styles.glyphRing}>
-                <View style={styles.glyphInner}>
-                  <Icon size={56} color={colors.brand} strokeWidth={1.6} />
-                </View>
-              </View>
+              <Image
+                source={require('../../assets/Face ID.png')}
+                style={styles.illustration}
+                resizeMode="contain"
+              />
 
               <Text style={styles.title}>Welcome back, Carlos</Text>
               <Text style={[styles.subtitle, errored && styles.subtitleError]}>
@@ -117,10 +109,6 @@ export default function AppLockGate({ children }: { children: React.ReactNode })
                   : `Use ${verb} to unlock Ria Wallet.`}
               </Text>
 
-              <View style={styles.lockRow}>
-                <Lock size={12} color={colors.textMuted} strokeWidth={2} />
-                <Text style={styles.lockLabel}>Session locked</Text>
-              </View>
             </View>
 
             <View style={styles.footer}>
@@ -154,25 +142,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
   },
 
-  // ── Hero glyph ──
-  glyphRing: {
-    width: 132,
-    height: 132,
-    borderRadius: radius.full,
-    backgroundColor: colors.brandSubtle,
-    alignItems: 'center',
-    justifyContent: 'center',
+  // ── Hero illustration ──
+  illustration: {
+    width: 180,
+    height: 180,
     marginBottom: spacing.xl,
-  },
-  glyphInner: {
-    width: 100,
-    height: 100,
-    borderRadius: radius.full,
-    backgroundColor: colors.bg,
-    borderWidth: 1,
-    borderColor: colors.brandSubtle,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 
   // ── Copy ──
@@ -193,17 +167,6 @@ const styles = StyleSheet.create({
   },
   subtitleError: {
     color: colors.failed,
-  },
-
-  // ── Lock badge ──
-  lockRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  lockLabel: {
-    fontSize: typography.sm,
-    color: colors.textMuted,
   },
 
   // ── Footer CTA ──

@@ -162,7 +162,6 @@ export function TxDetailsList({
   if (isP2P)      rows.push(<FlatRow key="recipient" label="Recipient" value={tx.recipientName} />);
   rows.push(<FlatRow key="date" label="Date" value={dateStr} />);
   rows.push(<FlatRow key="wallet" label="Wallet" value={walletValue} flagCode={currency.flag} />);
-  rows.push(<RefRow key="ref" refValue={getTxRef(tx)} />);
   if (card)       rows.push(<FlatRow key="card"     label="Card"     value={`${card.name} •••• ${card.last4}`} />);
   if (cardMeta)   rows.push(<FlatRow key="category" label="Category" value={cardMeta.label} />);
   if (showNote)   rows.push(<FlatRow key="note"     label="Note"     value={tx.note!} />);
@@ -178,30 +177,6 @@ export function TxDetailsList({
     </View>
   );
 }
-
-function RefRow({ refValue }: { refValue: string }) {
-  const [copied, setCopied] = useState(false);
-  const onCopy = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
-  };
-  return (
-    <Pressable onPress={onCopy} style={listStyles.row}>
-      <Text style={rowStyles.label}>Reference</Text>
-      <View style={refFlatStyles.valueRow}>
-        <Text style={[rowStyles.value, { fontVariant: ['tabular-nums'] }]}>{refValue}</Text>
-        {copied
-          ? <Check size={16} color={colors.success} strokeWidth={2.5} />
-          : <Copy size={16} color={colors.textSecondary} strokeWidth={2} />}
-      </View>
-    </Pressable>
-  );
-}
-
-const refFlatStyles = StyleSheet.create({
-  valueRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1, justifyContent: 'flex-end' },
-});
 
 function FlatRow({
   label, value, flagCode, valueColor,
@@ -257,10 +232,19 @@ function fmtStepTime(date: Date): string {
   }).format(date);
 }
 
+/** Maps an eta label string to a millisecond offset from txDate. */
+function etaOffsetMs(eta?: string): number {
+  if (!eta || eta === 'Instant') return 0;
+  if (eta === 'Within minutes')  return 15 * 60_000;
+  if (eta.includes('1–2 hours')) return 90 * 60_000;
+  return 60 * 60_000; // fallback: 1 hour
+}
+
 export function buildTimelineSteps(
   status: TransactionStatus,
   firstName: string,
   txDate?: Date,
+  eta?: string,
 ): Step[] {
   const t0 = txDate ? fmtStepTime(txDate) : undefined;
   const t1 = txDate ? fmtStepTime(new Date(txDate.getTime() + 2 * 60_000)) : undefined;
@@ -274,10 +258,14 @@ export function buildTimelineSteps(
     ];
   }
   if (status === 'pending') {
+    const etaDate = txDate ? new Date(txDate.getTime() + etaOffsetMs(eta)) : undefined;
+    const deliverySub = etaDate
+      ? `Est. arrival: ${fmtStepTime(etaDate)}`
+      : 'Awaiting delivery';
     return [
       { label: 'Transfer initiated',            sub: 'Confirmed — funds reserved', status: 'done',    time: t0 },
       { label: 'Processing transfer',           sub: 'In progress…',               status: 'active',  time: t1 },
-      { label: `${firstName} receives funds`,   sub: 'Awaiting delivery',          status: 'pending' },
+      { label: `${firstName} receives funds`,   sub: deliverySub,                  status: 'pending' },
     ];
   }
   // failed
@@ -289,13 +277,13 @@ export function buildTimelineSteps(
 }
 
 export function TxTimeline({
-  status, firstName, txDate,
-}: { status: TransactionStatus; firstName: string; txDate?: Date }) {
-  const steps = buildTimelineSteps(status, firstName, txDate);
+  status, firstName, txDate, eta,
+}: { status: TransactionStatus; firstName: string; txDate?: Date; eta?: string }) {
+  const steps = buildTimelineSteps(status, firstName, txDate, eta);
   return (
     <View style={timelineStyles.wrap}>
       {steps.map((step, i) => (
-        <StepRow key={i} step={step} isLast={i === steps.length - 1} />
+        <StepRow key={i} step={step} isLast={i === steps.length - 1} nextStatus={steps[i + 1]?.status} />
       ))}
     </View>
   );

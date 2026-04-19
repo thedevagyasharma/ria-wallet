@@ -101,8 +101,9 @@ function SendCTAButton({ onPress }: { onPress?: () => void }) {
 
 function TabNavigator() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { activeWalletId } = useWalletStore();
+  const { wallets, activeWalletId } = useWalletStore();
   const { activeTabIdx, setActiveTabIdx } = useTabStore();
+  const primaryWalletId = wallets.find((w) => w.isPrimary)?.id ?? activeWalletId;
   const insets = useSafeAreaInsets();
   const [resetCounts, setResetCounts] = useState<Record<string, number>>({});
   const tabX = useSharedValue(-activeTabIdx * SCREEN_WIDTH);
@@ -155,7 +156,9 @@ function TabNavigator() {
           <TabItem label="Activity" Icon={Clock}       active={activeTabIdx === 2} onPress={() => goToTab(2)} />
           <TabItem label="Profile"  Icon={UserCircle}  active={activeTabIdx === 3} onPress={() => goToTab(3)} />
         </View>
-        <SendCTAButton onPress={() => navigation.navigate('SendMoney', { walletId: activeWalletId })} />
+        <SendCTAButton onPress={() => navigation.navigate('SendMoney', {
+          walletId: activeTabIdx === 0 ? activeWalletId : primaryWalletId,
+        })} />
       </View>
     </View>
   );

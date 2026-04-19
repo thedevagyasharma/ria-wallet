@@ -113,6 +113,17 @@ function getReceiveCurrencies(flag: string): string[] {
   return RECEIVE_CURRENCIES_BY_ISO[flag] ?? ['USD'];
 }
 
+// Computes the true maximum sendable amount: the largest value (in cents) where
+// sendAmount + getFee(sendAmount) <= balance. A naive `balance - getFee(balance)`
+// can land in a different fee tier after subtraction, overshooting by up to ~$1.
+function computeMaxSendable(balance: number, currency: string): number {
+  let send = Math.floor((balance - getFee(balance, currency)) * 100) / 100;
+  while (send > 0 && send + getFee(send, currency) > balance) {
+    send = Math.round((send - 0.01) * 100) / 100;
+  }
+  return Math.max(0, send);
+}
+
 // Returns true when the query has enough digits to be treated as a phone number
 function looksLikePhone(q: string): boolean {
   return q.replace(/\D/g, '').length >= 4;
@@ -367,7 +378,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
   const total = sendAmountNum + fee;
   // Half-cent tolerance — FX round-trips can overshoot balance by < $0.01, which would otherwise show "over by $0.00"
   const hasFunds = total <= sendWallet.balance + 0.005;
-  const maxSendable = Math.max(0, sendWallet.balance - getFee(sendWallet.balance, sendWallet.currency));
+  const maxSendable = computeMaxSendable(sendWallet.balance, sendWallet.currency);
   const canReview = sendAmountNum > 0 && hasFunds && selectedContact !== null;
 
   const sendDisplayText =
@@ -797,12 +808,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                   behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                   style={{ flex: 1 }}
                 >
-                <ScrollView
-                  style={styles.scroll}
-                  contentContainerStyle={styles.scrollContent}
-                  showsVerticalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled"
-                >
+                <View style={[styles.scroll, styles.scrollContent]}>
                   {/* Recipient — compact inline display */}
                   {selectedContact && (
                     <View style={[styles.selectedRecipient, { marginBottom: spacing.md }]}>
@@ -929,7 +935,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                       </Text>
                     )}
                   </View>
-                </ScrollView>
+                </View>
 
                   <View style={styles.quickAmounts}>
                     {(activeField === 'send'
@@ -969,7 +975,7 @@ export default function SendMoneyScreen({ route }: RootStackProps<'SendMoney'>) 
                     {(() => {
                       // Max always anchors on send side — receive is a derived display value.
                       // This keeps the debit exactly at maxSendable regardless of which field the user tapped from.
-                      const maxTarget = Math.floor(maxSendable * 100) / 100;
+                      const maxTarget = maxSendable;
                       // Use sendAmountNum (derived from the active field) so a new preset tap on receive clears the Max highlight
                       const isActive = maxTarget > 0 && Math.abs(sendAmountNum - maxTarget) < 0.005;
                       return (
@@ -1356,8 +1362,8 @@ const styles = StyleSheet.create({
     fontSize: typography.xs,
     color: colors.failed,
     fontWeight: typography.medium,
-    marginTop: 2,
     textAlign: 'right',
+    marginTop: 2,
   },
   feeInfoBtn: {
     padding: 2,
@@ -1377,6 +1383,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    marginHorizontal: -spacing.xl,
   },
   feeTierDivider: {
     height: StyleSheet.hairlineWidth,

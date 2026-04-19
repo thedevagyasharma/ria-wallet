@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,17 +9,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { authenticate } from '../../utils/auth';
 import {
   Eye,
   EyeOff,
-  Lock,
   ChevronRight,
   Star,
   HelpCircle,
   FileText,
-  Shield,
-  ArrowUpRight,
   Search,
   Globe,
 } from 'lucide-react-native';
@@ -168,7 +164,7 @@ function WalletRow({
 export default function ProfileScreen() {
   const { wallets, setPrimary } = useWalletStore();
   const {
-    hideBalances, appLockEnabled, defaultSendCurrency, toggleHideBalances, toggleAppLock,
+    hideBalances, toggleHideBalances,
     discoverability, setDiscoverability, hiddenCurrencies, toggleCurrencyVisibility,
   } = usePrefsStore();
 
@@ -186,18 +182,6 @@ export default function ProfileScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setPrimarySheet(null);
   }
-
-  const handleToggleAppLock = useCallback(async () => {
-    const result = await authenticate(
-      appLockEnabled ? 'Confirm to disable app lock' : 'Confirm to enable app lock',
-    );
-    if (result.success) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      toggleAppLock();
-    } else {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    }
-  }, [appLockEnabled, toggleAppLock]);
 
   function stub() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -232,9 +216,9 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        {/* ── Preferences ─────────────────────────────────────────────────── */}
+        {/* ── Privacy ──────────────────────────────────────────────────────── */}
         <View style={styles.section}>
-          <SectionLabel label="Preferences" />
+          <SectionLabel label="Privacy" />
           <Row
             icon={hideBalances
               ? <EyeOff size={18} color={colors.textSecondary} strokeWidth={1.8} />
@@ -245,36 +229,6 @@ export default function ProfileScreen() {
             toggleValue={hideBalances}
             onPress={toggleHideBalances}
           />
-          <Row
-            icon={<ArrowUpRight size={18} color={colors.textSecondary} strokeWidth={1.8} />}
-            label="Default send currency"
-            value={defaultSendCurrency}
-            onPress={stub}
-            last
-          />
-        </View>
-
-        {/* ── Security ────────────────────────────────────────────────────── */}
-        <View style={styles.section}>
-          <SectionLabel label="Security" />
-          <Row
-            icon={<Lock size={18} color={colors.textSecondary} strokeWidth={1.8} />}
-            label="App lock"
-            toggle
-            toggleValue={appLockEnabled}
-            onPress={handleToggleAppLock}
-          />
-          <Row
-            icon={<Shield size={18} color={colors.textSecondary} strokeWidth={1.8} />}
-            label="Change PIN"
-            onPress={stub}
-            last
-          />
-        </View>
-
-        {/* ── Privacy ──────────────────────────────────────────────────────── */}
-        <View style={styles.section}>
-          <SectionLabel label="Privacy" />
           <Row
             icon={<Search size={18} color={colors.textSecondary} strokeWidth={1.8} />}
             label="Who can find me"
@@ -383,7 +337,7 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
-  content: { paddingBottom: 48 },
+  content: { paddingBottom: spacing.xxxl },
 
   // ── User block ──
   userBlock: {
@@ -427,7 +381,7 @@ const styles = StyleSheet.create({
   },
   sectionLast: {
     paddingBottom: 0,
-    marginBottom: spacing.xxxl,
+    marginBottom: spacing.lg,
     borderBottomWidth: 0,
   },
 
@@ -535,6 +489,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: typography.xs,
     color: colors.textMuted,
-    marginTop: spacing.xxl,
+    marginTop: spacing.md,
   },
 });
