@@ -12,9 +12,11 @@ The app is distributed via **Expo Go** using EAS Update. No build or install fro
    - [iOS — App Store](https://apps.apple.com/app/expo-go/id982107779)
    - [Android — Play Store](https://play.google.com/store/apps/details?id=host.exp.exponent)
 
-2. Open Expo Go and sign in (or create a free Expo account at [expo.dev](https://expo.dev))
+2. Open Expo Go
 
 3. Open this link on your device or scan the QR code below:
+
+   ![QR code](https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=exp%3A%2F%2Fu.expo.dev%2F53d660c2-8a41-4adb-bf7c-40fb7ba20ec4%3Fchannel-name%3Dmain)
 
    ```
    exp://u.expo.dev/53d660c2-8a41-4adb-bf7c-40fb7ba20ec4?channel-name=main
