@@ -1065,8 +1065,8 @@ export default function WalletsScreen() {
             value={walletActionsLayout}
             onChange={(v) => { Haptics.selectionAsync(); if (v !== walletActionsLayout) toggleWalletActionsLayout(); }}
             options={[
-              { label: 'Default', value: 'default' },
               { label: 'Quick',   value: 'quick'   },
+              { label: 'Classic', value: 'default' },
             ]}
           />
         </View>
