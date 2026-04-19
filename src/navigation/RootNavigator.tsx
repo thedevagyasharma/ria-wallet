@@ -173,7 +173,7 @@ export default function RootNavigator() {
         <Stack.Screen name="Main" component={TabNavigator} />
 
         {/* Wallet flows */}
-        <Stack.Screen name="WalletSettings" component={WalletSettingsScreen} options={{ animation: 'slide_from_bottom', presentation: 'modal' }} />
+        <Stack.Screen name="WalletSettings" component={WalletSettingsScreen} />
         <Stack.Screen name="Activity" component={UnifiedActivityScreen} />
         <Stack.Screen name="TransactionDetail" component={TransactionDetailScreen} />
         <Stack.Screen name="CurrencyPicker" component={CurrencyPickerScreen} />

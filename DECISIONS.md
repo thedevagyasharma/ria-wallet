@@ -2255,3 +2255,47 @@ The old stub `CardListScreen.tsx` (which returned `null`) was deleted to free th
 **Reason:** Illustrations make permanent "you have nothing yet" states feel intentional and welcoming. Search/filter states are transient mid-task moments where an illustration would slow the scan and feel like a dead end rather than feedback.
 
 **Trade-off:** Compact inline sections use the illustration at 180×140 vs the full-screen 280×220. Both sizes are baked into `EmptyState` and selected automatically based on the `compact` prop.
+
+### 232. Confirm transfer — green gradient overlay on success
+
+**Decision:** A top-to-bottom green-to-transparent `LinearGradient` fades in (500ms, ease-out cubic) when a transfer succeeds. Constrained to the header + hero area height via `onLayout` measurement. Stays visible through the viewTransfer phase; resets on replay.
+
+**Reason:** The button morph and chip state change alone didn't feel like enough reinforcement for completing a transfer. The gradient provides ambient visual feedback without obstructing content or requiring new dependencies.
+
+### 233. Confirm transfer — three-stage haptic sequence on success
+
+**Decision:** Success fires three haptic events: Heavy impact at 0ms, Heavy at 100ms, then a decelerating series of `selectionAsync()` ticks from 180–520ms. A final Light impact fires at 2000ms when transitioning to viewTransfer. Failed fires `notificationAsync(Error)`.
+
+**Reason:** A single haptic felt too subtle for a money transfer confirmation. The double-Heavy bookend provides a strong "landed" feel, and the selection ticks create a tactile texture that rides alongside the visual animations. The final Light marks the state settling.
+
+### 234. Confirm transfer — chip shows processing spinner
+
+**Decision:** The hero chip now has four visual states: `eta` (orange, zap icon + ETA text) → `processing` (gray, spinner only) → `success` (green, check + COMPLETE/SUBMITTED) or `failed` (red, X + FAILED). The chip mirrors the button's processing → outcome arc.
+
+**Reason:** Previously the chip jumped directly from ETA to COMPLETE, which felt disconnected from the button's processing state happening below. The spinner intermediate state makes the chip part of the same narrative — both elements go through a journey together.
+
+### 235. Confirm transfer — content dim during processing/success
+
+**Decision:** Recipient and details sections fade to 0.3 opacity when processing starts, creating a spotlight effect on the hero chip. Opacity restores to 1 when transitioning to viewTransfer or retryReady.
+
+**Reason:** Dimming the breakdown content draws attention to the chip and hero area where the meaningful state change is happening. It reinforces that the transfer is in-flight and the details are no longer actionable.
+
+### 236. Confirm transfer — icon fade-out on settle
+
+**Decision:** The check (success) and X (failed) icons in the hero chip fade out and collapse their width to 0 over 250ms when the phase settles to viewTransfer or retryReady. The text label remains.
+
+**Reason:** The icon serves a purpose during the active success/failed moment — it reinforces the outcome. Once the state settles and the button changes to "View details" / "Try again", the icon becomes redundant. Removing it simplifies the chip back to just a status label.
+
+### 237. Chip size animation — abandoned after multiple approaches
+
+**Decision:** Decided against animating the hero chip's size on success after trying: transform scale (blurred text due to rasterization), animated padding (frame drops from per-frame layout recalculation), LayoutAnimation (conflicts with Reanimated), and pre-rasterized larger size (inconsistent sizing). The chip's dimensions are now purely content-driven.
+
+**Reason:** Every approach to animating chip size had a fundamental tradeoff that degraded the experience more than the animation improved it. The success reinforcement comes from color morph, content swap, gradient, haptics, and content dimming — the chip doesn't need its own size animation on top of all that.
+
+**Trade-off:** The chip width snaps when content changes length (e.g. "Instant" → "COMPLETE"). The content slot slide animation masks this enough that it doesn't feel jarring.
+
+### 238. Confirm transfer — Done/Close haptic
+
+**Decision:** Light impact haptic on the Done/Close action that navigates back to wallets.
+
+**Reason:** Every other interactive element on the screen has haptic feedback. The dismissal action was the only gap.

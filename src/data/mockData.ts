@@ -20,6 +20,7 @@ export const MOCK_CARDS: Card[] = [
     fullNumber: '4242 4242 4242 4242',
     frozen: false,
     type: 'physical',
+    pin: '7291',
     spendingLimits: { daily: 100, weekly: 400, monthly: 1200 },
   },
   {

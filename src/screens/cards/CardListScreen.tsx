@@ -37,6 +37,7 @@ import PrimaryButton from '../../components/PrimaryButton';
 import FlatButton from '../../components/FlatButton';
 import CardTransactionRow from '../../components/CardTransactionRow';
 import ViewPinSheet from '../../components/ViewPinSheet';
+import { authenticate } from '../../utils/auth';
 import BottomSheet from '../../components/BottomSheet';
 import { useCardStore } from '../../stores/useCardStore';
 import { useWalletStore } from '../../stores/useWalletStore';
@@ -498,8 +499,10 @@ export default function CardListScreen({ route }: RootStackProps<'CardList'>) {
                 icon={<KeyRound size={22} color={activeCard?.type !== 'physical' ? colors.textMuted : colors.textSecondary} strokeWidth={1.8} />}
                 label="View PIN"
                 disabled={activeCard?.type !== 'physical'}
-                onPress={() => {
+                onPress={async () => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  const result = await authenticate('Authenticate to view your PIN');
+                  if (!result.success) return;
                   setShowPin(true);
                 }}
               />
