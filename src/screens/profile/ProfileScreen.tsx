@@ -165,7 +165,7 @@ function WalletRow({
 export default function ProfileScreen() {
   const { wallets, setPrimary } = useWalletStore();
   const {
-    hideBalances, toggleHideBalances,
+    hideBalancesByDefault, toggleHideBalancesByDefault,
     discoverability, setDiscoverability, hiddenCurrencies, toggleCurrencyVisibility,
   } = usePrefsStore();
 
@@ -221,14 +221,14 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <SectionLabel label="Privacy" />
           <Row
-            icon={hideBalances
+            icon={hideBalancesByDefault
               ? <EyeOff size={18} color={colors.textSecondary} strokeWidth={1.8} />
               : <Eye size={18} color={colors.textSecondary} strokeWidth={1.8} />
             }
             label="Hide balances by default"
             toggle
-            toggleValue={hideBalances}
-            onPress={toggleHideBalances}
+            toggleValue={hideBalancesByDefault}
+            onPress={toggleHideBalancesByDefault}
           />
           <Row
             icon={<Search size={18} color={colors.textSecondary} strokeWidth={1.8} />}

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useTabStore } from '../../stores/useTabStore';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -537,23 +538,37 @@ export default function WalletsScreen() {
     clearJustAddedWalletId,
   } = useWalletStore();
   const { cards, getWalletCards, justAddedCardId, clearJustAddedCardId } = useCardStore();
-  const { hideBalances, toggleHideBalances, walletActionsLayout, toggleWalletActionsLayout } = usePrefsStore();
+  const { hideBalances, setHideBalances, toggleHideBalances, hideBalancesByDefault, walletActionsLayout, toggleWalletActionsLayout } = usePrefsStore();
+  const { activeTabIdx } = useTabStore();
+
+  // Primary wallet always occupies index 0; remaining wallets keep insertion order.
+  const sortedWallets = useMemo(() => {
+    const primary = wallets.filter((w) => w.isPrimary);
+    const rest = wallets.filter((w) => !w.isPrimary);
+    return [...primary, ...rest];
+  }, [wallets]);
+
+  // Reset balance visibility to hidden whenever the Wallets tab becomes active,
+  // if the user has "hide by default" enabled. The eye button still works
+  // as a session toggle within the screen.
+  useEffect(() => {
+    if (activeTabIdx !== 0 && hideBalancesByDefault) setHideBalances(true);
+  }, [activeTabIdx]);
 
   // Initial wallet: prefer just-added wallet, then just-added card's wallet,
   // then primary. Covers first-mount-after-create cases where the store
   // already holds the signal by the time this component initialises.
   const initialIdx = (() => {
     if (justAddedWalletId) {
-      const idx = wallets.findIndex((w) => w.id === justAddedWalletId);
+      const idx = sortedWallets.findIndex((w) => w.id === justAddedWalletId);
       if (idx >= 0) return idx;
     }
     if (justAddedCardId) {
       const card = cards.find((c) => c.id === justAddedCardId);
-      const idx = card ? wallets.findIndex((w) => w.id === card.walletId) : -1;
+      const idx = card ? sortedWallets.findIndex((w) => w.id === card.walletId) : -1;
       if (idx >= 0) return idx;
     }
-    const primary = wallets.findIndex((w) => w.isPrimary);
-    return primary >= 0 ? primary : 0;
+    return 0;
   })();
 
   const [currentIndex, setCurrentIndex] = useState(initialIdx);
@@ -581,7 +596,7 @@ export default function WalletsScreen() {
   useEffect(() => {
     if (initialIdx > 0 && justAddedCardId) {
       flatListRef.current?.scrollToOffset({ offset: initialIdx * W, animated: false });
-      setActiveWallet(wallets[initialIdx].id);
+      setActiveWallet(sortedWallets[initialIdx].id);
     }
     // Only runs on mount — intentionally empty deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -593,7 +608,7 @@ export default function WalletsScreen() {
   // sees their new wallet arrive as the success screen fades away.
   useEffect(() => {
     if (!justAddedWalletId) return;
-    const idx = wallets.findIndex((w) => w.id === justAddedWalletId);
+    const idx = sortedWallets.findIndex((w) => w.id === justAddedWalletId);
     if (idx < 0) {
       clearJustAddedWalletId();
       return;
@@ -602,7 +617,7 @@ export default function WalletsScreen() {
     flatListRef.current?.scrollToOffset({ offset: idx * W, animated: true });
     pendingIdx.current = idx;
     setCurrentIndex(idx);
-    setActiveWallet(wallets[idx].id);
+    setActiveWallet(sortedWallets[idx].id);
     scrollX.value = idx * W;
     setHighlightWalletId(justAddedWalletId);
     clearJustAddedWalletId();
@@ -633,12 +648,12 @@ export default function WalletsScreen() {
     const targetY = Math.max(0, cardSectionY.current - 24);
     scrollRef.current?.scrollTo({ y: targetY, animated: false });
 
-    const idx = wallets.findIndex((w) => w.id === card.walletId);
+    const idx = sortedWallets.findIndex((w) => w.id === card.walletId);
     if (idx < 0 || idx === currentIndex) return;
     flatListRef.current?.scrollToOffset({ offset: idx * W, animated: false });
     pendingIdx.current = idx;
     setCurrentIndex(idx);
-    setActiveWallet(wallets[idx].id);
+    setActiveWallet(sortedWallets[idx].id);
     scrollX.value = idx * W;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [justAddedCardId]);
@@ -651,7 +666,7 @@ export default function WalletsScreen() {
   const liftProgress = useSharedValue(0);
   const liftedIndex = useSharedValue(-1);
 
-  const active      = wallets[currentIndex] ?? wallets[0];
+  const active      = sortedWallets[currentIndex] ?? sortedWallets[0];
   const activeCards = active ? getWalletCards(active.id) : [];
   const accent      = walletAccent(active?.currency ?? 'USD', active?.accentColor);
   const activeCardCount = useSharedValue(activeCards.length);
@@ -667,11 +682,11 @@ export default function WalletsScreen() {
   // doesn't flip to a new reference on every render.
   const cardsByWalletId = useMemo(() => {
     const map: Record<string, Card[]> = {};
-    for (const w of wallets) {
+    for (const w of sortedWallets) {
       map[w.id] = cards.filter((c) => c.walletId === w.id);
     }
     return map;
-  }, [wallets, cards]);
+  }, [sortedWallets, cards]);
   const walletTxs   = transactions
     .filter((t) => t.walletId === active?.id)
     .sort((a, b) => b.date.getTime() - a.date.getTime());
@@ -689,18 +704,18 @@ export default function WalletsScreen() {
   });
 
   const handleScrollJS = useCallback((x: number) => {
-    const nearest = Math.max(0, Math.min(Math.round(x / W), wallets.length - 1));
+    const nearest = Math.max(0, Math.min(Math.round(x / W), sortedWallets.length - 1));
     if (nearest !== pendingIdx.current) {
       pendingIdx.current = nearest;
-      activeCardCount.value = getWalletCards(wallets[nearest].id).length;
+      activeCardCount.value = getWalletCards(sortedWallets[nearest].id).length;
       setCurrentIndex(nearest);
-      setActiveWallet(wallets[nearest].id);
+      setActiveWallet(sortedWallets[nearest].id);
       Haptics.selectionAsync();
       if (spreadProgress.value > 0) {
         spreadProgress.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.cubic) });
       }
     }
-  }, [wallets, setActiveWallet, getWalletCards]);
+  }, [sortedWallets, setActiveWallet, getWalletCards]);
 
   // UI-thread handler — scrollX updated here so animated children (symbols,
   // gradients, dots) track the finger with zero JS-thread lag.
@@ -715,13 +730,13 @@ export default function WalletsScreen() {
   const handleCarouselEnd = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const idx = Math.round(e.nativeEvent.contentOffset.x / W);
-      const clamped = Math.max(0, Math.min(idx, wallets.length - 1));
+      const clamped = Math.max(0, Math.min(idx, sortedWallets.length - 1));
       if (clamped !== pendingIdx.current) Haptics.selectionAsync();
       pendingIdx.current = clamped;
       setCurrentIndex(clamped);
-      setActiveWallet(wallets[clamped].id);
+      setActiveWallet(sortedWallets[clamped].id);
     },
-    [wallets, setActiveWallet],
+    [sortedWallets, setActiveWallet],
   );
 
   const renderWallet = useCallback(
@@ -805,9 +820,9 @@ export default function WalletsScreen() {
   );
 
   // Interpolation ranges — stable as long as wallets list doesn't change
-  const accentInputRange = wallets.map((_, i) => i * W);
-  const accentColorList  = wallets.map(w => walletAccent(w.currency, w.accentColor));
-  const accentSubtleList = wallets.map(w => alpha(walletAccent(w.currency, w.accentColor), 0.1));
+  const accentInputRange = sortedWallets.map((_, i) => i * W);
+  const accentColorList  = sortedWallets.map(w => walletAccent(w.currency, w.accentColor));
+  const accentSubtleList = sortedWallets.map(w => alpha(walletAccent(w.currency, w.accentColor), 0.1));
 
   const animatedCircleStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(scrollX.value, accentInputRange, accentSubtleList),
@@ -822,7 +837,7 @@ export default function WalletsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {wallets.map((wallet, i) => (
+      {sortedWallets.map((wallet, i) => (
         <WalletHeaderGradient key={wallet.id} wallet={wallet} index={i} scrollX={scrollX} />
       ))}
       <ScrollView
@@ -860,7 +875,7 @@ export default function WalletsScreen() {
         <View style={styles.carouselWrap}>
           <AnimatedFlatList
             ref={flatListRef}
-            data={wallets}
+            data={sortedWallets}
             horizontal
             pagingEnabled
             keyExtractor={(item) => item.id}
@@ -907,9 +922,9 @@ export default function WalletsScreen() {
         </View>
 
         {/* ── Dots ──────────────────────────────────────────────────────── */}
-        {wallets.length > 1 && (
+        {sortedWallets.length > 1 && (
           <View style={styles.dotsRow}>
-            {wallets.map((wallet, i) => (
+            {sortedWallets.map((wallet, i) => (
               <WalletDot
                 key={i}
                 index={i}
@@ -1015,7 +1030,7 @@ export default function WalletsScreen() {
           </View>
           <GestureDetector gesture={cardPanGesture}>
             <Animated.View style={[{ position: 'relative' }, cardStackAnimStyle]}>
-              {wallets.map((wallet, i) => (
+              {sortedWallets.map((wallet, i) => (
                 <View
                   key={wallet.id}
                   style={StyleSheet.absoluteFill}

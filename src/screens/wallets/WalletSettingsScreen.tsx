@@ -21,6 +21,7 @@ import {
 import { colors, typography, spacing, radius } from '../../theme';
 import { alpha } from '../../utils/color';
 import Chip from '../../components/Chip';
+import PrimaryButton from '../../components/PrimaryButton';
 import { useWalletStore } from '../../stores/useWalletStore';
 import SetPrimarySheet from '../../components/SetPrimarySheet';
 import { getCurrency, formatAmount } from '../../data/currencies';
@@ -92,7 +93,7 @@ export default function WalletSettingsScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       {/* ── Header ────────────────────────────────────────────────────── */}
       <View style={styles.header}>
         <Pressable onPress={() => navigation.goBack()} style={styles.backBtn}>
@@ -183,6 +184,15 @@ export default function WalletSettingsScreen() {
             );
           })}
         </View>
+      </View>
+
+      {/* ── Done button ───────────────────────────────────────────── */}
+      <View style={styles.footer}>
+        <PrimaryButton
+          label="Done"
+          onPress={() => navigation.goBack()}
+          style={styles.doneBtn}
+        />
       </View>
 
       <SetPrimarySheet
@@ -295,5 +305,16 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3,
     elevation: 3,
+  },
+
+  footer: {
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.xl,
+    paddingTop: spacing.md,
+    marginTop: 'auto',
+  },
+  doneBtn: {
+    paddingVertical: spacing.lg,
+    alignItems: 'center',
   },
 });
