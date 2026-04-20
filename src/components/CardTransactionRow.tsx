@@ -19,9 +19,11 @@ const datetime = new Intl.DateTimeFormat('en-US', {
 export default function CardTransactionRow({
   tx,
   onPress,
+  hideDivider,
 }: {
   tx: Transaction;
   onPress: () => void;
+  hideDivider?: boolean;
 }) {
   const isCredit = tx.amount > 0;
   const formatted = formatAmount(Math.abs(tx.amount), tx.currency);
@@ -32,7 +34,7 @@ export default function CardTransactionRow({
   return (
     <Pressable
       onPress={() => { Haptics.selectionAsync(); onPress(); }}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+      style={({ pressed }) => [styles.row, hideDivider && styles.rowNoDivider, pressed && styles.rowPressed]}
     >
       {/* Category icon */}
       <View style={[
@@ -74,6 +76,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.borderSubtle,
   },
   rowPressed: { backgroundColor: colors.surface },
+  rowNoDivider: { borderBottomWidth: 0 },
 
   icon: {
     width: 38,

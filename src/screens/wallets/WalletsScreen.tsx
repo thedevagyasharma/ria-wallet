@@ -1002,15 +1002,16 @@ export default function WalletsScreen() {
           />
         ) : (
           <>
-            {previewTxs.map((tx) => (
+            {previewTxs.map((tx, i) => (
               <ActivityItem
                 key={tx.id}
                 tx={tx}
                 onPress={() => navigation.navigate('TransactionDetail', { txId: tx.id })}
+                hideDivider={i === previewTxs.length - 1}
               />
             ))}
             <SecondaryButton onPress={handleSeeAll} style={styles.seeAllBtn}>
-              <Text style={styles.seeAllText}>See all activity</Text>
+              <Text style={styles.seeAllText}>See Wallet Activity</Text>
             </SecondaryButton>
           </>
         )}
@@ -1403,7 +1404,7 @@ const styles = StyleSheet.create({
   seeAllBtn: {
     marginHorizontal: H_PAD,
     marginTop: spacing.md,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
     paddingVertical: 14,
     alignItems: 'center',
   },

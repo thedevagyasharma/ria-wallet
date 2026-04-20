@@ -16,9 +16,11 @@ const date_fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeri
 export default function TransactionRow({
   tx,
   onPress,
+  hideDivider,
 }: {
   tx: Transaction;
   onPress: () => void;
+  hideDivider?: boolean;
 }) {
   const isCredit = tx.amount > 0;
   const isFailed = tx.status === 'failed';
@@ -40,7 +42,7 @@ export default function TransactionRow({
   return (
     <Pressable
       onPress={() => { Haptics.selectionAsync(); onPress(); }}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+      style={({ pressed }) => [styles.row, hideDivider && styles.rowNoDivider, pressed && styles.rowPressed]}
     >
       <View style={[styles.icon, { backgroundColor: iconBg }]}>
         <Icon size={18} color={iconColor} strokeWidth={1.8} />
@@ -74,6 +76,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.borderSubtle,
   },
   rowPressed: { backgroundColor: colors.surface },
+  rowNoDivider: { borderBottomWidth: 0 },
 
   icon: {
     width: 38,
