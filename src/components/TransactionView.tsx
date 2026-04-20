@@ -13,6 +13,7 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import * as Clipboard from 'expo-clipboard';
 import { Check, Copy } from 'lucide-react-native';
 
 import { colors, typography, spacing, radius } from '../theme';
@@ -158,13 +159,17 @@ export function TxDetailsList({
 
   const showNote   = !!tx.note && tx.status !== 'failed';
 
+  const incoming = isIncoming(tx);
+
   const rows: React.ReactNode[] = [];
-  if (isP2P)      rows.push(<FlatRow key="recipient" label="Recipient" value={tx.recipientName} />);
+  if (isP2P && incoming)  rows.push(<FlatRow key="from"      label="From"      value={tx.recipientName} />);
+  if (isP2P && !incoming) rows.push(<FlatRow key="recipient" label="Recipient" value={tx.recipientName} />);
+  rows.push(<FlatRow key="ref" label="Reference" value={getTxRef(tx)} copyable />);
   rows.push(<FlatRow key="date" label="Date" value={dateStr} />);
   rows.push(<FlatRow key="wallet" label="Wallet" value={walletValue} flagCode={currency.flag} />);
-  if (card)       rows.push(<FlatRow key="card"     label="Card"     value={`${card.name} •••• ${card.last4}`} />);
-  if (cardMeta)   rows.push(<FlatRow key="category" label="Category" value={cardMeta.label} />);
-  if (showNote)   rows.push(<FlatRow key="note"     label="Note"     value={tx.note!} />);
+  if (card)     rows.push(<FlatRow key="card"     label="Card"     value={`${card.name} •••• ${card.last4}`} />);
+  if (cardMeta) rows.push(<FlatRow key="category" label="Category" value={cardMeta.label} />);
+  if (showNote) rows.push(<FlatRow key="note"     label="Note"     value={tx.note!} />);
 
   return (
     <View>
@@ -179,26 +184,51 @@ export function TxDetailsList({
 }
 
 function FlatRow({
-  label, value, flagCode, valueColor,
+  label, value, flagCode, valueColor, copyable,
 }: {
   label: string; value: string;
-  flagCode?: string; valueColor?: string;
+  flagCode?: string; valueColor?: string; copyable?: boolean;
 }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = copyable ? () => {
+    Clipboard.setStringAsync(value);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  } : undefined;
+
+  const valueNode = flagCode ? (
+    <View style={rowStyles.valueWithFlag}>
+      <FlagIcon code={flagCode} size={14} />
+      <Text style={[rowStyles.valueFlagged, valueColor ? { color: valueColor } : undefined]}>
+        {value}
+      </Text>
+    </View>
+  ) : (
+    <Text style={[rowStyles.value, valueColor ? { color: valueColor } : undefined]}>
+      {value}
+    </Text>
+  );
+
+  if (copyable) {
+    return (
+      <Pressable onPress={handleCopy} hitSlop={8} style={listStyles.row}>
+        <Text style={rowStyles.label}>{label}</Text>
+        <View style={rowStyles.valueWithFlag}>
+          {valueNode}
+          {copied
+            ? <Check size={14} color={colors.success} strokeWidth={2.5} />
+            : <Copy  size={14} color={colors.textMuted} strokeWidth={2} />}
+        </View>
+      </Pressable>
+    );
+  }
+
   return (
     <View style={listStyles.row}>
       <Text style={rowStyles.label}>{label}</Text>
-      {flagCode ? (
-        <View style={rowStyles.valueWithFlag}>
-          <FlagIcon code={flagCode} size={14} />
-          <Text style={[rowStyles.valueFlagged, valueColor ? { color: valueColor } : undefined]}>
-            {value}
-          </Text>
-        </View>
-      ) : (
-        <Text style={[rowStyles.value, valueColor ? { color: valueColor } : undefined]}>
-          {value}
-        </Text>
-      )}
+      {valueNode}
     </View>
   );
 }

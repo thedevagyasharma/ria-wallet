@@ -2326,6 +2326,46 @@ The old stub `CardListScreen.tsx` (which returned `null`) was deleted to free th
 
 ---
 
+### 243. Transaction detail — split into CardTransactionDetail + WalletTransactionDetail
+
+**Decision:** `TransactionDetailScreen` is now a thin router that resolves the transaction and delegates to `CardTransactionDetail` or `WalletTransactionDetail`. Shared styles live in `transactionDetailShared.ts`.
+
+**Reason:** Card and wallet transaction layouts diverged enough (different heroes, no footer CTA for cards, different section structure) that a single component was getting noisy with `isCard` branches everywhere.
+
+---
+
+### 244. Transaction detail — icon + counterparty hero across all types
+
+**Decision:** All three transaction types show a 64×20r icon + counterparty name in the hero above the amount. Card: category icon on category-colored bg. Incoming P2P: `ArrowDownLeft` on `successSubtle`. Outgoing P2P: `ArrowUpRight` on `failedSubtle` (red). Failed outgoing: gray icon on `surfaceHigh`.
+
+**Reason:** Consistent visual language — you immediately know direction and counterparty before reading the amount. Matches the icon treatment in activity list rows.
+
+---
+
+### 245. Transaction detail — completed badge suppressed for incoming P2P and card
+
+**Decision:** The status badge is hidden when `status === 'completed'` for incoming P2P and card transactions. It still shows for `pending` and `failed`. Outgoing P2P always shows the badge.
+
+**Reason:** For incoming and card transactions the completion state is self-evident from context (money arrived, payment went through). The badge adds noise without new information. For outgoing P2P the badge is needed to communicate pending/in-progress delivery state.
+
+---
+
+### 246. Transaction detail — flat Details section, no separate heroInfo block
+
+**Decision:** For wallet transactions, the "To/From" and "Reference" rows moved into the flat Details section. Row order: From/To → Reference → Date → Wallet → Note. For card: Reference → Date → Wallet → Card → Category → Note. The `heroInfo` block above the divider was removed.
+
+**Reason:** After the icon+name hero was added, the heroInfo block only contained 2 rows. Folding them into Details simplifies the layout and gives Reference a consistent near-top position as the transaction identifier across all types.
+
+---
+
+### 247. Transaction detail card — failed chip absolutely positioned
+
+**Decision:** The failed/pending status badge in `CardTransactionDetail` is `position: absolute` at the top of the hero, not a flex child.
+
+**Reason:** The badge only renders for failed/pending. As a flex child it would shift the icon/merchant/amount down when present, making the layout unstable. Absolute positioning keeps the icon centered regardless.
+
+---
+
 ### 242. Prototype controls — Frozen added to card status seg control
 
 **Decision:** The prototype "Card status" seg control now has three options: Active / Frozen / Expired. Switching states clears conflicting flags (e.g. selecting Expired also unfreezes the card).

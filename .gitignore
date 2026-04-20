@@ -43,3 +43,7 @@ yarn-error.*
 # local-only docs
 BUTTONS.md
 TESTING.md
+KEY_DECISIONS.md
+LOOM_OUTLINE.md
+brief.md
+narrative.md
