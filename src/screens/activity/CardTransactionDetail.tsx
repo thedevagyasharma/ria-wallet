@@ -57,7 +57,7 @@ export default function CardTransactionDetail({ tx, wallet, card }: Props) {
         {/* ── Hero ── */}
         <View style={styles.hero}>
           {(isFailed || tx.status === 'pending') && (
-            <View style={styles.badgeAbsolute}>
+            <View style={styles.badgeWrap}>
               <StatusBadge variant={tx.status} />
             </View>
           )}
@@ -102,11 +102,8 @@ const styles = StyleSheet.create({
   hero: {
     alignItems: 'center', paddingHorizontal: H_PAD,
     paddingTop: spacing.lg, paddingBottom: spacing.xl, gap: spacing.lg,
-    position: 'relative',
   },
-  badgeAbsolute: {
-    position: 'absolute', top: spacing.lg, alignSelf: 'center',
-  },
+  badgeWrap: { alignItems: 'center' },
   iconWrap: {
     width: 64, height: 64, borderRadius: 20,
     alignItems: 'center', justifyContent: 'center',
