@@ -93,11 +93,11 @@ const refStyles = StyleSheet.create({
 
 // ─── P2P summary (flat rows) ─────────────────────────────────────────────────
 
-function SummaryRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+function SummaryRow({ label, value, bold, muted }: { label: string; value: string; bold?: boolean; muted?: boolean }) {
   return (
     <View style={listStyles.row}>
-      <Text style={[rowStyles.label, bold && summaryStyles.boldLabel]}>{label}</Text>
-      <Text style={[rowStyles.value, bold && summaryStyles.boldValue]}>{value}</Text>
+      <Text style={[rowStyles.label, bold && summaryStyles.boldLabel, muted && summaryStyles.mutedText]}>{label}</Text>
+      <Text style={[rowStyles.value, bold && summaryStyles.boldValue, muted && summaryStyles.mutedStruck]}>{value}</Text>
     </View>
   );
 }
@@ -118,7 +118,7 @@ export function TxSummaryCard({ tx }: { tx: Transaction }) {
       <View style={listStyles.divider} />
       <SummaryRow label="Transfer fee" value={formatAmount(tx.fee, tx.currency)} />
       <View style={listStyles.divider} />
-      <SummaryRow label="Total deducted" value={formatAmount(total, tx.currency)} bold />
+      <SummaryRow label="Total deducted" value={formatAmount(total, tx.currency)} bold muted={tx.status === 'failed'} />
       <View style={listStyles.divider} />
       <SummaryRow
         label={`${firstName} receives`}
@@ -303,6 +303,8 @@ const rowStyles = StyleSheet.create({
 const summaryStyles = StyleSheet.create({
   boldLabel: { color: colors.textPrimary, fontWeight: typography.semibold },
   boldValue: { fontSize: typography.lg, fontWeight: typography.bold, letterSpacing: -0.5 },
+  mutedText: { color: colors.textMuted },
+  mutedStruck: { color: colors.textMuted, textDecorationLine: 'line-through' },
   footnote: { paddingVertical: spacing.sm, alignItems: 'center' },
   footnoteText: { fontSize: typography.xs, color: colors.textMuted, fontWeight: typography.medium },
 });

@@ -74,8 +74,8 @@ export default function AllCardsScreen() {
                 <View style={styles.walletHeaderLeft}>
                   <FlagIcon code={currency.flag} size={22} />
                   <View>
-                    <Text style={styles.walletCurrency}>{currency.code}</Text>
-                    <Text style={styles.walletName}>{currency.name}</Text>
+                    <Text style={styles.walletCurrency}>{wallet.nickname ?? currency.code}</Text>
+                    <Text style={styles.walletName}>{currency.code}</Text>
                   </View>
                 </View>
                 <Text style={styles.walletCount}>

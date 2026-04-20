@@ -219,7 +219,7 @@ export default function TransactionDetailScreen({ route }: RootStackProps<'Trans
                 contactName: tx.recipientName,
                 prefillSendAmount: Math.abs(tx.amount) - (tx.fee ?? 0),
               })}
-              label="Repeat transfer"
+              label={tx.status === 'failed' ? 'Try again' : 'Repeat transfer'}
               style={styles.footerBtn}
             />
           )}
@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md, borderWidth: 1,
     borderColor: colors.failed + '33',
     paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    marginHorizontal: H_PAD, marginBottom: spacing.md,
+    marginHorizontal: H_PAD, marginTop: spacing.xl, marginBottom: 0,
     gap: spacing.xs,
   },
   refundReason: {
